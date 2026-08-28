@@ -1,0 +1,8 @@
+target/
+**/build/
+**/.gradle/
+*.iml
+.idea/
+.vscode/
+local.properties
+*.log

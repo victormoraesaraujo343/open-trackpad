@@ -1,0 +1,8 @@
+[package]
+name = "opentrackpadd"
+version = "0.1.0"
+edition = "2021"
+description = "Linux host daemon for OpenTrackpad"
+license = "MIT"
+
+[dependencies]
