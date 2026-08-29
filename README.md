@@ -5,7 +5,7 @@ Turn an old Android device into a dedicated, native multi-touch trackpad for Lin
 OpenTrackpad is an early-stage open-source project. Unlike remote-mouse apps, its goal is to send raw touch contacts from Android to a Linux host and expose them through `uinput`, so `libinput` and the desktop environment can handle gestures natively.
 
 > [!IMPORTANT]
-> The host daemon creates a virtual multi-touch touchpad through `uinput`. udev and libinput both classify it as a touchpad, and injected contacts move the desktop pointer. Multi-finger gestures and long-run stability are not verified yet, and the Android client is not implemented. See [docs/TESTING.md](docs/TESTING.md) for exactly what has and has not been proven.
+> The host daemon creates a virtual multi-touch touchpad through `uinput`. On the one machine tested so far, one finger moves the pointer, two scroll, and three or four produce native swipe gestures. Long-run stability is unverified, only one distribution has been tested, and the Android client is not implemented. See [docs/TESTING.md](docs/TESTING.md) for exactly what has and has not been proven.
 
 ## Why
 

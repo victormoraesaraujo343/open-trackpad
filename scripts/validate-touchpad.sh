@@ -176,6 +176,12 @@ echo
 echo "Record this run in docs/TESTING.md:"
 echo "  kernel:     $(uname -r)"
 echo "  libinput:   $(libinput --version)"
-echo "  desktop:    ${XDG_CURRENT_DESKTOP:-unknown} ${XDG_SESSION_TYPE:-unknown}"
+# sudo drops the session variables, so fall back to asking logind directly.
+session_type=${XDG_SESSION_TYPE:-}
+if [ -z "$session_type" ]; then
+  session=$(loginctl list-sessions --no-legend 2>/dev/null | awk 'NR == 1 { print $1 }')
+  session_type=$(loginctl show-session "$session" -p Type --value 2>/dev/null)
+fi
+echo "  desktop:    ${XDG_CURRENT_DESKTOP:-unknown} ${session_type:-unknown}"
 
 exit $status

@@ -15,7 +15,7 @@
 - [x] Confirm udev tags the device `ID_INPUT_TOUCHPAD`
 - [x] Verify libinput classifies the device as a touchpad
 - [x] Verify injected contacts move the desktop pointer
-- [ ] Verify two-, three-, and four-finger gestures reach the desktop
+- [x] Verify two-finger scrolling and three- and four-finger swipe gestures
 - [ ] Verify on a second distribution and desktop (GNOME as well as KDE)
 - [ ] Add a minimal udev rule and systemd user service
 

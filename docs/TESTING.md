@@ -13,7 +13,8 @@ by a real machine.
 | udev classifies the device as a touchpad | observed |
 | libinput classifies the device as a touchpad | observed |
 | Injected contacts move the desktop pointer | observed |
-| Two-, three- and four-finger gestures reach the desktop | **not yet verified** |
+| Two-finger scrolling reaches the desktop | observed |
+| Three- and four-finger swipe gestures reach the desktop | observed |
 | 30 minutes of real use is stable | **not yet verified** |
 
 ## Automated tests
@@ -198,9 +199,24 @@ The lesson generalises: a device that udev, libinput and the compositor all
 accept can still discard every event. Only `debug-events --verbose` shows the
 decision, and it is worth reaching for early rather than last.
 
-**Still open on this host:** whether two-, three- and four-finger gestures reach
-applications, and whether the device survives 30 minutes of real use. Only a
-second distribution and desktop can show that nothing here is KDE-specific.
+`sudo ./scripts/validate-touchpad.sh`, after removing the pressure axes:
+
+```text
+evdev events the kernel saw        1233
+pointer motion (one finger)          62
+scroll (two fingers)                 39
+swipe gestures (three, four)         78
+contacts discarded as palms           0
+PASS: pointer motion works.
+```
+
+One finger moves the pointer, two scroll, and three or four produce swipe
+gestures — through the ordinary Linux touchpad stack, with no gesture
+interpretation on the sending side. That is the milestone gate, and it passes.
+
+**Still open on this host:** whether the device survives 30 minutes of real use.
+And only a second distribution and desktop can show that nothing here is
+KDE-specific.
 
 ## Recording a test session
 
