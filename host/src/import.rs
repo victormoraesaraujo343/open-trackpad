@@ -347,6 +347,80 @@ const GNOME_SCHEMAS: &[(&str, &str)] = &[
 /// Where a person's own shortcuts live, one relocatable schema per entry.
 const GNOME_CUSTOM_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding";
 
+/// Real words for the GNOME settings keys somebody would actually put on a rail.
+///
+/// GNOME keeps no readable name anywhere a program can reach, so without this
+/// every row on the review screen is a settings key with its hyphens taken out
+/// — and `screensaver` for "lock the screen" is not merely plain, it is wrong.
+/// The person looking at that screen has no idea one desktop stores readable
+/// names and the other does not; they would read it as this list being sloppier
+/// on their machine.
+///
+/// Two rules keep the table safe, and both are pinned by tests:
+///
+/// - it maps a key to **words, never to a chord**. The chord always comes from
+///   that person's own settings, so an entry here can change what a shortcut is
+///   called and can never change what it does;
+/// - an entry matching nothing simply never fires. A GNOME release that renames
+///   a key degrades to the prettified key rather than showing a name that has
+///   quietly become wrong.
+///
+/// Short on purpose. Everything outside it still gets a readable name, just a
+/// plainer one.
+const GNOME_NAMES: &[(&str, &str)] = &[
+    // Where the derived name is actively misleading rather than merely plain.
+    ("screensaver", "Lock the screen"),
+    ("panel-run-dialog", "Run a command"),
+    ("show-screenshot-ui", "Take a screenshot"),
+    ("toggle-application-view", "All applications"),
+    ("www", "Web browser"),
+    ("mic-mute", "Mute microphone"),
+    ("play", "Play or pause"),
+    ("unmaximize", "Restore window"),
+    // Windows.
+    ("close", "Close window"),
+    ("maximize", "Maximise window"),
+    ("minimize", "Minimise window"),
+    ("toggle-fullscreen", "Full screen"),
+    ("begin-move", "Move window"),
+    ("begin-resize", "Resize window"),
+    ("activate-window-menu", "Window menu"),
+    ("switch-windows", "Switch windows"),
+    ("switch-applications", "Switch applications"),
+    ("show-desktop", "Show desktop"),
+    // Workspaces, which are most of what anyone puts on a rail.
+    ("switch-to-workspace-left", "Workspace left"),
+    ("switch-to-workspace-right", "Workspace right"),
+    ("switch-to-workspace-up", "Workspace up"),
+    ("switch-to-workspace-down", "Workspace down"),
+    ("move-to-workspace-left", "Move window one workspace left"),
+    ("move-to-workspace-right", "Move window one workspace right"),
+    // The shell.
+    ("toggle-overview", "Overview"),
+    ("toggle-message-tray", "Notifications"),
+    ("toggle-quick-settings", "Quick settings"),
+    ("screenshot", "Screenshot"),
+    ("screenshot-window", "Screenshot a window"),
+    // Sound, media and the keys above the number row.
+    ("volume-up", "Volume up"),
+    ("volume-down", "Volume down"),
+    ("volume-mute", "Mute"),
+    ("next", "Next track"),
+    ("previous", "Previous track"),
+    ("screen-brightness-up", "Brightness up"),
+    ("screen-brightness-down", "Brightness down"),
+    ("logout", "Log out"),
+];
+
+/// The words for a settings key: curated where it matters, prettified otherwise.
+fn gnome_name(key: &str) -> String {
+    GNOME_NAMES
+        .iter()
+        .find(|(known, _)| *known == key)
+        .map(|(_, words)| (*words).to_owned())
+        .unwrap_or_else(|| readable(key))
+}
+
 /// Reads one schema's worth of `gsettings list-recursively`.
 ///
 /// The shape:
@@ -364,9 +438,10 @@ const GNOME_CUSTOM_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys.
 ///
 /// GNOME has no readable name for these anywhere a program can reach: the words
 /// a person sees in Settings live in that application's translations, not in
-/// the settings store. So the key itself is made readable — `switch-to-workspace-left`
-/// becomes "Switch to workspace left". Plainer than KDE's, and honest about
-/// where it came from.
+/// the settings store. The keys worth putting on a rail are named by hand in
+/// `GNOME_NAMES`; everything else has its key made readable, so
+/// `toggle-tiled-left` becomes "Toggle tiled left" — plainer than KDE's, and
+/// honest about where it came from.
 pub fn from_gnome(listing: &str, group: &str) -> Vec<Candidate> {
     let mut candidates = Vec::new();
     for line in listing.lines() {
@@ -386,7 +461,7 @@ pub fn from_gnome(listing: &str, group: &str) -> Vec<Candidate> {
         };
         candidates.push(Candidate {
             group: group.to_owned(),
-            name: readable(key),
+            name: gnome_name(key),
             chord,
         });
     }
@@ -801,12 +876,16 @@ org.gnome.desktop.wm.keybindings switch-to-workspace-left ['<Super><Alt>Left', '
     fn reads_what_gsettings_prints() {
         let found = from_gnome(GNOME_WM, "Windows");
         assert_eq!(found.len(), 7);
-        assert_eq!(find(&found, "Close").unwrap().chord.to_string(), "alt+f4");
+        // Curated names, not the prettified keys: see GNOME_NAMES.
         assert_eq!(
-            find(&found, "Maximize").unwrap().chord.to_string(),
+            find(&found, "Close window").unwrap().chord.to_string(),
+            "alt+f4"
+        );
+        assert_eq!(
+            find(&found, "Maximise window").unwrap().chord.to_string(),
             "super+up"
         );
-        assert_eq!(find(&found, "Minimize").unwrap().group, "Windows");
+        assert_eq!(find(&found, "Minimise window").unwrap().group, "Windows");
     }
 
     #[test]
@@ -822,10 +901,7 @@ org.gnome.desktop.wm.keybindings switch-to-workspace-left ['<Super><Alt>Left', '
     fn the_first_accelerator_that_can_be_said_is_the_one_taken() {
         let found = from_gnome(GNOME_WM, "Windows");
         assert_eq!(
-            find(&found, "Switch to workspace left")
-                .unwrap()
-                .chord
-                .to_string(),
+            find(&found, "Workspace left").unwrap().chord.to_string(),
             "super+alt+left"
         );
     }
@@ -949,5 +1025,85 @@ org.gnome.desktop.wm.keybindings switch-to-workspace-left ['<Super><Alt>Left', '
         assert!(quoted_runs("@as []").is_empty());
         assert!(quoted_runs("").is_empty());
         assert!(quoted_runs("uint32 400").is_empty());
+    }
+
+    #[test]
+    fn the_keys_worth_naming_get_real_words() {
+        // `screensaver` is the one that matters most: prettifying it gives
+        // "Screensaver", which is not merely plain but the wrong idea.
+        let found = from_gnome(
+            "s screensaver ['<Super>l']\n\
+             s panel-run-dialog ['<Alt>F2']\n\
+             s show-screenshot-ui ['Print']\n\
+             s www ['XF86AudioMute']\n",
+            "x",
+        );
+        let names: Vec<_> = found.iter().map(|found| found.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "Lock the screen",
+                "Run a command",
+                "Take a screenshot",
+                "Web browser"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_key_nobody_curated_still_gets_a_readable_name() {
+        let found = from_gnome("s toggle-tiled-left ['<Super>Left']\n", "x");
+        assert_eq!(found[0].name, "Toggle tiled left");
+    }
+
+    #[test]
+    fn the_name_table_can_never_change_what_a_shortcut_does() {
+        // Rule one, stated as a test. The table maps a key to words; the chord
+        // comes from that person's own settings and nothing here can touch it.
+        // Same curated key, two different machines, two different chords.
+        let one = from_gnome("s screensaver ['<Super>l']\n", "x");
+        let other = from_gnome("s screensaver ['<Control><Alt>Delete']\n", "x");
+        assert_eq!(one[0].name, other[0].name);
+        assert_eq!(one[0].chord.to_string(), "super+l");
+        assert_eq!(other[0].chord.to_string(), "ctrl+alt+delete");
+    }
+
+    #[test]
+    fn a_renamed_gnome_key_degrades_rather_than_showing_the_wrong_name() {
+        // Rule two. If a GNOME release renames `screensaver`, the entry simply
+        // stops matching — the new key gets a plain name, and nothing inherits
+        // words that are no longer true of it.
+        let found = from_gnome("s lock-screen ['<Super>l']\n", "x");
+        assert_eq!(found[0].name, "Lock screen");
+        assert_eq!(found[0].chord.to_string(), "super+l");
+    }
+
+    #[test]
+    fn the_name_table_holds_words_and_not_chords() {
+        // A chord that found its way into this column would be a name nobody
+        // can read, and the wrong kind of thing entirely.
+        let mut seen = std::collections::HashSet::new();
+        for (key, words) in GNOME_NAMES {
+            assert!(seen.insert(*key), "{key} appears twice");
+            assert!(!words.is_empty(), "{key} has no words");
+            assert!(
+                Chord::parse(words).is_err(),
+                "{key} maps to something that parses as a chord: {words}"
+            );
+            assert!(
+                words.chars().next().is_some_and(char::is_uppercase),
+                "{words} does not start like a name"
+            );
+        }
+    }
+
+    #[test]
+    fn a_persons_own_shortcut_is_never_renamed_by_the_table() {
+        // Custom shortcuts carry a name somebody typed. Even one that collides
+        // with a curated key keeps what they wrote.
+        let entry =
+            from_gnome_custom("s binding '<Super>l'\ns command 'x'\ns name 'screensaver'\n")
+                .expect("a custom shortcut");
+        assert_eq!(entry.name, "screensaver");
     }
 }
