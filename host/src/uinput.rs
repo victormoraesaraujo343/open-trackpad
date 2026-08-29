@@ -33,12 +33,14 @@ const TOOL_KEYS: [KeyCode; MAX_REPORTED_FINGERS as usize] = [
 
 pub struct UinputTouchpad {
     device: VirtualDevice,
+    /// The size the current device claims, so it is only rebuilt when it must be.
+    geometry: PadGeometry,
     /// Reused across reports to keep the hot path allocation-free.
     buffer: Vec<InputEvent>,
 }
 
 impl UinputTouchpad {
-    pub fn create() -> io::Result<Self> {
+    pub fn create(geometry: PadGeometry) -> io::Result<Self> {
         let mut keys = AttributeSet::<KeyCode>::new();
         // BTN_TOOL_FINGER without BTN_TOOL_PEN, and no INPUT_PROP_DIRECT, is
         // what makes udev tag this a touchpad rather than a touchscreen.
@@ -66,11 +68,11 @@ impl UinputTouchpad {
             // ABS_X/ABS_Y, and libinput uses them as the emulated pointer.
             .with_absolute_axis(&UinputAbsSetup::new(
                 AbsoluteAxisCode::ABS_X,
-                position(PAD_MAX_X),
+                position(geometry.max_x),
             ))?
             .with_absolute_axis(&UinputAbsSetup::new(
                 AbsoluteAxisCode::ABS_Y,
-                position(PAD_MAX_Y),
+                position(geometry.max_y),
             ))?
             .with_absolute_axis(&UinputAbsSetup::new(
                 AbsoluteAxisCode::ABS_MT_SLOT,
@@ -82,22 +84,43 @@ impl UinputTouchpad {
             ))?
             .with_absolute_axis(&UinputAbsSetup::new(
                 AbsoluteAxisCode::ABS_MT_POSITION_X,
-                position(PAD_MAX_X),
+                position(geometry.max_x),
             ))?
             .with_absolute_axis(&UinputAbsSetup::new(
                 AbsoluteAxisCode::ABS_MT_POSITION_Y,
-                position(PAD_MAX_Y),
+                position(geometry.max_y),
             ))?
             .with_absolute_axis(&UinputAbsSetup::new(
                 AbsoluteAxisCode::ABS_MT_TOUCH_MAJOR,
-                position(PAD_MAX_X),
+                position(geometry.max_x),
             ))?
             .build()?;
 
         Ok(Self {
             device,
+            geometry,
             buffer: Vec::with_capacity(64),
         })
+    }
+
+    /// Makes the device claim `geometry`, rebuilding it if the size changed.
+    ///
+    /// Returns whether a new device was created. The kernel has no way to resize
+    /// an existing one, so a phone with a different screen means a hotplug: the
+    /// old device disappears and a fresh one takes its place.
+    pub fn configure(&mut self, geometry: PadGeometry) -> io::Result<bool> {
+        if self.geometry == geometry {
+            return Ok(false);
+        }
+        // Built before the old one is dropped, so a failure leaves the working
+        // device in place rather than none at all.
+        let replacement = Self::create(geometry)?;
+        *self = replacement;
+        Ok(true)
+    }
+
+    pub fn geometry(&self) -> PadGeometry {
+        self.geometry
     }
 
     /// Writes one batch of pad events to the kernel.

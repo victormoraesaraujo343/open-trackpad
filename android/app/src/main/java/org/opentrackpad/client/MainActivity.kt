@@ -39,12 +39,12 @@ class MainActivity : AppCompatActivity() {
 
     private var started = false
 
-    private fun onSurfaceSize(width: Int, height: Int) {
+    private fun onSurfaceSize(metrics: SurfaceMetrics) {
         if (started) {
-            connection.surfaceResized(width, height)
+            connection.surfaceResized(metrics)
         } else {
             started = true
-            connection.start(width, height)
+            connection.start(metrics)
         }
     }
 

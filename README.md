@@ -5,7 +5,7 @@ Turn an old Android device into a dedicated, native multi-touch trackpad for Lin
 OpenTrackpad is an early-stage open-source project. Unlike remote-mouse apps, its goal is to send raw touch contacts from Android to a Linux host and expose them through `uinput`, so `libinput` and the desktop environment can handle gestures natively.
 
 > [!IMPORTANT]
-> The host daemon creates a virtual multi-touch touchpad through `uinput`. On the one machine tested so far, one finger moves the pointer, two scroll, and three or four produce native swipe gestures. The Android client builds and its unit tests pass, but it has never run against a real phone. See [docs/TESTING.md](docs/TESTING.md) for exactly what has and has not been proven.
+> This works end to end on the one setup tested so far: an Android phone over USB moves the pointer, scrolls with two fingers and produces native swipe gestures with three or four, through the ordinary Linux touchpad stack. Long-run stability is unverified and only one distribution and one phone have been tried. See [docs/TESTING.md](docs/TESTING.md) for exactly what has and has not been proven.
 
 ## Why
 
@@ -59,7 +59,7 @@ cargo run
 In another terminal:
 
 ```bash
-printf 'HELLO OTP/1 1080 2400 10\nFRAME 1 1000000 1 0 500 800 700 12\n' | socat - TCP:127.0.0.1:4242
+printf 'HELLO OTP/2 1080 2400 10 69000 156000\nFRAME 1 1000000 1 0 500 800 700 12\n' | socat - TCP:127.0.0.1:4242
 ```
 
 Run the tests with:

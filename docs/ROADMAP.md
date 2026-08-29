@@ -29,7 +29,8 @@
 - [x] Show connection status without consuming touch area
 - [x] Coalesce movement under backpressure without losing lifts
 - [x] Reconnect with a fresh handshake
-- [ ] Test on a real phone against the host
+- [x] Report the phone's real screen size so any device maps correctly
+- [x] Test on a real phone against the host
 
 ## Milestone 3 — dedicated appliance mode
 
@@ -37,7 +38,10 @@
 - [ ] Optional start-on-boot instructions
 - [ ] Burn-in protection and configurable brightness
 - [ ] Accidental-edge and palm filtering
-- [ ] Calibration UI
+- [ ] Calibration UI: in-app sliders for pointer speed and sensitivity
+      Asked for after the first hardware test: the desktop's own pointer speed
+      setting is per-device and buried in system settings, and a dedicated
+      trackpad wants its feel adjustable from the surface itself.
 
 ## Milestone 4 — wireless fallback
 

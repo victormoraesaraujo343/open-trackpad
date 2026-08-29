@@ -17,7 +17,7 @@ by a real machine.
 | Three- and four-finger swipe gestures reach the desktop | observed |
 | Runs as a systemd user service | observed |
 | The Android client builds and its unit tests pass | proven by `./gradlew testDebugUnitTest` |
-| The Android client works against the host on real hardware | **not yet verified** |
+| The Android client works against the host on real hardware | observed |
 | 30 minutes of use leaves no stuck contact | **not yet verified** |
 
 ## Automated tests
@@ -219,6 +219,24 @@ pressure axes fixed it; see the architecture notes for the full reasoning.
 The lesson generalises: a device that udev, libinput and the compositor all
 accept can still discard every event. Only `debug-events --verbose` shows the
 decision, and it is worth reaching for early rather than last.
+
+### First run against a real phone
+
+A Nothing Phone (2412x1080, Android 16) over `adb reverse`, on the same host.
+One finger moved the pointer, two scrolled, and three and four produced swipe
+gestures — all through the ordinary Linux touchpad stack, with no gesture
+interpretation on the phone.
+
+Two things came out of that first run:
+
+- The pointer felt slow. The virtual pad had been hardcoded to 140x63 mm while
+  the phone measures 155x69 mm, and the remaining difference is the desktop's
+  own pointer speed setting. The handshake now carries the phone's real physical
+  size, which is the only way this can work across devices.
+- Two-finger horizontal scrolling felt backwards. That is the desktop's natural
+  scrolling preference, not a bug: KDE defaults it off, macOS defaults it on.
+
+### Synthetic validation
 
 `sudo ./scripts/validate-touchpad.sh`, after removing the pressure axes:
 

@@ -7,7 +7,7 @@ package org.opentrackpad.client
  * read and tested on its own.
  */
 object Protocol {
-    const val VERSION = "OTP/1"
+    const val VERSION = "OTP/2"
 
     /** The host rejects anything above this, and so should we. */
     const val MAX_CONTACTS = 10
@@ -15,8 +15,23 @@ object Protocol {
     /** Pressure is sent on a fixed scale so the host never has to guess. */
     const val MAX_PRESSURE = 1024
 
-    fun hello(width: Int, height: Int): String =
-        "HELLO $VERSION $width $height $MAX_CONTACTS"
+    /**
+     * The opening line of a session.
+     *
+     * [widthMicrometres] and [heightMicrometres] are the real physical size of
+     * the touch surface. The host cannot guess it — every phone is a different
+     * size — and libinput reasons about touchpads in millimetres, so getting it
+     * right is what makes pointer speed and gesture distances feel the same on
+     * any device.
+     */
+    fun hello(
+        width: Int,
+        height: Int,
+        widthMicrometres: Int,
+        heightMicrometres: Int,
+    ): String =
+        "HELLO $VERSION $width $height $MAX_CONTACTS " +
+            "$widthMicrometres $heightMicrometres"
 }
 
 /**

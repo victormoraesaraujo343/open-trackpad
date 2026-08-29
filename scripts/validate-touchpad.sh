@@ -79,6 +79,9 @@ sleep 2
 
 SURFACE_WIDTH=2400
 SURFACE_HEIGHT=1080
+# Physical size in micrometres: a 6.7-inch phone held in landscape.
+SURFACE_WIDTH_UM=155000
+SURFACE_HEIGHT_UM=69000
 FINGER_SPACING=260
 SEQUENCE=0
 
@@ -117,7 +120,8 @@ glide() {
 }
 
 exec 3<>"/dev/tcp/127.0.0.1/$PORT" || fail "could not connect to the daemon"
-printf 'HELLO OTP/1 %d %d 10\n' "$SURFACE_WIDTH" "$SURFACE_HEIGHT" >&3
+printf 'HELLO OTP/2 %d %d 10 %d %d\n' \
+  "$SURFACE_WIDTH" "$SURFACE_HEIGHT" "$SURFACE_WIDTH_UM" "$SURFACE_HEIGHT_UM" >&3
 
 echo "== injecting synthetic strokes =="
 echo "   one finger, sideways"

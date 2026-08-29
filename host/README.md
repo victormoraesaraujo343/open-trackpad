@@ -1,6 +1,6 @@
 # Linux host daemon
 
-`opentrackpadd` receives OTP/1 contact snapshots on a loopback socket and
+`opentrackpadd` receives OTP/2 contact snapshots on a loopback socket and
 replays them on a virtual multi-touch touchpad created through `/dev/uinput`.
 
 ```bash
@@ -86,7 +86,7 @@ run it when you are away from the machine.
 
 | Module | Responsibility |
 | --- | --- |
-| `protocol` | Parsing OTP/1 lines and per-connection validation. |
+| `protocol` | Parsing OTP/2 lines and per-connection validation. |
 | `state` | Pointer IDs to multi-touch slots, and what changed since the last frame. |
 | `pad` | Touchpad geometry and the device-agnostic event vocabulary. |
 | `uinput` | The only module that knows about Linux input events. |

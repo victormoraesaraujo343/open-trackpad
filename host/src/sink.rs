@@ -2,10 +2,14 @@
 
 use std::io;
 
-use crate::pad::PadEvent;
+use crate::pad::{PadEvent, PadGeometry};
 
 pub trait PadSink {
     fn emit(&mut self, events: &[PadEvent]) -> io::Result<()>;
+
+    /// Makes the output match `geometry`, returning whether the underlying
+    /// device had to be replaced to do it.
+    fn configure(&mut self, geometry: PadGeometry) -> io::Result<bool>;
     /// Human-readable description for startup logging.
     fn describe(&mut self) -> String;
 }
@@ -15,7 +19,12 @@ impl PadSink for crate::uinput::UinputTouchpad {
         crate::uinput::UinputTouchpad::emit(self, events)
     }
 
+    fn configure(&mut self, geometry: PadGeometry) -> io::Result<bool> {
+        crate::uinput::UinputTouchpad::configure(self, geometry)
+    }
+
     fn describe(&mut self) -> String {
+        let geometry = crate::uinput::UinputTouchpad::geometry(self);
         let nodes = match self.device_nodes() {
             Ok(nodes) if !nodes.is_empty() => nodes
                 .iter()
@@ -30,8 +39,10 @@ impl PadSink for crate::uinput::UinputTouchpad {
             Err(error) => format!("(syspath lookup failed: {error})"),
         };
         format!(
-            "virtual touchpad \"{}\" at {nodes} ({syspath})",
-            crate::uinput::DEVICE_NAME
+            "virtual touchpad \"{}\", {}x{} mm, at {nodes} ({syspath})",
+            crate::uinput::DEVICE_NAME,
+            geometry.width_mm(),
+            geometry.height_mm()
         )
     }
 }
@@ -48,6 +59,15 @@ impl PadSink for DebugSink {
         let rendered: Vec<String> = events.iter().map(|event| format!("{event:?}")).collect();
         println!("    {}", rendered.join(" "));
         Ok(())
+    }
+
+    fn configure(&mut self, geometry: PadGeometry) -> io::Result<bool> {
+        println!(
+            "    (would resize the pad to {}x{} mm)",
+            geometry.width_mm(),
+            geometry.height_mm()
+        );
+        Ok(false)
     }
 
     fn describe(&mut self) -> String {

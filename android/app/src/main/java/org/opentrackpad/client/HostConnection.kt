@@ -42,8 +42,7 @@ class HostConnection(
     private val lock = Object()
 
     @Volatile private var running = false
-    @Volatile private var surfaceWidth = 0
-    @Volatile private var surfaceHeight = 0
+    @Volatile private var surface: SurfaceMetrics? = null
 
     /** Set when the surface size changes, so the session restarts with a new HELLO. */
     @Volatile private var surfaceChanged = false
@@ -51,10 +50,9 @@ class HostConnection(
     private var worker: Thread? = null
     private var sequence = 0L
 
-    fun start(width: Int, height: Int) {
+    fun start(metrics: SurfaceMetrics) {
         synchronized(lock) {
-            surfaceWidth = width
-            surfaceHeight = height
+            surface = metrics
             if (running) {
                 surfaceChanged = true
                 lock.notifyAll()
@@ -74,11 +72,10 @@ class HostConnection(
      * The protocol sends dimensions once per session, so a resize means the
      * session has to be restarted rather than patched.
      */
-    fun surfaceResized(width: Int, height: Int) {
+    fun surfaceResized(metrics: SurfaceMetrics) {
         synchronized(lock) {
-            if (width == surfaceWidth && height == surfaceHeight) return
-            surfaceWidth = width
-            surfaceHeight = height
+            if (metrics == surface) return
+            surface = metrics
             surfaceChanged = true
             pending.clear()
             lock.notifyAll()
@@ -138,18 +135,23 @@ class HostConnection(
     /** Runs one session until the socket dies or the surface changes size. */
     private fun serve(socket: Socket) {
         val writer = socket.getOutputStream().bufferedWriter()
-        val width: Int
-        val height: Int
+        val metrics: SurfaceMetrics
         synchronized(lock) {
-            width = surfaceWidth
-            height = surfaceHeight
+            metrics = surface ?: return
             surfaceChanged = false
             // Anything queued belongs to the previous session's coordinate
             // space and sequence; start clean.
             pending.clear()
             sequence = 0
         }
-        writer.write(Protocol.hello(width, height))
+        writer.write(
+            Protocol.hello(
+                metrics.widthPixels,
+                metrics.heightPixels,
+                metrics.widthMicrometres,
+                metrics.heightMicrometres,
+            )
+        )
         writer.write("\n")
         writer.flush()
 

@@ -21,8 +21,8 @@ class TouchSurfaceView @JvmOverloads constructor(
     /** Receives every snapshot. Set by the activity. */
     var onFrame: ((TouchFrame) -> Unit)? = null
 
-    /** Called when the usable surface size changes, including at first layout. */
-    var onSurfaceSize: ((Int, Int) -> Unit)? = null
+    /** Called when the usable surface changes size, including at first layout. */
+    var onSurfaceSize: ((SurfaceMetrics) -> Unit)? = null
 
     init {
         isFocusable = true
@@ -35,7 +35,9 @@ class TouchSurfaceView @JvmOverloads constructor(
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
         if (width > 0 && height > 0) {
-            onSurfaceSize?.invoke(width, height)
+            onSurfaceSize?.invoke(
+                SurfaceMetrics.measure(resources.displayMetrics, width, height)
+            )
         }
     }
 

@@ -102,6 +102,10 @@ impl PadSink for Tee<'_> {
         self.inner.emit(events)
     }
 
+    fn configure(&mut self, geometry: pad::PadGeometry) -> io::Result<bool> {
+        self.inner.configure(geometry)
+    }
+
     fn describe(&mut self) -> String {
         self.inner.describe()
     }
@@ -132,11 +136,31 @@ fn handle_client(
         match accepted {
             Accepted::Hello(hello) => {
                 println!(
-                    "touch surface: {}x{}, up to {} contacts",
-                    hello.width, hello.height, hello.max_contacts
+                    "touch surface: {}x{} px over {}x{} mm, up to {} contacts",
+                    hello.width,
+                    hello.height,
+                    hello.width_um / 1000,
+                    hello.height_um / 1000,
+                    hello.max_contacts
                 );
+
+                // Release on the device that exists now, before it may be
+                // replaced: contacts left down by a previous session belong to
+                // the old device, not the new one.
                 let events = state.begin_session(&hello);
                 sink.emit(&events)?;
+
+                // Every phone has a different screen, so the virtual pad takes
+                // the size the client reports. libinput works in millimetres,
+                // so this is what makes pointer speed and gesture thresholds
+                // consistent across devices.
+                if sink.configure(hello.geometry())? {
+                    state.device_replaced();
+                    println!(
+                        "  resized the virtual touchpad to match: {}",
+                        sink.describe()
+                    );
+                }
             }
             Accepted::Frame(frame) => {
                 let events = state.apply(&frame);
@@ -182,7 +206,10 @@ fn run() -> io::Result<()> {
     let sink: &mut dyn PadSink = if options.dry_run {
         &mut debug
     } else {
-        device = UinputTouchpad::create().map_err(|error| {
+        // Created before any client connects, so the device is there for
+        // `libinput list-devices`. A client that reports a different screen size
+        // replaces it.
+        device = UinputTouchpad::create(pad::PadGeometry::DEFAULT).map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!(

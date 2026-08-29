@@ -7,7 +7,10 @@ class ProtocolTest {
 
     @Test
     fun `the handshake matches the wire format`() {
-        assertEquals("HELLO OTP/1 2400 1080 10", Protocol.hello(2400, 1080))
+        assertEquals(
+            "HELLO OTP/2 2400 1080 10 156000 69000",
+            Protocol.hello(2400, 1080, 156_000, 69_000),
+        )
     }
 
     @Test

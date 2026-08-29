@@ -60,7 +60,7 @@ against a shared literal rather than against each other's assumptions.
 
 | File | Responsibility |
 | --- | --- |
-| `Protocol.kt` | The OTP/1 wire format, and nothing else. |
+| `Protocol.kt` | The OTP/2 wire format, and nothing else. |
 | `TouchSurfaceView.kt` | Turning `MotionEvent` into complete contact snapshots. |
 | `FrameQueue.kt` | What to discard when frames outpace the socket. |
 | `HostConnection.kt` | The socket, the sender thread, reconnection. |

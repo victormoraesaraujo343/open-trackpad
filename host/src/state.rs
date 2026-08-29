@@ -55,6 +55,8 @@ pub struct ContactState {
     fingers: u8,
     touching: bool,
     surface: Surface,
+    /// How big the virtual pad currently is, in device units.
+    geometry: PadGeometry,
     dropped_contacts: u64,
 }
 
@@ -74,6 +76,7 @@ impl ContactState {
             fingers: 0,
             touching: false,
             surface: Surface::default(),
+            geometry: PadGeometry::DEFAULT,
             dropped_contacts: 0,
         }
     }
@@ -96,7 +99,21 @@ impl ContactState {
             width: hello.width,
             height: hello.height,
         };
+        self.geometry = hello.geometry();
         events
+    }
+
+    /// Forgets everything known about the device, without emitting anything.
+    ///
+    /// Called after the virtual device is recreated: the replacement starts with
+    /// every slot free and no axis set, so cached state about the old one would
+    /// suppress events the new one has never seen.
+    pub fn device_replaced(&mut self) {
+        self.slots = [None; MAX_SLOTS];
+        self.selected_slot = None;
+        self.emulated = None;
+        self.fingers = 0;
+        self.touching = false;
     }
 
     /// Releases every active contact. Safe to call when nothing is down, in
@@ -271,10 +288,10 @@ impl ContactState {
 
     fn scale(&self, x: u32, y: u32, major: u16) -> Scaled {
         Scaled {
-            x: scale_axis(x, self.surface.width, PAD_MAX_X),
-            y: scale_axis(y, self.surface.height, PAD_MAX_Y),
+            x: scale_axis(x, self.surface.width, self.geometry.max_x),
+            y: scale_axis(y, self.surface.height, self.geometry.max_y),
             // Contact size is a width, so it scales with the horizontal axis.
-            major: scale_axis(u32::from(major), self.surface.width, PAD_MAX_X),
+            major: scale_axis(u32::from(major), self.surface.width, self.geometry.max_x),
         }
     }
 }
@@ -303,11 +320,18 @@ mod tests {
     use super::*;
     use crate::protocol::Contact;
 
+    const PAD: PadGeometry = PadGeometry {
+        max_x: 156 * PAD_RESOLUTION,
+        max_y: 69 * PAD_RESOLUTION,
+    };
+
     fn surface() -> Hello {
         Hello {
             width: 2400,
             height: 1080,
             max_contacts: 10,
+            width_um: 156_000,
+            height_um: 69_000,
         }
     }
 
@@ -478,8 +502,8 @@ mod tests {
 
         let mut state = started();
         let events = state.apply(&frame(1, &[(0, 2399, 1079)]));
-        assert!(events.contains(&PadEvent::MtPositionX(PAD_MAX_X)));
-        assert!(events.contains(&PadEvent::MtPositionY(PAD_MAX_Y)));
+        assert!(events.contains(&PadEvent::MtPositionX(PAD.max_x)));
+        assert!(events.contains(&PadEvent::MtPositionY(PAD.max_y)));
     }
 
     #[test]
@@ -489,6 +513,8 @@ mod tests {
             width: 1,
             height: 1,
             max_contacts: 1,
+            width_um: 156_000,
+            height_um: 69_000,
         });
         let events = state.apply(&frame(1, &[(0, 0, 0)]));
         assert!(events.contains(&PadEvent::MtPositionX(0)));

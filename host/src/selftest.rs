@@ -16,6 +16,10 @@ const SURFACE: Hello = Hello {
     width: 2400,
     height: 1080,
     max_contacts: 10,
+    // A 6.7-inch phone in landscape, so the self-test exercises a realistic
+    // pad size rather than the fallback.
+    width_um: 156_000,
+    height_um: 69_000,
 };
 
 /// Time the desktop gets to notice the new device before contacts start.

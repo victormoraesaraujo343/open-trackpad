@@ -1,9 +1,16 @@
-//! OTP/1 wire protocol: line parsing plus per-connection validation.
+//! OTP/2 wire protocol: line parsing plus per-connection validation.
 //!
 //! See `docs/PROTOCOL.md`. Parsing is deliberately free of I/O so the whole
 //! surface is unit-testable.
 
 use std::fmt;
+
+/// The protocol version this host speaks.
+///
+/// Version 2 added the physical size of the touch surface to the handshake.
+/// Without it the host had to assume a size, which was wrong on every phone
+/// but the one it was guessed for.
+pub const VERSION: &str = "OTP/2";
 
 /// Hard ceiling on contacts in any message, independent of what a client
 /// declares. Bounds the allocation a single line can trigger.
@@ -17,6 +24,19 @@ pub struct Hello {
     pub width: u32,
     pub height: u32,
     pub max_contacts: u8,
+    /// Physical size of the touch surface, in micrometres, in the same
+    /// orientation as `width` and `height`.
+    ///
+    /// Sent by the client because only it knows how big its screen is, and
+    /// every phone is different. The host cannot guess this.
+    pub width_um: u32,
+    pub height_um: u32,
+}
+
+impl Hello {
+    pub fn geometry(&self) -> crate::pad::PadGeometry {
+        crate::pad::PadGeometry::from_micrometres(self.width_um, self.height_um)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,17 +93,24 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
     let mut parts = line.split_whitespace();
     match parts.next() {
         Some("HELLO") => {
-            if parts.next() != Some("OTP/1") {
-                return Err(ProtocolError("unsupported protocol version".into()));
+            if parts.next() != Some(VERSION) {
+                return Err(ProtocolError(format!(
+                    "unsupported protocol version, expected {VERSION}"
+                )));
             }
             let hello = Hello {
                 width: parse_number(parts.next(), "width")?,
                 height: parse_number(parts.next(), "height")?,
                 max_contacts: parse_number(parts.next(), "max_contacts")?,
+                width_um: parse_number(parts.next(), "width_um")?,
+                height_um: parse_number(parts.next(), "height_um")?,
             };
             ensure_finished(&mut parts)?;
             if hello.width == 0 || hello.height == 0 {
                 return Err(ProtocolError("touch dimensions must be positive".into()));
+            }
+            if hello.width_um == 0 || hello.height_um == 0 {
+                return Err(ProtocolError("physical dimensions must be positive".into()));
             }
             if hello.max_contacts == 0 || hello.max_contacts > MAX_CONTACTS {
                 return Err(ProtocolError(format!(
@@ -204,11 +231,13 @@ mod tests {
     #[test]
     fn parses_hello() {
         assert_eq!(
-            parse_message("HELLO OTP/1 1080 2400 10"),
+            parse_message("HELLO OTP/2 1080 2400 10 69000 156000"),
             Ok(Message::Hello(Hello {
                 width: 1080,
                 height: 2400,
                 max_contacts: 10,
+                width_um: 69_000,
+                height_um: 156_000,
             }))
         );
     }
@@ -249,21 +278,45 @@ mod tests {
 
     #[test]
     fn rejects_trailing_fields() {
-        let error =
-            parse_message("HELLO OTP/1 1080 2400 10 extra").expect_err("trailing input must fail");
+        let error = parse_message("HELLO OTP/2 1080 2400 10 69000 156000 extra")
+            .expect_err("trailing input must fail");
         assert_eq!(error, ProtocolError("unexpected trailing fields".into()));
     }
 
     #[test]
+    fn rejects_zero_physical_dimensions() {
+        // A client that cannot measure its own screen must say so by failing,
+        // not by sending zero and letting the host invent a size.
+        assert!(parse_message("HELLO OTP/2 1080 2400 10 0 156000").is_err());
+        assert!(parse_message("HELLO OTP/2 1080 2400 10 69000 0").is_err());
+    }
+
+    #[test]
+    fn rejects_the_older_protocol_version() {
+        // Version 1 had no physical size, so accepting it would mean guessing.
+        assert!(parse_message("HELLO OTP/1 1080 2400 10").is_err());
+    }
+
+    #[test]
+    fn a_handshake_yields_the_pad_geometry() {
+        let Ok(Message::Hello(hello)) = parse_message("HELLO OTP/2 2412 1080 10 156000 69000")
+        else {
+            panic!("expected a handshake");
+        };
+        assert_eq!(hello.geometry().width_mm(), 156);
+        assert_eq!(hello.geometry().height_mm(), 69);
+    }
+
+    #[test]
     fn rejects_zero_dimensions() {
-        assert!(parse_message("HELLO OTP/1 0 2400 10").is_err());
-        assert!(parse_message("HELLO OTP/1 1080 0 10").is_err());
+        assert!(parse_message("HELLO OTP/2 0 2400 10 69000 156000").is_err());
+        assert!(parse_message("HELLO OTP/2 1080 0 10 69000 156000").is_err());
     }
 
     #[test]
     fn rejects_out_of_range_max_contacts() {
-        assert!(parse_message("HELLO OTP/1 1080 2400 0").is_err());
-        assert!(parse_message("HELLO OTP/1 1080 2400 33").is_err());
+        assert!(parse_message("HELLO OTP/2 1080 2400 0 69000 156000").is_err());
+        assert!(parse_message("HELLO OTP/2 1080 2400 33 69000 156000").is_err());
     }
 
     #[test]
@@ -291,14 +344,20 @@ mod tests {
     #[test]
     fn duplicate_hello_is_rejected() {
         let mut session = Session::new();
-        session.accept("HELLO OTP/1 2400 1080 10").unwrap();
-        assert!(session.accept("HELLO OTP/1 2400 1080 10").is_err());
+        session
+            .accept("HELLO OTP/2 2400 1080 10 156000 69000")
+            .unwrap();
+        assert!(session
+            .accept("HELLO OTP/2 2400 1080 10 156000 69000")
+            .is_err());
     }
 
     #[test]
     fn sequence_must_increase() {
         let mut session = Session::new();
-        session.accept("HELLO OTP/1 2400 1080 10").unwrap();
+        session
+            .accept("HELLO OTP/2 2400 1080 10 156000 69000")
+            .unwrap();
         session.accept("FRAME 5 1000 0").unwrap();
         assert!(session.accept("FRAME 5 1001 0").is_err());
         assert!(session.accept("FRAME 4 1002 0").is_err());
@@ -307,7 +366,9 @@ mod tests {
     #[test]
     fn sequence_gaps_are_allowed() {
         let mut session = Session::new();
-        session.accept("HELLO OTP/1 2400 1080 10").unwrap();
+        session
+            .accept("HELLO OTP/2 2400 1080 10 156000 69000")
+            .unwrap();
         session.accept("FRAME 5 1000 0").unwrap();
         // Frames are complete snapshots, so a gap needs no recovery.
         assert!(session.accept("FRAME 900 1001 0").is_ok());
@@ -316,7 +377,9 @@ mod tests {
     #[test]
     fn contacts_outside_the_declared_surface_are_rejected() {
         let mut session = Session::new();
-        session.accept("HELLO OTP/1 2400 1080 10").unwrap();
+        session
+            .accept("HELLO OTP/2 2400 1080 10 156000 69000")
+            .unwrap();
         assert!(session.accept("FRAME 1 1000 1 0 2400 500 500 5").is_err());
         assert!(session.accept("FRAME 2 1000 1 0 500 1080 500 5").is_err());
     }
@@ -324,7 +387,9 @@ mod tests {
     #[test]
     fn frames_may_not_exceed_the_declared_contact_limit() {
         let mut session = Session::new();
-        session.accept("HELLO OTP/1 2400 1080 2").unwrap();
+        session
+            .accept("HELLO OTP/2 2400 1080 2 156000 69000")
+            .unwrap();
         assert!(session
             .accept("FRAME 1 1000 3 0 1 1 1 1 1 2 2 1 1 2 3 3 1 1")
             .is_err());
