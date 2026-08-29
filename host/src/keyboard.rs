@@ -19,6 +19,7 @@ use evdev::{
 };
 
 use crate::keys::{all_keys, Chord};
+use crate::timing::TokenBucket;
 
 pub const DEVICE_NAME: &str = "OpenTrackpad Keyboard";
 
@@ -201,11 +202,10 @@ impl Controls {
 /// desktop with keystrokes.
 ///
 /// A token bucket rather than a minimum gap, so a short flurry of deliberate
-/// presses goes through while a sustained flood does not.
-pub struct ActionRate {
-    tokens: f64,
-    last: Instant,
-}
+/// presses goes through while a sustained flood does not. The panel's requests
+/// are limited the same way and with different numbers; the shape they share
+/// lives in `crate::timing`.
+pub struct ActionRate(TokenBucket);
 
 impl ActionRate {
     /// How many may arrive back to back before the rate starts to bite.
@@ -215,22 +215,12 @@ impl ActionRate {
     const PER_SECOND: f64 = 50.0;
 
     pub fn new(now: Instant) -> Self {
-        Self {
-            tokens: Self::BURST,
-            last: now,
-        }
+        Self(TokenBucket::new(now, Self::BURST, Self::PER_SECOND))
     }
 
     /// Whether an action arriving at `now` may proceed.
     pub fn allow(&mut self, now: Instant) -> bool {
-        let elapsed = now.saturating_duration_since(self.last).as_secs_f64();
-        self.last = now;
-        self.tokens = (self.tokens + elapsed * Self::PER_SECOND).min(Self::BURST);
-        if self.tokens < 1.0 {
-            return false;
-        }
-        self.tokens -= 1.0;
-        true
+        self.0.allow(now)
     }
 }
 

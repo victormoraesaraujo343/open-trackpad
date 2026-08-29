@@ -20,6 +20,9 @@ const SURFACE: Hello = Hello {
     // pad size rather than the fallback.
     width_um: 156_000,
     height_um: 69_000,
+    // The self-test drives the touchpad and nothing else, so it asks to be
+    // told about nothing.
+    capabilities: crate::protocol::Capabilities::NONE,
 };
 
 /// Time the desktop gets to notice the new device before contacts start.

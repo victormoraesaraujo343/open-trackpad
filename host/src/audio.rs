@@ -105,22 +105,15 @@ impl Snapshot {
         Self { entities }
     }
 
+    /// Looks one entity up.
+    ///
+    /// Both halves are needed: outputs, inputs and streams are numbered
+    /// independently by the sound daemon, so the same number is three different
+    /// things and an id on its own would find whichever came first.
     pub fn find(&self, kind: Kind, id: u32) -> Option<&Entity> {
         self.entities
             .iter()
             .find(|entity| entity.kind == kind && entity.id == id)
-    }
-
-    /// Looks an id up without being told its kind.
-    ///
-    /// Requests carry an id alone, because the client got that id from this
-    /// host and there is exactly one entity behind it.
-    pub fn find_any(&self, id: u32) -> Option<&Entity> {
-        self.entities.iter().find(|entity| entity.id == id)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entities.is_empty()
     }
 }
 
@@ -179,8 +172,8 @@ pub fn diff(previous: &Snapshot, next: &Snapshot) -> Vec<Change> {
 /// distorts, and a peripheral operated without looking is the wrong place to
 /// offer it — see the note in `docs/PROTOCOL.md`.
 pub fn volume_to_wire(raw: u32) -> u16 {
-    let scaled = (u64::from(raw) * u64::from(MAX_VOLUME) + u64::from(RAW_FULL) / 2)
-        / u64::from(RAW_FULL);
+    let scaled =
+        (u64::from(raw) * u64::from(MAX_VOLUME) + u64::from(RAW_FULL) / 2) / u64::from(RAW_FULL);
     scaled.min(u64::from(MAX_VOLUME)) as u16
 }
 
@@ -270,7 +263,10 @@ fn read_devices(
         let Some(id) = entry.get("index").and_then(Value::as_u32) else {
             continue;
         };
-        let name = entry.get("name").and_then(Value::as_str).unwrap_or_default();
+        let name = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         if excluded_names.iter().any(|excluded| excluded == name) {
             continue;
         }
@@ -402,9 +398,10 @@ mod tests {
 
     #[test]
     fn a_stream_without_an_application_name_falls_back_rather_than_showing_nothing() {
-        let streams =
-            read_streams(r#"[{"index":1,"sink":2,"properties":{"application.process.binary":"mpv"}}]"#)
-                .unwrap();
+        let streams = read_streams(
+            r#"[{"index":1,"sink":2,"properties":{"application.process.binary":"mpv"}}]"#,
+        )
+        .unwrap();
         assert_eq!(streams[0].name, "mpv");
         let streams = read_streams(r#"[{"index":1,"sink":2,"properties":{}}]"#).unwrap();
         assert_eq!(streams[0].name, "Unknown");
@@ -425,7 +422,7 @@ mod tests {
     #[test]
     fn a_document_that_is_not_a_list_is_an_error() {
         assert!(read_sinks("{}", "").is_err());
-        assert!(read_streams("not json at all", "").is_err());
+        assert!(read_streams("not json at all").is_err());
     }
 
     #[test]
@@ -507,8 +504,14 @@ mod tests {
     fn a_device_appearing_and_one_disappearing_are_both_reported() {
         // Unplugging a headset mid-session is the ordinary case, not the
         // exceptional one.
-        let before = Snapshot::new(vec![entity(Kind::Output, 1, 500), entity(Kind::Output, 2, 500)]);
-        let after = Snapshot::new(vec![entity(Kind::Output, 2, 500), entity(Kind::Output, 9, 300)]);
+        let before = Snapshot::new(vec![
+            entity(Kind::Output, 1, 500),
+            entity(Kind::Output, 2, 500),
+        ]);
+        let after = Snapshot::new(vec![
+            entity(Kind::Output, 2, 500),
+            entity(Kind::Output, 9, 300),
+        ]);
         assert_eq!(
             diff(&before, &after),
             vec![
@@ -523,7 +526,10 @@ mod tests {
         // Sinks, sources and streams are numbered independently, so an output
         // and a stream can both be number three.
         let before = Snapshot::new(vec![entity(Kind::Output, 3, 100)]);
-        let after = Snapshot::new(vec![entity(Kind::Output, 3, 100), entity(Kind::Stream, 3, 900)]);
+        let after = Snapshot::new(vec![
+            entity(Kind::Output, 3, 100),
+            entity(Kind::Stream, 3, 900),
+        ]);
         assert_eq!(
             diff(&before, &after),
             vec![Change::Upserted(entity(Kind::Stream, 3, 900))]
@@ -533,7 +539,10 @@ mod tests {
     #[test]
     fn everything_disappearing_is_reported_rather_than_looking_unchanged() {
         // What losing the audio daemon looks like from here.
-        let before = Snapshot::new(vec![entity(Kind::Output, 1, 500), entity(Kind::Input, 2, 500)]);
+        let before = Snapshot::new(vec![
+            entity(Kind::Output, 1, 500),
+            entity(Kind::Input, 2, 500),
+        ]);
         let after = Snapshot::default();
         assert_eq!(diff(&before, &after).len(), 2);
         assert!(diff(&before, &after)
@@ -566,12 +575,24 @@ mod tests {
     }
 
     #[test]
-    fn an_id_can_be_found_with_or_without_its_kind() {
-        let snapshot = Snapshot::new(vec![entity(Kind::Output, 3, 100), entity(Kind::Stream, 7, 900)]);
-        assert!(snapshot.find(Kind::Output, 3).is_some());
+    fn an_id_is_only_found_together_with_its_kind() {
+        // Sinks and sources share a numbering on PulseAudio, so a lookup by id
+        // alone would answer with whichever happened to be listed first.
+        let snapshot = Snapshot::new(vec![
+            entity(Kind::Output, 3, 100),
+            entity(Kind::Input, 3, 200),
+            entity(Kind::Stream, 7, 900),
+        ]);
+        assert_eq!(
+            snapshot.find(Kind::Output, 3).map(|found| found.volume),
+            Some(100)
+        );
+        assert_eq!(
+            snapshot.find(Kind::Input, 3).map(|found| found.volume),
+            Some(200)
+        );
         assert!(snapshot.find(Kind::Stream, 3).is_none());
-        assert_eq!(snapshot.find_any(7).map(|found| found.kind), Some(Kind::Stream));
-        assert!(snapshot.find_any(99).is_none());
+        assert!(snapshot.find(Kind::Output, 99).is_none());
     }
 
     #[test]

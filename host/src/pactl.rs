@@ -226,7 +226,10 @@ mod tests {
 
     #[test]
     fn each_event_names_the_list_it_affects() {
-        assert_eq!(facility_of("Event 'change' on sink #53"), Some(Facility::Sinks));
+        assert_eq!(
+            facility_of("Event 'change' on sink #53"),
+            Some(Facility::Sinks)
+        );
         assert_eq!(
             facility_of("Event 'remove' on source #57"),
             Some(Facility::Sources)

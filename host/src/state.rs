@@ -332,6 +332,7 @@ mod tests {
             max_contacts: 10,
             width_um: 156_000,
             height_um: 69_000,
+            capabilities: crate::protocol::Capabilities::NONE,
         }
     }
 
@@ -515,6 +516,7 @@ mod tests {
             max_contacts: 1,
             width_um: 156_000,
             height_um: 69_000,
+            capabilities: crate::protocol::Capabilities::NONE,
         });
         let events = state.apply(&frame(1, &[(0, 0, 0)]));
         assert!(events.contains(&PadEvent::MtPositionX(0)));

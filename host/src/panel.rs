@@ -178,14 +178,14 @@ impl AudioPanel {
     ///
     /// A machine with no sound daemon gets no panel rather than a broken one:
     /// the capability is never granted, so the client never draws it.
-    pub fn start(out: Sender) -> Result<Self, Absence> {
+    pub fn start(out: Sender, dry_run: bool) -> Result<Self, Absence> {
         pactl::probe()?;
 
         let (inbox, wakes) = mpsc::sync_channel(INBOX_DEPTH);
         let notifier = inbox.clone();
         std::thread::Builder::new()
             .name("audio-panel".to_owned())
-            .spawn(move || Worker::new(out, notifier).run(&wakes))
+            .spawn(move || Worker::new(out, notifier, dry_run).run(&wakes))
             .map_err(|_| Absence::NoDaemon)?;
 
         Ok(Self {
@@ -234,9 +234,8 @@ struct Parts {
 
 impl Parts {
     fn assemble(&self) -> Snapshot {
-        let mut entities = Vec::with_capacity(
-            self.outputs.len() + self.inputs.len() + self.streams.len(),
-        );
+        let mut entities =
+            Vec::with_capacity(self.outputs.len() + self.inputs.len() + self.streams.len());
         entities.extend(self.outputs.iter().cloned());
         entities.extend(self.inputs.iter().cloned());
         entities.extend(self.streams.iter().cloned());
@@ -251,13 +250,21 @@ struct Worker {
     snapshot: Snapshot,
     parts: Parts,
     subscription: Option<Subscription>,
+    /// Prints what it would change instead of changing it, for `--dry-run`.
+    /// Reading is left alone: looking at the mixer changes nothing, and the
+    /// mode promises not to disturb the desktop, not to stay blind to it.
+    dry_run: bool,
+    /// Set when the next report must be the whole picture rather than a diff:
+    /// the client asked for a refresh, or a line was dropped because it had
+    /// stopped reading and its copy can no longer be trusted.
+    needs_snapshot: bool,
     /// False once the daemon has stopped answering. The panel empties rather
     /// than freezing on values that are no longer true.
     available: bool,
 }
 
 impl Worker {
-    fn new(out: Sender, notifier: SyncSender<Wake>) -> Self {
+    fn new(out: Sender, notifier: SyncSender<Wake>, dry_run: bool) -> Self {
         Self {
             out,
             notifier,
@@ -265,6 +272,8 @@ impl Worker {
             snapshot: Snapshot::default(),
             parts: Parts::default(),
             subscription: None,
+            dry_run,
+            needs_snapshot: false,
             available: false,
         }
     }
@@ -299,10 +308,7 @@ impl Worker {
             // Gather for a moment. A drag is dozens of these and they all mean
             // the same work.
             let deadline = Instant::now() + GATHER;
-            loop {
-                let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                    break;
-                };
+            while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
                 match wakes.recv_timeout(remaining) {
                     Ok(Wake::Stop) => return,
                     Ok(wake) => self.sort(wake, &mut requests, &mut dirty),
@@ -383,50 +389,43 @@ impl Worker {
 
     fn carry_out(&mut self, requests: Vec<Request>, dirty: &mut Vec<Facility>) {
         for request in requests {
-            if !self.available {
-                self.refuse(request.sequence, Refusal::Unavailable);
-                continue;
-            }
-            if matches!(request.verb, Verb::Refresh) {
-                note(dirty, Facility::Devices);
-                note(dirty, Facility::Streams);
-                self.generation += 1;
-                continue;
-            }
-
-            let (kind, id) = match request.verb {
-                Verb::Volume { kind, id, .. }
-                | Verb::Mute { kind, id, .. }
-                | Verb::MakeDefault { kind, id } => (kind, id),
-                Verb::Refresh => unreachable!("handled above"),
-            };
-            // The entity must be one this host published. A client can only
-            // name a number it was given, and only while that number still
-            // means something: unplugging a headset mid-gesture is the ordinary
-            // case, not the exceptional one.
-            if self.snapshot.find(kind, id).is_none() {
-                self.refuse(request.sequence, Refusal::UnknownId);
-                continue;
-            }
-
-            let outcome = match request.verb {
-                Verb::Volume { kind, id, level } => pactl::set_volume(kind, id, level),
-                Verb::Mute { kind, id, muted } => pactl::set_mute(kind, id, muted),
-                Verb::MakeDefault { kind, id } => {
-                    if !kind.has_default() {
-                        self.refuse(request.sequence, Refusal::WrongKind);
+            match decide(&self.snapshot, self.available, &request) {
+                Decision::Refuse(reason) => self.refuse(request.sequence, reason),
+                Decision::Rebuild => {
+                    note(dirty, Facility::Devices);
+                    note(dirty, Facility::Streams);
+                    // Not a diff. The client asked because it does not trust
+                    // what it has — it just opened the panel, or it lost track
+                    // — and a diff of "nothing changed" answers that with
+                    // silence.
+                    self.needs_snapshot = true;
+                }
+                Decision::Apply { kind, id } => {
+                    // `--dry-run` promises not to disturb the desktop, and
+                    // someone's volume is part of the desktop. Reading is left
+                    // alone: looking at the mixer changes nothing.
+                    if self.dry_run {
+                        println!("    would change {:?}", request.verb);
                         continue;
                     }
-                    pactl::set_default(kind, id)
+                    let outcome = match request.verb {
+                        Verb::Volume { level, .. } => pactl::set_volume(kind, id, level),
+                        Verb::Mute { muted, .. } => pactl::set_mute(kind, id, muted),
+                        Verb::MakeDefault { .. } => pactl::set_default(kind, id),
+                        Verb::Refresh => unreachable!("a refresh decides to rebuild"),
+                    };
+                    if outcome.is_err() {
+                        self.refuse(request.sequence, Refusal::BackendFailed);
+                    }
+                    // Re-read either way. A refusal from the daemon still means
+                    // this host's picture may be out of date.
+                    note(dirty, facility_for(kind));
+                    if matches!(request.verb, Verb::MakeDefault { .. }) {
+                        // Which device is the default lives outside the lists,
+                        // so both of them have to be looked at again.
+                        note(dirty, Facility::Devices);
+                    }
                 }
-                Verb::Refresh => unreachable!("handled above"),
-            };
-            if outcome.is_err() {
-                self.refuse(request.sequence, Refusal::BackendFailed);
-            }
-            note(dirty, facility_for(kind));
-            if matches!(request.verb, Verb::MakeDefault { .. }) {
-                note(dirty, Facility::Devices);
             }
         }
     }
@@ -473,6 +472,12 @@ impl Worker {
         }
 
         let next = self.parts.assemble();
+        if self.needs_snapshot {
+            self.needs_snapshot = false;
+            self.snapshot = next;
+            self.send_snapshot();
+            return;
+        }
         let changes = audio::diff(&self.snapshot, &next);
         self.snapshot = next;
         for change in changes {
@@ -489,7 +494,7 @@ impl Worker {
                     id,
                 },
             };
-            self.out.send(message);
+            self.report(message);
         }
     }
 
@@ -524,6 +529,59 @@ impl Worker {
     fn refuse(&self, sequence: u64, reason: Refusal) {
         self.out.send(Outbound::Refused { sequence, reason });
     }
+
+    /// Sends one line, and notices when the client is too far behind to take
+    /// it. A dropped change leaves the phone showing something that is no
+    /// longer true, so the next report is made a whole picture instead.
+    fn report(&mut self, message: Outbound) {
+        if !self.out.send(message) {
+            self.needs_snapshot = true;
+        }
+    }
+}
+
+/// What to do about one request, worked out without touching the daemon.
+///
+/// Split out from carrying it out so the part that matters most can be proven
+/// by `cargo test` rather than by a machine that happens to have sound. Every
+/// way a request can be turned down is decided here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Decision {
+    Refuse(Refusal),
+    /// Send the whole picture again.
+    Rebuild,
+    /// Carry it out against this entity.
+    Apply {
+        kind: audio::Kind,
+        id: u32,
+    },
+}
+
+fn decide(snapshot: &Snapshot, available: bool, request: &Request) -> Decision {
+    // Nothing is legal while there is nothing to act on. A phone whose panel is
+    // still on screen when the daemon dies gets told, rather than being left to
+    // wonder why its faders do nothing.
+    if !available {
+        return Decision::Refuse(Refusal::Unavailable);
+    }
+    let (kind, id) = match request.verb {
+        Verb::Refresh => return Decision::Rebuild,
+        Verb::Volume { kind, id, .. }
+        | Verb::Mute { kind, id, .. }
+        | Verb::MakeDefault { kind, id } => (kind, id),
+    };
+    // The entity has to be one this host published, and still be published. A
+    // client can only name a number it was given, and only while that number
+    // still means something — unplugging a headset mid-gesture is the ordinary
+    // case, not the exceptional one. This is also what keeps a request from
+    // reaching anything the host did not put in a snapshot first.
+    if snapshot.find(kind, id).is_none() {
+        return Decision::Refuse(Refusal::UnknownId);
+    }
+    if matches!(request.verb, Verb::MakeDefault { .. }) && !kind.has_default() {
+        return Decision::Refuse(Refusal::WrongKind);
+    }
+    Decision::Apply { kind, id }
 }
 
 fn facility_for(kind: audio::Kind) -> Facility {
@@ -568,18 +626,26 @@ fn supersedes(later: &Request, earlier: &Request) -> bool {
     match (later.verb, earlier.verb) {
         (
             Verb::Volume {
-                kind: left, id: left_id, ..
+                kind: left,
+                id: left_id,
+                ..
             },
             Verb::Volume {
-                kind: right, id: right_id, ..
+                kind: right,
+                id: right_id,
+                ..
             },
         ) => left == right && left_id == right_id,
         (
             Verb::Mute {
-                kind: left, id: left_id, ..
+                kind: left,
+                id: left_id,
+                ..
             },
             Verb::Mute {
-                kind: right, id: right_id, ..
+                kind: right,
+                id: right_id,
+                ..
             },
         ) => left == right && left_id == right_id,
         (Verb::Refresh, Verb::Refresh) => true,
@@ -608,6 +674,130 @@ mod tests {
         }
     }
 
+    fn published() -> Snapshot {
+        Snapshot::new(vec![
+            Entity {
+                kind: Kind::Output,
+                id: 53,
+                volume: 950,
+                muted: false,
+                default: true,
+                target: None,
+                name: "HDMI".to_owned(),
+            },
+            Entity {
+                kind: Kind::Stream,
+                id: 1348,
+                volume: 990,
+                muted: false,
+                default: false,
+                target: Some(53),
+                name: "Firefox".to_owned(),
+            },
+        ])
+    }
+
+    #[test]
+    fn a_request_naming_something_published_is_carried_out() {
+        assert_eq!(
+            decide(&published(), true, &volume(1, Kind::Output, 53, 400)),
+            Decision::Apply {
+                kind: Kind::Output,
+                id: 53
+            }
+        );
+    }
+
+    #[test]
+    fn a_device_unplugged_mid_gesture_is_refused_rather_than_acted_on() {
+        // The ordinary case: a finger is on the fader as the headset comes out.
+        // The phone needs to hear about it so the fader can go back.
+        let snapshot = published();
+        assert_eq!(
+            decide(&snapshot, true, &volume(1, Kind::Output, 99, 400)),
+            Decision::Refuse(Refusal::UnknownId)
+        );
+        assert_eq!(
+            decide(&snapshot, true, &mute(2, Kind::Stream, 99, true)),
+            Decision::Refuse(Refusal::UnknownId)
+        );
+    }
+
+    #[test]
+    fn nothing_outside_the_published_picture_can_be_reached() {
+        // The security property, stated as a test: a request cannot touch an id
+        // this host never handed out, even one the sound daemon would accept.
+        // Sink 53 is published; source 53 and stream 53 are not, and neither is
+        // any id the client invents.
+        let snapshot = published();
+        for reached in [
+            volume(1, Kind::Input, 53, 400),
+            volume(2, Kind::Stream, 53, 400),
+            volume(3, Kind::Output, 0, 400),
+            volume(4, Kind::Output, u32::MAX, 400),
+        ] {
+            assert_eq!(
+                decide(&snapshot, true, &reached),
+                Decision::Refuse(Refusal::UnknownId),
+                "{reached:?} reached past the snapshot"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stream_cannot_be_made_the_default_even_when_it_exists() {
+        let request = Request {
+            sequence: 1,
+            domain: Domain::Audio,
+            verb: Verb::MakeDefault {
+                kind: Kind::Stream,
+                id: 1348,
+            },
+        };
+        assert_eq!(
+            decide(&published(), true, &request),
+            Decision::Refuse(Refusal::WrongKind)
+        );
+    }
+
+    #[test]
+    fn everything_is_refused_once_the_sound_daemon_has_gone() {
+        // A phone with the panel still on screen is told, rather than being
+        // left to wonder why its faders do nothing.
+        let snapshot = published();
+        for request in [
+            volume(1, Kind::Output, 53, 400),
+            mute(2, Kind::Output, 53, true),
+            Request {
+                sequence: 3,
+                domain: Domain::Audio,
+                verb: Verb::Refresh,
+            },
+        ] {
+            assert_eq!(
+                decide(&snapshot, false, &request),
+                Decision::Refuse(Refusal::Unavailable)
+            );
+        }
+    }
+
+    #[test]
+    fn a_refresh_rebuilds_rather_than_reporting_a_difference() {
+        // Asked for because the client does not trust what it has. A diff of
+        // "nothing changed" would answer that with silence.
+        let request = Request {
+            sequence: 1,
+            domain: Domain::Audio,
+            verb: Verb::Refresh,
+        };
+        assert_eq!(decide(&published(), true, &request), Decision::Rebuild);
+        // And it needs no entity, so an empty picture still rebuilds.
+        assert_eq!(
+            decide(&Snapshot::default(), true, &request),
+            Decision::Rebuild
+        );
+    }
+
     #[test]
     fn a_drag_across_the_screen_costs_one_change_not_forty() {
         let drag: Vec<_> = (0..40)
@@ -615,7 +805,14 @@ mod tests {
             .collect();
         let kept = coalesce(drag);
         assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].verb, Verb::Volume { kind: Kind::Output, id: 53, level: 975 });
+        assert_eq!(
+            kept[0].verb,
+            Verb::Volume {
+                kind: Kind::Output,
+                id: 53,
+                level: 975
+            }
+        );
     }
 
     #[test]
@@ -629,8 +826,22 @@ mod tests {
         assert_eq!(kept.len(), 2);
         // Sinks, sources and streams are numbered independently, so the same
         // number is two different things and neither may swallow the other.
-        assert_eq!(kept[0].verb, Verb::Volume { kind: Kind::Output, id: 53, level: 300 });
-        assert_eq!(kept[1].verb, Verb::Volume { kind: Kind::Stream, id: 53, level: 400 });
+        assert_eq!(
+            kept[0].verb,
+            Verb::Volume {
+                kind: Kind::Output,
+                id: 53,
+                level: 300
+            }
+        );
+        assert_eq!(
+            kept[1].verb,
+            Verb::Volume {
+                kind: Kind::Stream,
+                id: 53,
+                level: 400
+            }
+        );
     }
 
     #[test]
@@ -676,7 +887,9 @@ mod tests {
             volume(3, Kind::Stream, 3, 300),
         ]);
         assert_eq!(
-            kept.iter().map(|request| request.sequence).collect::<Vec<_>>(),
+            kept.iter()
+                .map(|request| request.sequence)
+                .collect::<Vec<_>>(),
             vec![1, 2, 3]
         );
     }

@@ -86,3 +86,78 @@ impl Default for TimingTrace {
         Self::new()
     }
 }
+
+/// A ceiling on how often something may happen, with room for a burst.
+///
+/// A token bucket rather than a minimum gap, so a short flurry of deliberate
+/// input goes through while a sustained flood does not. Shortcuts and panel
+/// requests both need this and need it set differently — a button is tapped, a
+/// fader is dragged — so the shape is here and the numbers live with the thing
+/// being limited.
+pub struct TokenBucket {
+    tokens: f64,
+    last: Instant,
+    burst: f64,
+    per_second: f64,
+}
+
+impl TokenBucket {
+    pub fn new(now: Instant, burst: f64, per_second: f64) -> Self {
+        Self {
+            tokens: burst,
+            last: now,
+            burst,
+            per_second,
+        }
+    }
+
+    /// Whether something arriving at `now` may proceed.
+    pub fn allow(&mut self, now: Instant) -> bool {
+        let elapsed = now.saturating_duration_since(self.last).as_secs_f64();
+        self.last = now;
+        self.tokens = (self.tokens + elapsed * self.per_second).min(self.burst);
+        if self.tokens < 1.0 {
+            return false;
+        }
+        self.tokens -= 1.0;
+        true
+    }
+}
+
+#[cfg(test)]
+mod bucket_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn a_burst_goes_through_and_the_flood_after_it_does_not() {
+        let start = Instant::now();
+        let mut bucket = TokenBucket::new(start, 5.0, 10.0);
+        for allowed in 0..5 {
+            assert!(bucket.allow(start), "{allowed} was refused");
+        }
+        assert!(!bucket.allow(start));
+    }
+
+    #[test]
+    fn the_allowance_comes_back_over_time() {
+        let start = Instant::now();
+        let mut bucket = TokenBucket::new(start, 5.0, 10.0);
+        for _ in 0..5 {
+            bucket.allow(start);
+        }
+        assert!(!bucket.allow(start));
+        assert!(bucket.allow(start + Duration::from_millis(200)));
+    }
+
+    #[test]
+    fn a_long_quiet_spell_does_not_bank_an_unlimited_allowance() {
+        let start = Instant::now();
+        let mut bucket = TokenBucket::new(start, 5.0, 10.0);
+        let later = start + Duration::from_secs(3600);
+        for allowed in 0..5 {
+            assert!(bucket.allow(later), "{allowed} was refused");
+        }
+        assert!(!bucket.allow(later));
+    }
+}

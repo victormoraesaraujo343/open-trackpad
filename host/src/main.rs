@@ -8,7 +8,9 @@ mod audio;
 mod json;
 mod keyboard;
 mod keys;
+mod pactl;
 mod pad;
+mod panel;
 mod protocol;
 mod selftest;
 mod sink;
@@ -17,11 +19,12 @@ mod status;
 mod timing;
 mod uinput;
 
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Read};
 use std::net::{TcpListener, TcpStream};
 
 use keyboard::{ActionRate, Controls};
-use protocol::{Accepted, Action, Session};
+use panel::{AudioPanel, Outbox};
+use protocol::{Accepted, Action, Capabilities, Domain, Outbound, Session};
 use sink::{DebugSink, LazyTouchpad, PadSink};
 use state::ContactState;
 use status::{State, StatusFile};
@@ -135,18 +138,43 @@ fn handle_client(
     sink: &mut dyn PadSink,
     controls: &mut Controls,
     trace_timing: bool,
+    dry_run: bool,
     status: &StatusFile,
 ) -> io::Result<()> {
     let peer = stream.peer_addr()?;
     println!("client connected: {peer}");
+
+    // A second handle on the same socket, for the answers. Taken before the
+    // reader takes ownership of the first.
+    let outbox = Outbox::new(stream.try_clone()?)?;
+    let out = outbox.sender();
+
     let mut session = Session::new();
     let mut timing = TimingTrace::new();
     let mut action_rate = ActionRate::new(std::time::Instant::now());
     let mut millimetres_per_pixel = 0.0;
+    let mut panel: Option<AudioPanel> = None;
 
-    for line in BufReader::new(stream).lines() {
-        let line = line?;
-        let accepted = session.accept(&line).map_err(|error| {
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        // Bounded, unlike a plain `lines()`. A client that never sends a
+        // newline would otherwise be one unbounded allocation, which is the
+        // standing trap in any line-framed protocol.
+        let read = (&mut reader)
+            .take(protocol::MAX_LINE_BYTES as u64 + 1)
+            .read_line(&mut line)?;
+        if read == 0 {
+            break;
+        }
+        if !line.ends_with('\n') && read > protocol::MAX_LINE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "protocol error: line is too long",
+            ));
+        }
+        let accepted = session.accept(line.trim_end()).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("protocol error: {error}"),
@@ -189,6 +217,43 @@ fn handle_client(
                     println!("  {description}");
                 }
 
+                // What the client asked to be told about, kept to what this
+                // machine can actually answer. A host with no sound daemon
+                // grants no audio, so the phone never draws a panel rather than
+                // drawing a broken one.
+                let servable = Capabilities {
+                    audio: pactl::probe().is_ok(),
+                };
+                let granted = hello.capabilities.intersect(servable);
+                session.grant(granted);
+                // Before the panel starts, so the handshake answer is the first
+                // line the client reads.
+                out.send(Outbound::Welcome(granted));
+                if !hello.capabilities.is_empty() {
+                    println!(
+                        "  audio panel: {}",
+                        if granted.audio {
+                            "serving"
+                        } else {
+                            "no sound daemon answered; not offered"
+                        }
+                    );
+                }
+                if granted.audio {
+                    // Probed a second time, from inside. The first answer was
+                    // for the handshake and this one is for the panel; a daemon
+                    // that went away in between is reported rather than assumed.
+                    match AudioPanel::start(out.clone(), dry_run) {
+                        Ok(started) => panel = Some(started),
+                        Err(reason) => {
+                            out.send(Outbound::Unavailable {
+                                domain: Domain::Audio,
+                                reason,
+                            });
+                        }
+                    }
+                }
+
                 if sink.configure(hello.geometry())? {
                     state.device_replaced();
                     println!("  {}", sink.describe());
@@ -206,6 +271,23 @@ fn handle_client(
                     eprintln!("dropped a shortcut: they are arriving too fast to be real");
                 } else if let Err(error) = controls.press_chord(&chord) {
                     eprintln!("could not send shortcut: {error}");
+                }
+            }
+            Accepted::Request(request) => {
+                // Handed over rather than carried out here. Talking to the
+                // sound daemon costs milliseconds, and this is the thread
+                // carrying touch.
+                let refusal = match panel.as_mut() {
+                    Some(panel) => panel.request(request, std::time::Instant::now()),
+                    // Granted at the handshake and gone since; the session
+                    // survives it, the panel does not.
+                    None => Some(protocol::Refusal::Unavailable),
+                };
+                if let Some(reason) = refusal {
+                    out.send(Outbound::Refused {
+                        sequence: request.sequence,
+                        reason,
+                    });
                 }
             }
             Accepted::Frame(frame) => {
@@ -332,6 +414,7 @@ fn run() -> io::Result<()> {
                     sink,
                     &mut controls,
                     options.trace_timing,
+                    options.dry_run,
                     &status,
                 ) {
                     eprintln!("client failed: {error}");

@@ -234,13 +234,27 @@ pub struct Request {
     pub verb: Verb,
 }
 
+/// Every verb names *what kind of thing* as well as which one.
+///
+/// Not redundancy: outputs, inputs and streams are numbered independently by
+/// the sound daemon, so sink 53 and source 53 exist at the same time and are
+/// different devices. An id alone would be ambiguous, and the way that failure
+/// shows up is a fader moving the wrong device's volume.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verb {
     /// Set one entity's level, nought to `audio::MAX_VOLUME`.
-    Volume { id: u32, level: u16 },
-    Mute { id: u32, muted: bool },
+    Volume {
+        kind: audio::Kind,
+        id: u32,
+        level: u16,
+    },
+    Mute {
+        kind: audio::Kind,
+        id: u32,
+        muted: bool,
+    },
     /// Make this device the one new sound goes to.
-    MakeDefault { id: u32 },
+    MakeDefault { kind: audio::Kind, id: u32 },
     /// Send the whole picture again. What the client asks for when it opens the
     /// panel, and its way out of any disagreement about state.
     Refresh,
@@ -459,6 +473,18 @@ fn parse_flag(value: Option<&str>, field: &str) -> Result<bool, ProtocolError> {
     }
 }
 
+/// Reads the `<kind> <id>` pair every request but `REFRESH` begins with.
+fn parse_entity(
+    parts: &mut std::str::SplitWhitespace<'_>,
+) -> Result<(audio::Kind, u32), ProtocolError> {
+    let kind = parts
+        .next()
+        .ok_or_else(|| ProtocolError("missing entity kind".into()))?;
+    let kind = audio::Kind::parse(kind)
+        .ok_or_else(|| ProtocolError(format!("unknown entity kind: {kind}")))?;
+    Ok((kind, parse_number(parts.next(), "entity id")?))
+}
+
 fn ensure_finished(parts: &mut std::str::SplitWhitespace<'_>) -> Result<(), ProtocolError> {
     if parts.next().is_some() {
         return Err(ProtocolError("unexpected trailing fields".into()));
@@ -572,7 +598,7 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                 .ok_or_else(|| ProtocolError(format!("unknown request domain: {domain}")))?;
             let verb = match parts.next() {
                 Some("VOLUME") => {
-                    let id = parse_number(parts.next(), "entity id")?;
+                    let (kind, id) = parse_entity(&mut parts)?;
                     let level: u16 = parse_number(parts.next(), "level")?;
                     // Out of range is refused outright rather than clamped, the
                     // same way an unknown key name is refused rather than
@@ -584,19 +610,32 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                             audio::MAX_VOLUME
                         )));
                     }
-                    Verb::Volume { id, level }
+                    Verb::Volume { kind, id, level }
                 }
-                Some("MUTE") => Verb::Mute {
-                    id: parse_number(parts.next(), "entity id")?,
-                    muted: parse_flag(parts.next(), "mute")?,
-                },
-                Some("DEFAULT") => Verb::MakeDefault {
-                    id: parse_number(parts.next(), "entity id")?,
-                },
+                Some("MUTE") => {
+                    let (kind, id) = parse_entity(&mut parts)?;
+                    Verb::Mute {
+                        kind,
+                        id,
+                        muted: parse_flag(parts.next(), "mute")?,
+                    }
+                }
+                Some("DEFAULT") => {
+                    let (kind, id) = parse_entity(&mut parts)?;
+                    // Refused here rather than left for the panel to discover:
+                    // there is no default stream to be, and a request that
+                    // cannot mean anything is malformed rather than merely
+                    // unlucky.
+                    if !kind.has_default() {
+                        return Err(ProtocolError(format!(
+                            "a {} cannot be made the default",
+                            kind.as_str()
+                        )));
+                    }
+                    Verb::MakeDefault { kind, id }
+                }
                 Some("REFRESH") => Verb::Refresh,
-                Some(other) => {
-                    return Err(ProtocolError(format!("unknown request kind: {other}")))
-                }
+                Some(other) => return Err(ProtocolError(format!("unknown request kind: {other}"))),
                 None => return Err(ProtocolError("missing request kind".into())),
             };
             ensure_finished(&mut parts)?;
@@ -641,10 +680,6 @@ impl Session {
     /// the gap and find an open door.
     pub fn grant(&mut self, capabilities: Capabilities) {
         self.granted = capabilities;
-    }
-
-    pub fn granted(&self) -> Capabilities {
-        self.granted
     }
 
     /// Validates one protocol line against the session so far.
@@ -997,30 +1032,38 @@ mod tests {
     #[test]
     fn parses_every_request_in_the_vocabulary() {
         assert_eq!(
-            parse_message("REQUEST 3 audio VOLUME 53 750"),
+            parse_message("REQUEST 3 audio VOLUME output 53 750"),
             Ok(Message::Request(Request {
                 sequence: 3,
                 domain: Domain::Audio,
-                verb: Verb::Volume { id: 53, level: 750 },
+                verb: Verb::Volume {
+                    kind: audio::Kind::Output,
+                    id: 53,
+                    level: 750
+                },
             }))
         );
         assert_eq!(
-            parse_message("REQUEST 4 audio MUTE 53 1"),
+            parse_message("REQUEST 4 audio MUTE stream 53 1"),
             Ok(Message::Request(Request {
                 sequence: 4,
                 domain: Domain::Audio,
                 verb: Verb::Mute {
+                    kind: audio::Kind::Stream,
                     id: 53,
                     muted: true
                 },
             }))
         );
         assert_eq!(
-            parse_message("REQUEST 5 audio DEFAULT 53"),
+            parse_message("REQUEST 5 audio DEFAULT output 53"),
             Ok(Message::Request(Request {
                 sequence: 5,
                 domain: Domain::Audio,
-                verb: Verb::MakeDefault { id: 53 },
+                verb: Verb::MakeDefault {
+                    kind: audio::Kind::Output,
+                    id: 53
+                },
             }))
         );
         assert_eq!(
@@ -1041,45 +1084,67 @@ mod tests {
         assert!(parse_message("REQUEST 1 audio RUN pactl").is_err());
         assert!(parse_message("REQUEST 1 audio EXEC something").is_err());
         assert!(parse_message("REQUEST 1 audio SETSINK alsa_output.hdmi").is_err());
-        assert!(parse_message("REQUEST 1 shell VOLUME 1 1").is_err());
+        assert!(parse_message("REQUEST 1 shell VOLUME output 1 1").is_err());
         assert!(parse_message("REQUEST 1 audio").is_err());
-        assert!(parse_message("REQUEST audio VOLUME 1 1").is_err());
-        assert!(parse_message("REQUEST 1 AUDIO VOLUME 1 1").is_err());
+        assert!(parse_message("REQUEST audio VOLUME output 1 1").is_err());
+        assert!(parse_message("REQUEST 1 AUDIO VOLUME output 1 1").is_err());
     }
 
     #[test]
     fn a_level_outside_the_scale_is_refused_rather_than_clamped() {
         // The same rule as an unknown key name: a client that does not know the
         // scale is a client whose next message cannot be trusted either.
-        assert!(parse_message("REQUEST 1 audio VOLUME 53 1001").is_err());
-        assert!(parse_message("REQUEST 1 audio VOLUME 53 99999").is_err());
-        assert!(parse_message("REQUEST 1 audio VOLUME 53 -1").is_err());
-        assert!(parse_message("REQUEST 1 audio VOLUME 53 loud").is_err());
-        assert!(parse_message("REQUEST 1 audio VOLUME 53").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53 1001").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53 99999").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53 -1").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53 loud").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53").is_err());
         // The ends of the scale are both legal.
-        assert!(parse_message("REQUEST 1 audio VOLUME 53 0").is_ok());
-        assert!(parse_message("REQUEST 1 audio VOLUME 53 1000").is_ok());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53 0").is_ok());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53 1000").is_ok());
     }
 
     #[test]
     fn a_mute_flag_must_be_zero_or_one() {
-        assert!(parse_message("REQUEST 1 audio MUTE 53 2").is_err());
-        assert!(parse_message("REQUEST 1 audio MUTE 53 true").is_err());
-        assert!(parse_message("REQUEST 1 audio MUTE 53").is_err());
+        assert!(parse_message("REQUEST 1 audio MUTE output 53 2").is_err());
+        assert!(parse_message("REQUEST 1 audio MUTE output 53 true").is_err());
+        assert!(parse_message("REQUEST 1 audio MUTE output 53").is_err());
+    }
+
+    #[test]
+    fn a_request_must_say_what_kind_of_thing_it_is_about() {
+        // Sinks, sources and streams are numbered independently by the sound
+        // daemon, so an id alone is ambiguous — and the way that shows up is a
+        // fader moving the wrong device.
+        assert!(parse_message("REQUEST 1 audio VOLUME 53 500").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME sink 53 500").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME OUTPUT 53 500").is_err());
+        assert!(parse_message("REQUEST 1 audio MUTE 53 1").is_err());
+        assert!(parse_message("REQUEST 1 audio DEFAULT 53").is_err());
+    }
+
+    #[test]
+    fn nothing_but_a_device_can_be_asked_to_become_the_default() {
+        // There is no default stream to be, so this is malformed rather than
+        // merely unlucky, and it is refused here rather than left for the panel
+        // to discover.
+        assert!(parse_message("REQUEST 1 audio DEFAULT stream 1348").is_err());
+        assert!(parse_message("REQUEST 1 audio DEFAULT input 57").is_ok());
+        assert!(parse_message("REQUEST 1 audio DEFAULT output 53").is_ok());
     }
 
     #[test]
     fn an_entity_id_must_be_a_number() {
-        assert!(parse_message("REQUEST 1 audio VOLUME @DEFAULT_SINK@ 500").is_err());
-        assert!(parse_message("REQUEST 1 audio DEFAULT alsa_output.hdmi").is_err());
-        assert!(parse_message("REQUEST 1 audio MUTE -1 1").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME output @DEFAULT_SINK@ 500").is_err());
+        assert!(parse_message("REQUEST 1 audio DEFAULT output alsa_output.hdmi").is_err());
+        assert!(parse_message("REQUEST 1 audio MUTE output -1 1").is_err());
     }
 
     #[test]
     fn requests_reject_trailing_fields() {
         assert!(parse_message("REQUEST 1 audio REFRESH now").is_err());
-        assert!(parse_message("REQUEST 1 audio VOLUME 1 1 1").is_err());
-        assert!(parse_message("REQUEST 1 audio DEFAULT 1 1").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 1 1 1").is_err());
+        assert!(parse_message("REQUEST 1 audio DEFAULT output 1 1").is_err());
     }
 
     #[test]
@@ -1112,7 +1177,9 @@ mod tests {
     fn requests_do_not_disturb_the_frame_sequence() {
         let mut session = session_with_audio();
         session.accept("FRAME 10 1000 0").unwrap();
-        session.accept("REQUEST 1 audio VOLUME 53 500").unwrap();
+        session
+            .accept("REQUEST 1 audio VOLUME output 53 500")
+            .unwrap();
         assert!(session.accept("FRAME 11 1001 0").is_ok());
     }
 
@@ -1228,7 +1295,7 @@ mod tests {
         }
         .to_string();
         assert_eq!(rendered.lines().count(), 1);
-        assert_eq!(rendered.split_whitespace().count(), 9);
+        assert_eq!(rendered.split_whitespace().count(), 10);
     }
 
     #[test]

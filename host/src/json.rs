@@ -89,14 +89,6 @@ impl Value {
             _ => None,
         }
     }
-
-    /// The members of an object, in order.
-    pub fn members(&self) -> Option<&[(String, Value)]> {
-        match self {
-            Value::Object(members) => Some(members),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,7 +148,10 @@ impl Reader<'_> {
             self.position += word.len();
             return Ok(value);
         }
-        Err(JsonError(format!("invalid literal at byte {}", self.position)))
+        Err(JsonError(format!(
+            "invalid literal at byte {}",
+            self.position
+        )))
     }
 
     fn value(&mut self, depth: usize) -> Result<Value, JsonError> {
@@ -198,7 +193,12 @@ impl Reader<'_> {
                     self.position += 1;
                     return Ok(Value::Object(members));
                 }
-                _ => return Err(JsonError(format!("unterminated object at byte {}", self.position))),
+                _ => {
+                    return Err(JsonError(format!(
+                        "unterminated object at byte {}",
+                        self.position
+                    )))
+                }
             }
         }
     }
@@ -221,7 +221,12 @@ impl Reader<'_> {
                     self.position += 1;
                     return Ok(Value::Array(items));
                 }
-                _ => return Err(JsonError(format!("unterminated array at byte {}", self.position))),
+                _ => {
+                    return Err(JsonError(format!(
+                        "unterminated array at byte {}",
+                        self.position
+                    )))
+                }
             }
         }
     }
@@ -287,8 +292,9 @@ impl Reader<'_> {
                 self.position += 2;
                 let second = self.hex4()?;
                 if (0xdc00..0xe000).contains(&second) {
-                    let combined =
-                        0x1_0000 + ((u32::from(first) - 0xd800) << 10) + (u32::from(second) - 0xdc00);
+                    let combined = 0x1_0000
+                        + ((u32::from(first) - 0xd800) << 10)
+                        + (u32::from(second) - 0xdc00);
                     return char::from_u32(combined)
                         .ok_or_else(|| JsonError("invalid surrogate pair".into()));
                 }
