@@ -4,21 +4,51 @@ import android.os.Handler
 import android.os.Looper
 import java.io.BufferedWriter
 import java.io.IOException
+import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 
 /** What the user is told about the link to the computer. */
 enum class ConnectionState {
     DISCONNECTED,
     CONNECTING,
     CONNECTED,
+
+    /**
+     * Talking to a computer that has not been updated.
+     *
+     * The session is real and the trackpad works; the older host has no idea
+     * what a rail is, so nothing that sends an action may be offered. Honest
+     * about being half a product rather than pretending buttons work.
+     */
+    LIMITED,
     RECONNECTING,
+
+    /** Nothing is listening: the bridge is down, or the computer is asleep. */
     ERROR,
+
+    /**
+     * Something else is already the trackpad.
+     *
+     * The host serves one client at a time, so the other version of this app —
+     * or a second copy of this one — holds the session until it is closed. The
+     * socket still connects, because the connection sits in the host's backlog
+     * unread; the absence of a reply is the only sign.
+     */
+    BUSY,
+
+    /** The computer answered, but not in a language this version speaks. */
+    INCOMPATIBLE,
+    ;
+
+    /** Whether a shortcut pressed now would reach the computer. */
+    val carriesActions: Boolean get() = this == CONNECTED
 }
 
 /**
- * Carries touch frames to the host daemon over the adb-forwarded loopback
- * socket.
+ * Carries touch frames and shortcuts to the host daemon over the adb-forwarded
+ * loopback socket.
  *
  * Everything that can block — connecting, writing, waiting to retry — happens on
  * a dedicated thread. The UI thread only ever hands over a frame and returns.
@@ -31,12 +61,36 @@ class HostConnection(
     private companion object {
         const val CONNECT_TIMEOUT_MS = 2_000
 
+        /**
+         * How long to wait for the host to answer the handshake.
+         *
+         * A host that has read the line answers in the same breath, so this is
+         * not really a latency budget: it is how long to wait before concluding
+         * that nobody read it, which happens when another client already has
+         * the session. Generous enough to survive a slow first frame, short
+         * enough that the person is told rather than left looking at a dead
+         * screen.
+         */
+        const val HANDSHAKE_TIMEOUT_MS = 1_500
+
         /** Backoff between reconnect attempts, capped so it stays responsive. */
         const val RETRY_MIN_MS = 250L
         const val RETRY_MAX_MS = 4_000L
 
         /** Far more shortcuts than a hand can produce, so a wedged socket cannot pile them up. */
         const val MAX_PENDING_ACTIONS = 32
+    }
+
+    /** How an attempt at a session ended, before any frame was sent. */
+    private enum class Handshake {
+        /** The host is ours and agreed. */
+        ACCEPTED,
+
+        /** The host closed the connection without a word: it speaks something else. */
+        REFUSED,
+
+        /** Nobody read the handshake. Another client has the session. */
+        UNANSWERED,
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -98,9 +152,6 @@ class HostConnection(
     }
 
     /**
-     * Queues one snapshot. Returns immediately; never blocks the caller.
-     */
-    /**
      * Queues a shortcut. Returns immediately; never blocks the caller.
      */
     fun send(action: Action) {
@@ -116,6 +167,9 @@ class HostConnection(
         }
     }
 
+    /**
+     * Queues one snapshot. Returns immediately; never blocks the caller.
+     */
     fun send(frame: TouchFrame) {
         synchronized(lock) {
             if (!running) return
@@ -132,34 +186,135 @@ class HostConnection(
         var backoff = RETRY_MIN_MS
         var everConnected = false
 
+        // Which version to open with. Lowered once, and only after a host has
+        // actually refused ours; raised again when the host disappears, since
+        // whatever comes back may well be a newer build.
+        var version = Protocol.VERSION
+
         while (isRunning()) {
             report(if (everConnected) ConnectionState.RECONNECTING else ConnectionState.CONNECTING)
+            var retryAtOnce = false
             try {
                 Socket().use { socket ->
                     socket.tcpNoDelay = true
                     socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
-                    everConnected = true
-                    backoff = RETRY_MIN_MS
-                    report(ConnectionState.CONNECTED)
-                    serve(socket)
+                    val writer = socket.getOutputStream().bufferedWriter()
+                    // A connected socket is not yet a session: the host may be
+                    // serving somebody else, and ours is only sitting in its
+                    // backlog. Only a completed handshake counts as connected,
+                    // which is also what stops a failed one from being reported
+                    // afterwards as "reconnecting" to something we never had.
+                    when (openSession(socket, writer, version)) {
+                        Handshake.ACCEPTED -> {
+                            everConnected = true
+                            backoff = RETRY_MIN_MS
+                            report(
+                                if (version == Protocol.VERSION) ConnectionState.CONNECTED
+                                else ConnectionState.LIMITED
+                            )
+                            pump(writer)
+                        }
+
+                        Handshake.UNANSWERED -> report(ConnectionState.BUSY)
+
+                        Handshake.REFUSED ->
+                            if (version == Protocol.VERSION) {
+                                // The host is older. It said so by hanging up
+                                // rather than replying, so there is nothing to
+                                // wait for: come straight back one version down.
+                                version = Protocol.FALLBACK_VERSION
+                                retryAtOnce = true
+                            } else {
+                                // Refused even the older handshake. This is not
+                                // an OpenTrackpad host at all.
+                                report(ConnectionState.INCOMPATIBLE)
+                            }
+                    }
                 }
             } catch (error: IOException) {
+                // Nothing is listening. Whatever appears next may be a newer
+                // build, so stop assuming the computer is behind.
+                version = Protocol.VERSION
                 report(ConnectionState.ERROR, error.message)
             }
 
             if (!isRunning()) break
+            if (retryAtOnce) continue
             waitBeforeRetry(backoff)
             backoff = (backoff * 2).coerceAtMost(RETRY_MAX_MS)
         }
         report(ConnectionState.DISCONNECTED)
     }
 
+    /**
+     * Sends the handshake and finds out what the other end is.
+     *
+     * Only version 4 is answered, so only version 4 waits. The fallback
+     * handshake is sent and believed, exactly as every version before this one
+     * did — which also means a busy host cannot be told apart from a working
+     * one while talking to an older computer. That is the older protocol's
+     * limit, not a gap here.
+     */
+    private fun openSession(
+        socket: Socket,
+        writer: BufferedWriter,
+        version: String,
+    ): Handshake {
+        val metrics = synchronized(lock) { surface } ?: return Handshake.UNANSWERED
+        writer.write(
+            Protocol.hello(
+                width = metrics.widthPixels,
+                height = metrics.heightPixels,
+                widthMicrometres = metrics.widthMicrometres,
+                heightMicrometres = metrics.heightMicrometres,
+                version = version,
+                capabilities = if (version == Protocol.VERSION) Protocol.NO_CAPABILITIES else null,
+            )
+        )
+        writer.write("\n")
+        writer.flush()
+
+        if (version != Protocol.VERSION) return Handshake.ACCEPTED
+
+        socket.soTimeout = HANDSHAKE_TIMEOUT_MS
+        val reply = try {
+            readLine(socket.getInputStream())
+        } catch (_: SocketTimeoutException) {
+            // Read, but never answered: our connection is in the backlog behind
+            // whoever holds the session.
+            return Handshake.UNANSWERED
+        } finally {
+            socket.soTimeout = 0
+        }
+        // A closed connection with no reply is the version check failing, which
+        // the host does before anything else.
+        return if (Protocol.welcomeIsOurs(reply)) Handshake.ACCEPTED else Handshake.REFUSED
+    }
+
+    /**
+     * Reads one line, byte at a time.
+     *
+     * Deliberately not a `BufferedReader`: that would read ahead into whatever
+     * the host sends next, and those bytes would be lost when the reader is
+     * dropped. One line is a couple of dozen bytes and this happens once per
+     * session, so the syscalls do not matter.
+     *
+     * Returns null when the host closed the connection instead of replying.
+     */
+    private fun readLine(input: InputStream): String? {
+        val line = StringBuilder()
+        while (line.length < Protocol.MAX_LINE_BYTES) {
+            val byte = input.read()
+            if (byte < 0) return null
+            if (byte == '\n'.code) return line.toString()
+            if (byte != '\r'.code) line.append(byte.toChar())
+        }
+        return line.toString()
+    }
+
     /** Runs one session until the socket dies or the surface changes size. */
-    private fun serve(socket: Socket) {
-        val writer = socket.getOutputStream().bufferedWriter()
-        val metrics: SurfaceMetrics
+    private fun pump(writer: BufferedWriter) {
         synchronized(lock) {
-            metrics = surface ?: return
             surfaceChanged = false
             // Anything queued belongs to the previous session's coordinate
             // space and sequence; start clean.
@@ -167,16 +322,6 @@ class HostConnection(
             actions.clear()
             sequence = 0
         }
-        writer.write(
-            Protocol.hello(
-                metrics.widthPixels,
-                metrics.heightPixels,
-                metrics.widthMicrometres,
-                metrics.heightMicrometres,
-            )
-        )
-        writer.write("\n")
-        writer.flush()
         while (true) {
             when (val next = nextMessage() ?: break) {
                 is Outgoing.Shortcut -> writer.write(next.action.encode(++sequence))

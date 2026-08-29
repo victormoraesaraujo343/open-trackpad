@@ -1,6 +1,8 @@
 package org.opentrackpad.client
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProtocolTest {
@@ -8,9 +10,36 @@ class ProtocolTest {
     @Test
     fun `the handshake matches the wire format`() {
         assertEquals(
-            "HELLO OTP/3 2400 1080 10 156000 69000",
+            "HELLO OTP/4 2400 1080 10 156000 69000 -",
             Protocol.hello(2400, 1080, 156_000, 69_000),
         )
+    }
+
+    @Test
+    fun `the older handshake has no capabilities field at all`() {
+        // Version 3 does not know the field exists and treats a trailing one as
+        // fatal, so it has to be absent rather than empty.
+        assertEquals(
+            "HELLO OTP/3 2400 1080 10 156000 69000",
+            Protocol.hello(
+                2400, 1080, 156_000, 69_000,
+                version = Protocol.FALLBACK_VERSION,
+                capabilities = null,
+            ),
+        )
+    }
+
+    @Test
+    fun `only this version's welcome counts as agreement`() {
+        assertTrue(Protocol.welcomeIsOurs("WELCOME OTP/4 -"))
+        assertTrue(Protocol.welcomeIsOurs("WELCOME OTP/4 audio\n"))
+        assertFalse(Protocol.welcomeIsOurs("WELCOME OTP/3 -"))
+        assertFalse(Protocol.welcomeIsOurs("HELLO OTP/4 -"))
+        assertFalse(Protocol.welcomeIsOurs("WELCOME"))
+        assertFalse(Protocol.welcomeIsOurs(""))
+        // The host closing without a word, which is how a version mismatch and
+        // a busy host both reach us.
+        assertFalse(Protocol.welcomeIsOurs(null))
     }
 
     @Test
