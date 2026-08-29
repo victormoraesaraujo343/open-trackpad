@@ -9,12 +9,30 @@
 
 use crate::json::{self, Value};
 
-/// Full volume on the wire.
+/// The wire level that means 100%.
 ///
 /// Per-mille rather than percent: a fader that travels the height of a phone
 /// screen has room for far more than a hundred steps, and integers keep the
 /// protocol readable and exact.
-pub const MAX_VOLUME: u16 = 1000;
+pub const FULL_VOLUME: u16 = 1000;
+
+/// The loudest level the protocol accepts: 150%.
+///
+/// Above 100% the daemon amplifies rather than attenuates, and past some point
+/// that distorts. It is offered anyway, because the panel makes the range
+/// visible instead of hiding it: the fader is drawn against a scale running to
+/// 150 with a tick at 100, and above the tick the bar, the knob and the number
+/// all turn amber — the colour this app already uses for degraded-but-working.
+/// So it can be seen at a glance, without reading, which is what a peripheral
+/// operated without looking needs. It is also behind a setting that is off by
+/// default.
+///
+/// Deliberately not the same number as `FULL_VOLUME`: one is where the scale
+/// reads 100%, the other is where it stops. Anything above this is refused
+/// outright rather than clamped, for the reason in `docs/PROTOCOL.md` — a
+/// client that does not know the scale is a client whose next message cannot be
+/// trusted either.
+pub const MAX_VOLUME: u16 = 1500;
 
 /// What PulseAudio and PipeWire both call 100%.
 ///
@@ -168,12 +186,18 @@ pub fn diff(previous: &Snapshot, next: &Snapshot) -> Vec<Change> {
 
 /// Turns a raw daemon volume into the nought-to-`MAX_VOLUME` scale.
 ///
-/// Volumes above 100% are clamped rather than carried. Over-amplification
-/// distorts, and a peripheral operated without looking is the wrong place to
-/// offer it — see the note in `docs/PROTOCOL.md`.
+/// Scaled by `FULL_VOLUME` and stopped at `MAX_VOLUME`, which are different
+/// numbers: a device someone left at 130% reads back as 1300 rather than being
+/// flattened to 100%. Reporting a level quieter than the machine is actually
+/// playing would be its own kind of lie, and the phone can draw it — its scale
+/// runs to 150 too.
+///
+/// Something set past 150% by another tool is reported as 150. Beyond that the
+/// phone has no way to draw it, and the number it could not show would be worse
+/// than the edge of the scale it can.
 pub fn volume_to_wire(raw: u32) -> u16 {
     let scaled =
-        (u64::from(raw) * u64::from(MAX_VOLUME) + u64::from(RAW_FULL) / 2) / u64::from(RAW_FULL);
+        (u64::from(raw) * u64::from(FULL_VOLUME) + u64::from(RAW_FULL) / 2) / u64::from(RAW_FULL);
     scaled.min(u64::from(MAX_VOLUME)) as u16
 }
 
@@ -184,7 +208,7 @@ pub fn volume_to_wire(raw: u32) -> u16 {
 /// through a percentage on the way.
 pub fn volume_to_raw(wire: u16) -> u32 {
     let wire = u32::from(wire.min(MAX_VOLUME));
-    (wire * RAW_FULL) / u32::from(MAX_VOLUME)
+    (wire * RAW_FULL) / u32::from(FULL_VOLUME)
 }
 
 /// The loudest channel of a `pactl` volume object.
@@ -426,20 +450,37 @@ mod tests {
     }
 
     #[test]
-    fn volumes_map_onto_the_wire_scale_and_stop_at_full() {
+    fn volumes_map_onto_the_wire_scale() {
         assert_eq!(volume_to_wire(0), 0);
-        assert_eq!(volume_to_wire(65536), 1000);
         assert_eq!(volume_to_wire(32768), 500);
-        // Over-amplification is clamped, not carried.
-        assert_eq!(volume_to_wire(98304), 1000);
-        assert_eq!(volume_to_wire(u32::MAX), 1000);
+        assert_eq!(volume_to_wire(65536), FULL_VOLUME);
+    }
+
+    #[test]
+    fn a_device_left_loud_by_something_else_is_reported_loud() {
+        // Not flattened to 100%. Reporting a level quieter than the machine is
+        // actually playing would be its own kind of lie, and the phone's scale
+        // runs to 150 as well.
+        assert_eq!(volume_to_wire(85197), 1300);
+        assert_eq!(volume_to_wire(98304), MAX_VOLUME);
+    }
+
+    #[test]
+    fn a_volume_past_the_end_of_the_scale_is_reported_as_the_end_of_it() {
+        // Set by some other tool: beyond 150% the phone has no way to draw it,
+        // and a number it cannot show is worse than the edge it can.
+        assert_eq!(volume_to_wire(131072), MAX_VOLUME);
+        assert_eq!(volume_to_wire(u32::MAX), MAX_VOLUME);
     }
 
     #[test]
     fn a_level_set_from_the_phone_reads_back_as_the_level_the_phone_sent() {
         // A fader that jumps a step when you let go of it is the classic
-        // symptom of a scale that does not survive the round trip.
-        for level in [0, 1, 250, 333, 500, 750, 950, 999, 1000] {
+        // symptom of a scale that does not survive the round trip. The range
+        // above 100% has to survive it too, now that it is offered.
+        for level in [
+            0, 1, 250, 333, 500, 750, 950, 999, 1000, 1001, 1234, 1499, 1500,
+        ] {
             assert_eq!(
                 volume_to_wire(volume_to_raw(level)),
                 level,
@@ -449,9 +490,16 @@ mod tests {
     }
 
     #[test]
-    fn a_level_beyond_the_scale_cannot_produce_an_over_amplified_volume() {
+    fn the_two_ends_of_the_scale_are_different_numbers() {
+        // One is where the scale reads 100%, the other is where it stops.
+        // Conflating them is how the ceiling silently becomes the reference.
+        assert_eq!(volume_to_raw(FULL_VOLUME), 65_536);
+        assert_eq!(volume_to_raw(MAX_VOLUME), 98_304);
+    }
+
+    #[test]
+    fn nothing_can_ask_for_more_than_the_ceiling() {
         assert_eq!(volume_to_raw(u16::MAX), volume_to_raw(MAX_VOLUME));
-        assert_eq!(volume_to_raw(MAX_VOLUME), 65_536);
         assert_eq!(volume_to_raw(0), 0);
     }
 

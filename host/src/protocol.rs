@@ -1094,14 +1094,34 @@ mod tests {
     fn a_level_outside_the_scale_is_refused_rather_than_clamped() {
         // The same rule as an unknown key name: a client that does not know the
         // scale is a client whose next message cannot be trusted either.
-        assert!(parse_message("REQUEST 1 audio VOLUME output 53 1001").is_err());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53 1501").is_err());
         assert!(parse_message("REQUEST 1 audio VOLUME output 53 99999").is_err());
         assert!(parse_message("REQUEST 1 audio VOLUME output 53 -1").is_err());
         assert!(parse_message("REQUEST 1 audio VOLUME output 53 loud").is_err());
         assert!(parse_message("REQUEST 1 audio VOLUME output 53").is_err());
-        // The ends of the scale are both legal.
+        // The ends of the scale are both legal, and so is everything between.
         assert!(parse_message("REQUEST 1 audio VOLUME output 53 0").is_ok());
-        assert!(parse_message("REQUEST 1 audio VOLUME output 53 1000").is_ok());
+        assert!(parse_message("REQUEST 1 audio VOLUME output 53 1500").is_ok());
+    }
+
+    #[test]
+    fn the_range_above_a_hundred_percent_is_accepted() {
+        // Offered rather than capped: the panel draws the fader against a scale
+        // running to 150 with a tick at 100, and turns amber above it, so the
+        // amplifying range is visible at a glance instead of hidden.
+        for level in [1000, 1001, 1200, 1499, 1500] {
+            assert!(
+                parse_message(&format!("REQUEST 1 audio VOLUME output 53 {level}")).is_ok(),
+                "level {level} should be accepted"
+            );
+        }
+        // And the ceiling is still a wall, not a suggestion.
+        for level in [1501, 2000, 65535] {
+            assert!(
+                parse_message(&format!("REQUEST 1 audio VOLUME output 53 {level}")).is_err(),
+                "level {level} should be refused"
+            );
+        }
     }
 
     #[test]

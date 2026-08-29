@@ -30,8 +30,26 @@ use crate::audio::{self, Entity};
 use crate::protocol::Absence;
 
 const TOOL: &str = "pactl";
-
 /// Runs `pactl` with fixed arguments and returns its standard output.
+///
+/// # This call has no timeout, deliberately
+///
+/// If you are here because the audio panel froze and never came back, this is
+/// why. A daemon that *dies* is handled: the call fails, the panel reports
+/// itself unavailable and keeps asking until it returns. A daemon that **hangs**
+/// is not: `pactl` waits on it forever and so does this.
+///
+/// Left alone on purpose. The standard library has no timeout on waiting for a
+/// command, and every way around that is worse than the problem — killing the
+/// child needs its own watchdog thread or a second process per call, and this
+/// is called during a fader drag. What was done instead is to make sure the
+/// freeze stays inside the panel: this only ever runs on the panel's worker
+/// thread, and `crate::panel` never waits for that thread. Touch, shortcuts,
+/// the session ending and the next phone connecting are all unaffected — one
+/// parked thread is the whole cost.
+///
+/// If that stops being true, the fix is a timeout here, not a workaround
+/// wherever the symptom shows up.
 fn run(arguments: &[&str]) -> Result<String, Absence> {
     let output = Command::new(TOOL)
         .args(arguments)
