@@ -74,6 +74,21 @@ answer. This script settles it on whatever machine you run it on:
 sudo ./scripts/validate-touchpad.sh
 ```
 
+It also sends one press of each mouse button and reports how many presses and
+releases arrived. A press that arrives without its release is a FAIL rather than
+a note: that leaves a button held down on somebody's desktop, which cannot be
+clicked out of.
+
+**This script could not answer between OTP/3 and 2026-08-29.** It still sent an
+`OTP/2` handshake, so the daemon refused it — and the failure surfaced as "the
+daemon did not report a device node", which reads as broken hardware rather than
+a stale script. It also picked the device to watch by taking the first event
+node in the log, which became the virtual keyboard once that started being
+created at handshake time. Both are fixed and the node is now found by name. The
+passing run recorded further down this file is still true of the code it was
+taken from; anyone who re-ran it in between got a failure that had nothing to do
+with their machine.
+
 It starts the daemon, watches its device with libinput, injects synthetic one-,
 two-, three- and four-finger strokes through the protocol socket, and reports
 whether each one survived — ending in PASS or FAIL with libinput's own reasoning

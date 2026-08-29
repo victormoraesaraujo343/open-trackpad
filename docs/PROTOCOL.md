@@ -133,6 +133,37 @@ ended. A stuck modifier makes the desktop unusable and gives no clue why.
 Actions arriving faster than fifty a second are dropped. A finger on a button
 tops out around fifteen, so this only bites on a client stuck in a loop.
 
+### Mouse buttons
+
+```text
+ACTION <sequence> BUTTON <name>
+```
+
+`name` is `left`, `right` or `middle`. Anything else is rejected the way an
+unknown key name is, and closes the connection. There is no way to name a button
+by number, to attach a repeat count, or to hold one down.
+
+A button is pressed and released as two reports, one after the other. There is
+no held button and no drag: a drag needs the pointer moving while the button is
+down, which is touch's job on the other path, and coordinating a held button
+across two paths is where stuck buttons come from. A stuck mouse button is worse
+than a stuck modifier — it makes the desktop unusable *and* unfixable, because
+nothing can be clicked to escape it. Everything is released when the session
+ends, however it ended.
+
+Buttons exist because tap-to-click is a setting. Someone who turns it off has
+told their system that taps should not click, and the touchpad honouring that is
+correct rather than broken — but until this message there was no alternative, so
+that person had no click at all and nothing said so.
+
+### Why buttons are not gated and chords are
+
+Chords are limited to what somebody recorded, because a hundred and thirty key
+names combine into anything a desktop can do. Buttons are three fixed names that
+can do nothing a mouse cannot already do, so the closed set is the whole
+protection and there is nothing meaningful to record or delete. The asymmetry is
+chosen rather than overlooked.
+
 ## State the host sends back
 
 One message per line, as everything else. `<domain>` is `audio` today; the
