@@ -8,6 +8,7 @@ use std::fmt;
 use crate::audio;
 use crate::keys::Chord;
 use crate::pointer::Button;
+use crate::text::escape_text;
 
 /// The protocol version this host speaks.
 ///
@@ -216,6 +217,12 @@ pub enum Message {
 pub enum Action {
     /// Press a chord and let it go.
     Key(Chord),
+    /// Open the shortcut recorder on the host.
+    ///
+    /// The client asks; it never authors. What it gets is a window on the
+    /// computer, and the chord is pressed on the keyboard attached to that
+    /// computer — which is the whole design, not a limitation of it.
+    Record,
     /// Click a mouse button and let it go.
     ///
     /// A second kind rather than a key name, because a button is not a key:
@@ -359,63 +366,6 @@ pub enum Outbound {
     Unavailable { domain: Domain, reason: Absence },
     /// A request that was understood but not carried out.
     Refused { sequence: u64, reason: Refusal },
-}
-
-/// Renders free text so it cannot be mistaken for protocol.
-///
-/// This is load-bearing, not tidiness. Device descriptions and application
-/// names are free text the host does not author: a window title comes from
-/// whatever page a browser has open. Pasted raw into a line-framed protocol,
-/// a name containing a newline would let a web page write its own messages into
-/// the stream the phone is reading. Everything outside printable ASCII, and the
-/// space and percent themselves, becomes `%XX` per UTF-8 byte — so a name can
-/// never contain a separator, a newline, or anything else structural.
-pub fn escape_text(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len());
-    for byte in text.as_bytes() {
-        match byte {
-            b'!'..=b'~' if *byte != b'%' => escaped.push(*byte as char),
-            other => escaped.push_str(&format!("%{other:02X}")),
-        }
-    }
-    if escaped.is_empty() {
-        // An empty field would vanish into the whitespace separation and shift
-        // every field after it.
-        escaped.push_str("%20");
-    }
-    escaped
-}
-
-/// Reads back what `escape_text` wrote, or nothing if it was not written by it.
-///
-/// Needed because the same encoding now protects the file custom shortcuts are
-/// kept in: a name is free text a person typed, and a name containing a newline
-/// would otherwise be able to add lines to that file. One encoding, used in both
-/// places, for the same reason.
-///
-/// Strict on the way back. A field holding a raw space, a control character or
-/// a truncated escape was not produced by `escape_text`, so it is refused rather
-/// than half-read — a hand-edited file is exactly where a guess would hurt.
-pub fn unescape_text(text: &str) -> Option<String> {
-    let bytes = text.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut position = 0;
-    while position < bytes.len() {
-        match bytes[position] {
-            b'%' => {
-                let digits = bytes.get(position + 1..position + 3)?;
-                let digits = std::str::from_utf8(digits).ok()?;
-                decoded.push(u8::from_str_radix(digits, 16).ok()?);
-                position += 3;
-            }
-            byte @ b'!'..=b'~' => {
-                decoded.push(byte);
-                position += 1;
-            }
-            _ => return None,
-        }
-    }
-    String::from_utf8(decoded).ok()
 }
 
 fn render_entity(entity: &audio::Entity) -> String {
@@ -624,6 +574,10 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                         Chord::parse(chord).map_err(|error| ProtocolError(error.to_string()))?;
                     ensure_finished(&mut parts)?;
                     Ok(Message::Action(Action::Key(chord)))
+                }
+                Some("RECORD") => {
+                    ensure_finished(&mut parts)?;
+                    Ok(Message::Action(Action::Record))
                 }
                 Some("BUTTON") => {
                     let name = parts
@@ -982,6 +936,31 @@ mod tests {
                 Chord::parse("ctrl+c").unwrap()
             )))
         );
+    }
+
+    #[test]
+    fn parses_a_request_to_open_the_recorder() {
+        assert_eq!(
+            parse_message("ACTION 4 RECORD"),
+            Ok(Message::Action(Action::Record))
+        );
+    }
+
+    #[test]
+    fn a_recorder_request_carries_nothing_at_all() {
+        // Nothing of the client's reaches the program that gets spawned,
+        // because the message has nowhere to put anything. A name, a path or a
+        // command here would be the whole point undone.
+        assert!(parse_message("ACTION 1 RECORD now").is_err());
+        assert!(parse_message("ACTION 1 RECORD ctrl+c").is_err());
+        assert!(parse_message("ACTION 1 RECORD /usr/bin/sh").is_err());
+        assert!(parse_message("ACTION 1 RECORDER").is_err());
+    }
+
+    #[test]
+    fn a_recorder_request_before_the_handshake_is_rejected() {
+        let mut session = Session::new();
+        assert!(session.accept("ACTION 1 RECORD").is_err());
     }
 
     #[test]
@@ -1424,19 +1403,6 @@ mod tests {
         .to_string();
         assert_eq!(rendered.lines().count(), 1);
         assert_eq!(rendered.split_whitespace().count(), 10);
-    }
-
-    #[test]
-    fn escaping_leaves_ordinary_names_readable_and_survives_the_awkward_ones() {
-        assert_eq!(escape_text("Firefox"), "Firefox");
-        assert_eq!(escape_text("a b"), "a%20b");
-        assert_eq!(escape_text("100%"), "100%25");
-        assert_eq!(escape_text("\t"), "%09");
-        // Non-ASCII goes out a byte at a time, so the client rebuilds the exact
-        // string rather than a guess at it.
-        assert_eq!(escape_text("ç"), "%C3%A7");
-        // An empty name would otherwise vanish and shift every field after it.
-        assert_eq!(escape_text(""), "%20");
     }
 
     #[test]

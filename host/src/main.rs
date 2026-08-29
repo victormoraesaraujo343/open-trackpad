@@ -8,14 +8,12 @@ mod audio;
 mod import;
 mod json;
 mod keyboard;
-mod keys;
 mod pactl;
 mod pad;
 mod panel;
 mod pointer;
 mod protocol;
 mod selftest;
-mod shortcuts;
 mod sink;
 mod state;
 mod status;
@@ -24,6 +22,10 @@ mod uinput;
 
 use std::io::{self, BufRead, BufReader, Read};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+
+use opentrackpadd::{keys, shortcuts, text};
 
 use keyboard::{ActionRate, Controls};
 use panel::{AudioPanel, Outbox};
@@ -193,6 +195,99 @@ fn report_shortcuts(shortcuts: &Shortcuts) {
     }
 }
 
+/// The name of the program that records a shortcut.
+const RECORDER: &str = "opentrackpad-recorder";
+
+/// Opens the recorder, if one is not already open.
+///
+/// Spawned with **fixed arguments and nothing from the client** — the request
+/// carries no data at all, so there is nothing of the client's to pass on. Same
+/// discipline as the `pactl` calls: this daemon execs programs it names itself
+/// and never a string somebody sent it.
+///
+/// One at a time. A client sending `RECORD` in a loop must not be able to flash
+/// windows across a desktop or stack fifty of them, and a second request while
+/// one is open is not an error — it is two people asking for the same window.
+///
+/// Looked for beside this executable before falling back to the path, so an
+/// installed pair finds its own recorder rather than whatever is named that.
+fn open_recorder(open: &mut Option<std::process::Child>) -> io::Result<bool> {
+    if let Some(running) = open {
+        match running.try_wait() {
+            // Still up: the window they are asking for is already there.
+            Ok(None) => return Ok(false),
+            _ => *open = None,
+        }
+    }
+
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|directory| directory.join(RECORDER)))
+        .filter(|path| path.is_file());
+    let program = beside.unwrap_or_else(|| std::path::PathBuf::from(RECORDER));
+
+    let child = std::process::Command::new(program)
+        .stdin(std::process::Stdio::null())
+        .spawn()?;
+    *open = Some(child);
+    Ok(true)
+}
+
+/// How often to look at the shortcuts file.
+///
+/// It changes when somebody records a shortcut, which is a human act, so two
+/// seconds of latency is invisible. A watch API would be a dependency bought
+/// for nothing at that rate.
+const RELOAD_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Re-reads the shortcut list when the recorder writes it.
+///
+/// The recorder is a separate program, and it is opened *while a phone is
+/// connected* — that is the whole point of the phone being able to ask for it.
+/// So reading the list once at start would mean the shortcut somebody has just
+/// recorded is the one thing they cannot fire, until they reconnect, for no
+/// reason they could work out.
+///
+/// Its own thread because the one that matters is blocked on the socket, and a
+/// stat every two seconds has no business anywhere near it.
+fn watch_shortcuts(shortcuts: Arc<RwLock<Shortcuts>>) {
+    let path = shortcuts
+        .read()
+        .expect("the list is never poisoned")
+        .path()
+        .map(std::path::Path::to_path_buf);
+    let Some(path) = path else {
+        // Nowhere to keep them means nothing can change them.
+        return;
+    };
+    let mut seen = shortcuts::file_changed_at(Some(&path));
+
+    let _ = std::thread::Builder::new()
+        .name("shortcut-watch".to_owned())
+        .spawn(move || loop {
+            std::thread::sleep(RELOAD_INTERVAL);
+            let now = shortcuts::file_changed_at(Some(&path));
+            if now == seen {
+                continue;
+            }
+            seen = now;
+
+            // Re-read through the same door as the first read, so a file the
+            // recorder wrote gets exactly the validation a hand-edited one
+            // does. Nothing is trusted for having been written by us.
+            let fresh = Shortcuts::open();
+            for line in fresh.damaged() {
+                eprintln!("ignoring a shortcut that could not be read: {line}");
+            }
+            let count = fresh.list().len();
+            match shortcuts.write() {
+                Ok(mut held) => *held = fresh,
+                Err(_) => return,
+            }
+            println!("shortcuts reloaded: {count} now available");
+        });
+}
+
 /// Everything one client session acts on, gathered so the signature says "a
 /// session" rather than listing seven unrelated things.
 ///
@@ -205,7 +300,7 @@ struct Serving<'a> {
     buttons: &'a mut Buttons,
     /// What the phone is allowed to fire. Read-only here: this list is changed
     /// by somebody at the keyboard, never by anything arriving on the socket.
-    shortcuts: &'a Shortcuts,
+    shortcuts: &'a RwLock<Shortcuts>,
     status: &'a StatusFile,
     trace_timing: bool,
     dry_run: bool,
@@ -239,6 +334,7 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
     let mut action_rate = ActionRate::new(std::time::Instant::now());
     let mut millimetres_per_pixel = 0.0;
     let mut panel: Option<AudioPanel> = None;
+    let mut recorder: Option<std::process::Child> = None;
 
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -362,7 +458,11 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                 // the two are separate paths for exactly this reason.
                 if !action_rate.allow(std::time::Instant::now()) {
                     eprintln!("dropped a shortcut: they are arriving too fast to be real");
-                } else if !shortcuts.allows(&chord) {
+                } else if !shortcuts
+                    .read()
+                    .expect("the list is never poisoned")
+                    .allows(&chord)
+                {
                     // The gate. A chord the phone may fire is one somebody
                     // recorded, imported or was started with on this machine —
                     // the vocabulary says how a chord is spelled, this says
@@ -372,6 +472,19 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                     eprintln!("ignored a shortcut that is not in the list: {chord}");
                 } else if let Err(error) = controls.press_chord(&chord) {
                     eprintln!("could not send shortcut: {error}");
+                }
+            }
+            Accepted::Action(Action::Record) => {
+                // Counts against the same allowance as a shortcut or a click:
+                // a client looping on this must hit the same wall.
+                if !action_rate.allow(std::time::Instant::now()) {
+                    eprintln!("dropped a recorder request: they are arriving too fast to be real");
+                } else {
+                    match open_recorder(&mut recorder) {
+                        Ok(true) => println!("opened the shortcut recorder"),
+                        Ok(false) => println!("the shortcut recorder is already open"),
+                        Err(error) => eprintln!("could not open the shortcut recorder: {error}"),
+                    }
                 }
             }
             Accepted::Action(Action::Button(button)) => {
@@ -519,18 +632,29 @@ fn run() -> io::Result<()> {
     // connected — so the shortcut somebody has just recorded would not be
     // fireable until this daemon restarted. Re-reading on change belongs with
     // the recorder, which is the first thing that makes it matter.
-    let shortcuts = Shortcuts::open();
-    for line in shortcuts.damaged() {
+    let shortcuts = Arc::new(RwLock::new(Shortcuts::open()));
+    for line in shortcuts
+        .read()
+        .expect("the list is never poisoned")
+        .damaged()
+    {
         // Said rather than swallowed. A shortcut that quietly stopped existing
         // is worse than one that says why, and this is the only place someone
         // would find out that a hand-edited file has a mistake in it.
         eprintln!("ignoring a shortcut that could not be read: {line}");
     }
-    match shortcuts.list().len() {
+    match shortcuts
+        .read()
+        .expect("the list is never poisoned")
+        .list()
+        .len()
+    {
         0 => {}
         1 => println!("  1 custom shortcut"),
         count => println!("  {count} custom shortcuts"),
     }
+
+    watch_shortcuts(Arc::clone(&shortcuts));
 
     let listener = TcpListener::bind(&options.address)?;
     println!("  listening on {}", options.address);

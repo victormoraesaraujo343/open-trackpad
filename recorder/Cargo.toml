@@ -1,0 +1,31 @@
+[package]
+name = "opentrackpad-recorder"
+version = "0.1.0"
+edition = "2021"
+description = "Records a keyboard shortcut on the host, for OpenTrackpad"
+license = "MIT"
+
+# Yes, this is sixty-odd packages in a project whose daemon has twelve. Before
+# counting them and worrying, the thing worth knowing is where they sit.
+#
+# This program opens no device. Not /dev/uinput, not /dev/input. It cannot
+# inject anything and there is no code path by which it could. It does two
+# things: read key presses from its own focused window, and write a text file.
+#
+# And it is not trusted. Everything it writes goes through the same parse, the
+# same vocabulary and the same refusals that a file edited by hand meets, in the
+# daemon, on load — `opentrackpadd::keys::Chord::parse` and
+# `opentrackpadd::shortcuts`. The gate that decides what a phone may fire sits
+# downstream of this program, so the worst a compromised toolkit achieves here
+# is a config file that is then refused.
+#
+# Sixty-six packages that cannot open a device and cannot get a chord past the
+# gate are a different thing from sixty-six packages in the input path. The tray
+# carries ninety-one on the same reasoning, and its own Cargo.toml says so.
+[dependencies]
+gtk4 = "0.11"
+
+# The vocabulary and the store, shared with the daemon rather than copied. A
+# second copy of either would drift, and the drift would surface as a shortcut
+# that records cleanly and then will not fire.
+opentrackpadd = { path = "../host" }

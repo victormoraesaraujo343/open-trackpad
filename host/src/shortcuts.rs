@@ -40,7 +40,7 @@ use std::path::PathBuf;
 use evdev::KeyCode;
 
 use crate::keys::{Chord, ChordError};
-use crate::protocol::{escape_text, unescape_text};
+use crate::text::{escape_text, unescape_text};
 
 /// The format this host writes. Read on load so a later change can tell what it
 /// is looking at rather than misreading it.
@@ -217,6 +217,18 @@ impl Shortcuts {
                 eprintln!("not starting with {name} ({chord}): {error}");
             }
         }
+    }
+
+    /// Where the list is kept, if anywhere.
+    pub fn path(&self) -> Option<&std::path::Path> {
+        self.path.as_deref()
+    }
+
+    /// When the file was last written, for noticing that something else wrote
+    /// it. `None` when there is no file, which is itself a state worth telling
+    /// apart from a file that has not changed.
+    pub fn changed_at(&self) -> Option<std::time::SystemTime> {
+        file_changed_at(self.path.as_deref())
     }
 
     /// Reads the file's contents. Free of I/O, so every shape it can arrive in
@@ -418,6 +430,14 @@ fn clean_name(name: &str) -> Result<String, RecordError> {
     Ok(name.to_owned())
 }
 
+/// When a file was last written, or nothing if it is not there.
+///
+/// Modification time rather than a watch API on purpose: this file changes when
+/// a human records a shortcut, so seconds of latency is invisible, and inotify
+/// would be a dependency bought for nothing.
+pub fn file_changed_at(path: Option<&std::path::Path>) -> Option<std::time::SystemTime> {
+    fs::metadata(path?).ok()?.modified().ok()
+}
 #[cfg(test)]
 mod tests {
     use super::*;

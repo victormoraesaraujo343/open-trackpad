@@ -33,7 +33,10 @@
 //! protection only holds if `crate::shortcuts` is what decides what may be
 //! fired, which is the open question in the notes for the orchestrator.
 
-use evdev::KeyCode;
+// Re-exported rather than merely used: the recorder is a separate program that
+// has to name the same keys this daemon does, and giving it a second view of
+// them is exactly the duplication this module exists to prevent.
+pub use evdev::KeyCode;
 
 /// The most keys one chord may hold down at once.
 ///

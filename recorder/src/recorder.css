@@ -1,0 +1,152 @@
+/* The recorder, in the app's own palette. See docs/DESIGN.md — this window is
+ * meant to look like the phone's surface rather than like a system dialog, on
+ * the reasoning that a new surface should not arrive outside the pattern.
+ *
+ * Lime appears at most twice: the pulsing dot while waiting, and Save once
+ * there is something to save. It means "live or ready" and nothing else. */
+
+.scrim {
+  background-color: rgba(9, 10, 11, 0.62);
+}
+
+/* When the compositor will not composite alpha. A recorder that looks
+ * deliberate on a plain background beats one that looks half-broken. */
+.scrim.opaque {
+  background-color: #0e0f10;
+}
+
+.panel {
+  background-color: #121314;
+  border: 1px solid #2a2d30;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.heading {
+  margin-bottom: 16px;
+}
+
+.title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: #e3e2e3;
+}
+
+.capture {
+  background-color: #1b1d1f;
+  border: 1px solid #2a2d30;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* The one border that changes: something has been caught. */
+.capture.captured {
+  border-color: #a3e635;
+}
+
+.dot {
+  color: #a3e635;
+  font-size: 10px;
+}
+
+/* Respects the desktop's reduced-motion setting: GTK turns animations off
+ * globally when it is set, and this is an animation. */
+.dot {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.prompt {
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  color: #e3e2e3;
+}
+
+.where {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  color: #7c838c;
+  margin-top: 6px;
+}
+
+/* Key caps. The bottom edge is what makes them read as keys rather than as
+ * chips. */
+.cap {
+  background-color: #24272a;
+  border: 1px solid #34383d;
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #e3e2e3;
+}
+
+.plus {
+  color: #7c838c;
+  font-size: 13px;
+}
+
+.hint {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  color: #7c838c;
+  margin-top: 10px;
+  margin-bottom: 16px;
+}
+
+.name {
+  background-color: #1b1d1f;
+  border: 1px solid #2a2d30;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #e3e2e3;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+}
+
+/* Dimmed until there is a chord to name. */
+.name:disabled {
+  opacity: 0.45;
+}
+
+.footer {
+  margin-top: 20px;
+}
+
+.kept {
+  font-family: Inter, sans-serif;
+  font-size: 11px;
+  color: #7c838c;
+}
+
+/* Plain text, not a button. There is one button on this window. */
+.cancel {
+  font-family: Inter, sans-serif;
+  font-size: 12px;
+  color: #7c838c;
+  margin-right: 4px;
+}
+
+.save {
+  background-color: #a3e635;
+  color: #213600;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Dead until there is something to save. */
+.save:disabled {
+  background-color: #1b1d1f;
+  color: #4e545b;
+}

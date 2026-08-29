@@ -29,6 +29,10 @@ use state::State;
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The systemd units this offers to control.
+/// The program that records a shortcut. Spawned, never linked: the tray has
+/// no more business carrying a toolkit than the daemon does.
+const RECORDER: &str = "opentrackpad-recorder";
+
 const DAEMON_UNIT: &str = "opentrackpad.service";
 const BRIDGE_UNIT: &str = "opentrackpad-usb.service";
 
@@ -52,6 +56,24 @@ fn read_state(path: Option<&PathBuf>) -> State {
         Ok(contents) => contents.trim().parse().unwrap_or(State::Stopped),
         Err(_) => State::Stopped,
     }
+}
+
+/// Opens the shortcut recorder.
+///
+/// The same window the phone can ask for — one recorder, two ways in. This is
+/// the mouse route, and it exists for when nobody has a phone plugged in; the
+/// phone asking is the one the design is actually built around, because it
+/// saves the trip to the computer that this product exists to avoid.
+///
+/// Detached and forgotten. It is a window that closes itself, and nothing here
+/// has any business waiting for it.
+fn record_shortcut() {
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|directory| directory.join(RECORDER)))
+        .filter(|path| path.is_file());
+    let program = beside.unwrap_or_else(|| std::path::PathBuf::from(RECORDER));
+    let _ = Command::new(program).spawn();
 }
 
 /// Runs a `systemctl --user` verb on both units, ignoring the outcome.
@@ -120,6 +142,14 @@ impl Tray for OpenTrackpadTray {
             StandardItem {
                 label: self.state.describe(),
                 enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            MenuItem::Separator,
+            StandardItem {
+                label: "Record a shortcut…".into(),
+                icon_name: "input-keyboard".into(),
+                activate: Box::new(|_: &mut Self| record_shortcut()),
                 ..Default::default()
             }
             .into(),
