@@ -1,11 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The palette from docs/DESIGN.md, lifted from the screens rather than rounded.
+  Nothing in the app may invent a colour: if a state needs one that is not here,
+  the state is wrong or the design system is.
+-->
 <resources>
-    <color name="surface_background">#FF101014</color>
-    <color name="surface_pad">#FF17171C</color>
-    <color name="surface_border">#FF2C2C34</color>
-    <color name="text_primary">#FFE6E6EA</color>
-    <color name="text_muted">#FF8A8A96</color>
-    <color name="status_connected">#FFA3E635</color>
-    <color name="status_pending">#FFEAB308</color>
-    <color name="status_error">#FFEF4444</color>
+    <color name="ground">#FF0E0F10</color>
+    <color name="panel">#FF121314</color>
+    <color name="inset">#FF1B1D1F</color>
+    <color name="hairline">#FF2A2D30</color>
+
+    <color name="ink">#FFE6E8EA</color>
+    <color name="body">#FF8A9099</color>
+    <color name="secondary">#FFC6CBD1</color>
+    <color name="muted">#FF6B7178</color>
+    <color name="faint">#FF4E545B</color>
+
+    <!-- "This one, now", and nothing else. -->
+    <color name="lime">#FFA3E635</color>
+    <!-- Degraded, held, or asking for attention. -->
+    <color name="amber">#FFF5A524</color>
+
+    <!-- rgba(9,10,11,0.74): what a problem in the middle of the screen sits on. -->
+    <color name="scrim">#BD090A0B</color>
 </resources>

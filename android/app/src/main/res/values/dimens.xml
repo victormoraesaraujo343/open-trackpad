@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The margin around everything, and the gap between the rails and the pad.
+      One value for both, from the design: the pad is inset from the rails by
+      the same amount the rails are inset from the edge of the screen.
+    -->
+    <dimen name="edge">12dp</dimen>
+
+    <!-- A rail. Fixed: the pad takes whatever is left. -->
+    <dimen name="rail_width">70dp</dimen>
+</resources>

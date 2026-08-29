@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      v0.1 is a debugging surface, not the final look. The themes in the UI spec
-      come in v0.2, once the native trackpad is proven on hardware.
+      The window is the ground colour and nothing else. Everything visible is
+      drawn by the layout: there is no action bar, no status bar and no
+      navigation bar, because every pixel that is not a rail belongs to the
+      touch surface.
     -->
     <style name="Theme.OpenTrackpad" parent="Theme.AppCompat.NoActionBar">
-        <item name="android:windowBackground">@color/surface_background</item>
-        <item name="android:statusBarColor">@color/surface_background</item>
-        <item name="android:navigationBarColor">@color/surface_background</item>
+        <item name="android:windowBackground">@color/ground</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

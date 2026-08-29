@@ -1,33 +1,241 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The touch surface fills the screen. The status line sits on top of it but is
-  not clickable, so it can never swallow a touch meant for the trackpad.
+  The whole control surface: a rail, the pad, a rail, and nothing else. There is
+  no header and no status bar by design — every pixel that is not a rail belongs
+  to the touch surface — so a problem with the session has to take over the
+  middle of the screen instead, which is what @id/trouble does.
+
+  How rails and touch stay apart lives here rather than in code. The rails and
+  the pad are siblings that never overlap, so Android's own hit testing decides
+  which of them a finger belongs to, and splitMotionEvents means it decides that
+  per finger rather than per gesture: a thumb on a shortcut and three fingers
+  swiping the pad are two independent streams. The pad therefore only ever sees
+  contacts that started on the pad, and a finger that slides off it stays with
+  it until it lifts, so no contact can be left behind on the host.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/surface_background">
+    android:background="@color/ground">
 
-    <org.opentrackpad.client.TouchSurfaceView
-        android:id="@+id/touch_surface"
+    <LinearLayout
+        android:id="@+id/frame"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/surface_pad"
-        android:contentDescription="@string/app_name" />
+        android:orientation="horizontal"
+        android:padding="@dimen/edge"
+        android:splitMotionEvents="true">
 
-    <TextView
-        android:id="@+id/status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="6dp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="3dp"
-        android:clickable="false"
-        android:focusable="false"
-        android:duplicateParentState="false"
-        android:textSize="12sp"
-        android:textColor="@color/text_muted"
-        android:text="@string/status_connecting" />
+        <org.opentrackpad.client.RailView
+            android:id="@+id/rail_start"
+            android:layout_width="@dimen/rail_width"
+            android:layout_height="match_parent" />
+
+        <FrameLayout
+            android:id="@+id/pad_holder"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="@dimen/edge"
+            android:splitMotionEvents="true">
+
+            <org.opentrackpad.client.TouchSurfaceView
+                android:id="@+id/touch_surface"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/pad_description" />
+
+            <!--
+              Sits over the pad and is deliberately not clickable, so a touch
+              lands straight through it on the surface below. It is registered
+              with ScreenCare because it never moves and would otherwise burn
+              into an OLED panel over a few hundred hours on a desk.
+            -->
+            <TextView
+                android:id="@+id/pad_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|center_horizontal"
+                android:layout_marginBottom="13dp"
+                android:clickable="false"
+                android:focusable="false"
+                android:importantForAccessibility="no"
+                android:text="@string/pad_hint"
+                android:textColor="@color/faint"
+                android:textSize="10dp"
+                tools:ignore="SpUsage" />
+
+        </FrameLayout>
+
+        <org.opentrackpad.client.RailView
+            android:id="@+id/rail_end"
+            android:layout_width="@dimen/rail_width"
+            android:layout_height="match_parent" />
+
+    </LinearLayout>
+
+    <!--
+      Clickable on purpose: while it is up, nothing behind it can be pressed.
+      That is the same statement the dead rails make, enforced rather than drawn.
+    -->
+    <FrameLayout
+        android:id="@+id/trouble"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/scrim"
+        android:clickable="true"
+        android:focusable="true"
+        android:padding="24dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/trouble_card"
+            android:layout_width="430dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/card"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:paddingHorizontal="24dp"
+            android:paddingVertical="22dp">
+
+            <ImageView
+                android:id="@+id/trouble_icon"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_unplugged" />
+
+            <TextView
+                android:id="@+id/trouble_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="13dp"
+                android:gravity="center"
+                android:textColor="@color/ink"
+                android:textSize="19dp"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"
+                tools:ignore="SpUsage" />
+
+            <TextView
+                android:id="@+id/trouble_body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.5"
+                android:textColor="@color/body"
+                android:textSize="13dp"
+                tools:ignore="SpUsage" />
+
+            <!-- Which version each side speaks. Only the mismatch needs it. -->
+            <LinearLayout
+                android:id="@+id/trouble_versions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="13dp"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/chip"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="11dp"
+                    android:paddingVertical="9dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mismatch_phone_label"
+                        android:textColor="@color/muted"
+                        android:textSize="10dp"
+                        tools:ignore="SpUsage" />
+
+                    <TextView
+                        android:id="@+id/trouble_phone_version"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:textColor="@color/ink"
+                        android:textSize="13dp"
+                        tools:ignore="SpUsage" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/chip"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="11dp"
+                    android:paddingVertical="9dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mismatch_host_label"
+                        android:textColor="@color/muted"
+                        android:textSize="10dp"
+                        tools:ignore="SpUsage" />
+
+                    <TextView
+                        android:id="@+id/trouble_host_version"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:textColor="@color/amber"
+                        android:textSize="13dp"
+                        tools:ignore="SpUsage" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Still trying. A card with no pulse reads as a card that gave up. -->
+            <LinearLayout
+                android:id="@+id/trouble_seeking"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="15dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <View
+                    android:id="@+id/trouble_pulse"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/seeking_dot" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/trouble_seeking"
+                    android:textColor="@color/muted"
+                    android:textSize="11dp"
+                    tools:ignore="SpUsage" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/trouble_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="15dp"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.45"
+                android:textColor="@color/faint"
+                android:textSize="10dp"
+                tools:ignore="SpUsage" />
+
+        </LinearLayout>
+    </FrameLayout>
 
 </FrameLayout>

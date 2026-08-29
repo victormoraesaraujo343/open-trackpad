@@ -1,6 +1,13 @@
 package org.opentrackpad.client
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Shader
 import android.os.Build
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -12,17 +19,55 @@ import android.view.View
  * It reports where fingers are and nothing else. It deliberately does not
  * recognise taps, scrolls or swipes: that is the whole point of the project,
  * and interpreting a gesture here would turn OpenTrackpad into a remote mouse.
+ *
+ * It also paints itself — the panel, its hairline and the dot grid from the
+ * design — and that is all it paints. Nothing here ever calls `invalidate`, so
+ * drawing happens when the system asks and never as a consequence of a finger:
+ * the touch path and the drawing path do not meet.
  */
 class TouchSurfaceView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
 ) : View(context, attrs) {
 
+    private companion object {
+        val PANEL = Color.parseColor("#121314")
+        val HAIRLINE = Color.parseColor("#2A2D30")
+
+        /** rgba(138,144,153,0.16), from the design. */
+        val DOT = Color.parseColor("#298A9099")
+
+        const val RADIUS_DP = 12f
+        const val BORDER_DP = 1f
+
+        /** The grid is one dot every 18dp, offset half a cell. */
+        const val CELL_DP = 18f
+        const val DOT_RADIUS_DP = 1f
+    }
+
     /** Receives every snapshot. Set by the activity. */
     var onFrame: ((TouchFrame) -> Unit)? = null
 
     /** Called when the usable surface changes size, including at first layout. */
     var onSurfaceSize: ((SurfaceMetrics) -> Unit)? = null
+
+    private val density = resources.displayMetrics.density
+    private val radius = RADIUS_DP * density
+
+    private val panel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = PANEL
+    }
+    private val hairline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = BORDER_DP * density
+        color = HAIRLINE
+    }
+    private val dots = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader = dotGrid()
+    }
+    private val shape = RectF()
 
     init {
         isFocusable = true
@@ -32,9 +77,43 @@ class TouchSurfaceView @JvmOverloads constructor(
         isHapticFeedbackEnabled = false
     }
 
+    /**
+     * One cell of the dot grid, tiled.
+     *
+     * A repeating shader rather than a loop of circles: the grid covers most of
+     * the screen and would otherwise be several hundred draw calls for a
+     * background that never changes.
+     */
+    private fun dotGrid(): Shader {
+        val cell = (CELL_DP * density).toInt().coerceAtLeast(1)
+        val tile = Bitmap.createBitmap(cell, cell, Bitmap.Config.ARGB_8888)
+        Canvas(tile).drawCircle(
+            cell / 2f,
+            cell / 2f,
+            DOT_RADIUS_DP * density,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = DOT },
+        )
+        return BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        if (width <= 0 || height <= 0) return
+        val half = hairline.strokeWidth / 2f
+        shape.set(half, half, width - half, height - half)
+        canvas.drawRoundRect(shape, radius, radius, panel)
+        canvas.save()
+        canvas.clipRect(shape)
+        canvas.drawRoundRect(shape, radius, radius, dots)
+        canvas.restore()
+        canvas.drawRoundRect(shape, radius, radius, hairline)
+    }
+
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
         if (width > 0 && height > 0) {
+            // The pad's own size, not the screen's. The rails are not part of
+            // the touchpad, so the physical size the host is told — which sets
+            // pointer speed and every gesture distance — must not include them.
             onSurfaceSize?.invoke(
                 SurfaceMetrics.measure(resources.displayMetrics, width, height)
             )
