@@ -18,6 +18,41 @@
     <string name="ring_hub_bottom">actions</string>
     <string name="ring_description">Quick actions</string>
 
+    <!-- The settings screen. -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back to the trackpad</string>
+    <string name="settings_connection">Connection</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_speaking">Speaking</string>
+    <string name="settings_screen">Screen</string>
+    <string name="settings_fade">Fade when idle</string>
+    <string name="settings_awake">Keep screen awake</string>
+    <string name="settings_return">Back to the trackpad after</string>
+    <string name="settings_return_note">A panel left open stops being a trackpad.</string>
+    <string name="settings_controls">Controls</string>
+    <string name="settings_handedness">Handedness</string>
+    <string name="settings_haptics">Haptics</string>
+    <string name="settings_active_profile">Active profile</string>
+    <string name="settings_version">App %1$s · protocol %2$s</string>
+    <string name="settings_hand_right">Right</string>
+    <string name="settings_hand_left">Left</string>
+    <string name="settings_never">Never</string>
+    <string name="settings_seconds">%1$d s</string>
+    <string name="settings_minute">1 min</string>
+    <string name="settings_not_speaking">—</string>
+
+    <!-- The connection, said in one word for the settings card. -->
+    <string name="status_connected">Connected</string>
+    <string name="status_limited">Older computer</string>
+    <string name="status_busy">Another app has it</string>
+    <string name="status_connecting">Connecting</string>
+    <string name="status_disconnected">Not connected</string>
+
+    <!-- The profile menu. -->
+    <string name="profile_heading">Profile</string>
+    <string name="profile_manage">Manage profiles</string>
+    <string name="profile_settings">Settings</string>
+
     <!-- The rails, for a screen reader. -->
     <string name="rail_shortcuts">Shortcuts</string>
     <string name="rail_overflow">More shortcuts</string>

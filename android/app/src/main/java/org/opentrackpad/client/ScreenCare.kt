@@ -68,15 +68,33 @@ class ScreenCare(private val window: Window) {
         applyNudge()
     }
 
+    /**
+     * Whether the screen may dim when nothing is touching it.
+     *
+     * Turning it off does not stop the burn-in nudging: that protects the panel
+     * whatever the person prefers, and it is invisible either way.
+     */
+    var fadeWhenIdle: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            if (!value) undim()
+            handler.removeCallbacks(dim)
+            if (value && running) handler.postDelayed(dim, IDLE_AFTER_MS)
+        }
+
     /** Called whenever the user touches, to undo any dimming. */
     fun onActivity() {
         if (!running) return
-        if (dimmed) {
-            setBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE)
-            dimmed = false
-        }
+        undim()
         handler.removeCallbacks(dim)
-        handler.postDelayed(dim, IDLE_AFTER_MS)
+        if (fadeWhenIdle) handler.postDelayed(dim, IDLE_AFTER_MS)
+    }
+
+    private fun undim() {
+        if (!dimmed) return
+        setBrightness(WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE)
+        dimmed = false
     }
 
     fun resume() {

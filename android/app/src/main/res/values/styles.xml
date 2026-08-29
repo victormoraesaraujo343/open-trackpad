@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The settings screens are built from four repeated shapes. They live here
+  rather than being copied into every card, so a change to the spacing is one
+  edit and cannot half-apply.
+-->
+<resources>
+    <style name="SettingsCard">
+        <item name="android:background">@drawable/panel</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">12dp</item>
+    </style>
+
+    <!-- What a card is about: small, muted, and never the thing you read first. -->
+    <style name="CardHeading">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">8dp</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:textColor">@color/muted</item>
+        <item name="android:textSize">10sp</item>
+    </style>
+
+    <!-- A label on the left, its control hard against the right. -->
+    <style name="SettingRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+
+    <style name="SettingLabel">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textColor">@color/secondary</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <!--
+      The same label on its own line rather than beside a control. Separate
+      from SettingLabel because that one carries layout_weight for a horizontal
+      row, and a weight in a column stretches it vertically and collapses it to
+      no width at all — which is what made "Back to the trackpad after"
+      disappear.
+    -->
+    <style name="SettingLabelBlock" parent="SettingLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_weight">0</item>
+    </style>
+
+    <style name="SettingValue">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <!-- The sentence under a control that says why it is there. -->
+    <style name="CardNote">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:lineSpacingMultiplier">1.4</item>
+        <item name="android:textColor">@color/faint</item>
+        <item name="android:textSize">10sp</item>
+    </style>
+</resources>

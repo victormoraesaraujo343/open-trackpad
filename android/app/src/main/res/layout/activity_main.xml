@@ -89,6 +89,18 @@
                 android:contentDescription="@string/ring_description"
                 android:visibility="gone" />
 
+            <!--
+              Over the pad, like the ring, and for the same reason: switching
+              profile is a glance and a tap, and it is the one panel where you
+              want to watch the rails change behind it.
+            -->
+            <org.opentrackpad.client.ProfileMenuView
+                android:id="@+id/profile_menu"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/profile_heading"
+                android:visibility="gone" />
+
         </FrameLayout>
 
         <org.opentrackpad.client.RailView
@@ -97,6 +109,8 @@
             android:layout_height="match_parent" />
 
     </LinearLayout>
+
+    <include layout="@layout/panel_settings" />
 
     <!--
       Clickable on purpose: while it is up, nothing behind it can be pressed.

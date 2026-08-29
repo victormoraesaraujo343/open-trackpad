@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lifted from Settings.dc.html, on the same 20-unit grid as every glyph. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp" android:height="16dp"
+    android:viewportWidth="20" android:viewportHeight="20">
+    <path android:pathData="M16 10H4M9 5 4 10l5 5"
+        android:strokeColor="@color/secondary" android:strokeWidth="1.5"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

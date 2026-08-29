@@ -5,6 +5,8 @@ import android.animation.ValueAnimator
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.util.TypedValue
 import android.view.View
@@ -53,7 +55,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var railStart: RailView
     private lateinit var railEnd: RailView
     private lateinit var ring: QuickRingView
+    private lateinit var profileMenu: ProfileMenuView
+    private lateinit var settingsPanel: View
     private lateinit var padHint: TextView
+
+    /** Runs the "back to the trackpad" wait. Nothing else uses it. */
+    private val idle = Handler(Looper.getMainLooper())
 
     private lateinit var trouble: View
     private lateinit var troubleIcon: ImageView
@@ -73,6 +80,12 @@ class MainActivity : AppCompatActivity() {
 
     /** Whether a shortcut pressed now would actually reach the computer. */
     private var live = false
+
+    /** The last thing the connection said, so a panel opened later can show it. */
+    private var lastState = ConnectionState.CONNECTING
+
+    /** Which protocol version was actually agreed, once one has been. */
+    private var speaking: String? = null
 
     /**
      * Set once the person has acknowledged an older computer.
@@ -96,10 +109,19 @@ class MainActivity : AppCompatActivity() {
             // The ring closes behind a choice. It is a way in to somewhere, not
             // a panel that stays open, and leaving it up over the pad after it
             // has been used would be the same trap as having no way out.
-            showRing(false)
+            show(Panel.NONE)
             onPress(press)
         }
-        ring.onDismiss = { showRing(false) }
+        ring.onDismiss = { show(Panel.NONE) }
+
+        profileMenu = findViewById(R.id.profile_menu)
+        profileMenu.onChooseProfile = ::chooseProfile
+        profileMenu.onChooseDestination = { press -> show(Panel.NONE); onPress(press) }
+        profileMenu.onDismiss = { show(Panel.NONE) }
+
+        settingsPanel = findViewById(R.id.settings_panel)
+        findViewById<View>(R.id.settings_back).setOnClickListener { show(Panel.NONE) }
+        bindSettings()
 
         trouble = findViewById(R.id.trouble)
         troubleIcon = findViewById(R.id.trouble_icon)
@@ -138,9 +160,12 @@ class MainActivity : AppCompatActivity() {
         screen = ScreenCare(window)
         screen.protect(padHint)
 
-        // A trackpad that goes to sleep under your fingers is useless. It does
-        // not have to stay bright, though; ScreenCare handles that.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // A trackpad that goes to sleep under your fingers is useless, so this
+        // is on by default — but it is the person's choice, and until now the
+        // setting existed and was ignored. It does not have to stay bright
+        // either; ScreenCare handles that half.
+        applyKeepAwake(stored.settings.keepScreenAwake)
+        screen.fadeWhenIdle = stored.settings.fadeWhenIdle
         goImmersive()
         takeTheWholeScreen()
         sizeToTheDrawing()
@@ -237,33 +262,194 @@ class MainActivity : AppCompatActivity() {
     private fun onPress(press: SlotPress) {
         when (press) {
             is SlotPress.Send -> connection.send(press.action)
-            SlotPress.QuickRing -> showRing(!ring.isVisible())
+            SlotPress.QuickRing -> show(if (panel == Panel.RING) Panel.NONE else Panel.RING)
+            SlotPress.Profiles -> show(Panel.PROFILES)
+            SlotPress.Settings -> show(Panel.SETTINGS)
             SlotPress.None -> Unit
         }
     }
 
-    /**
-     * Opens or closes the Quick Ring.
-     *
-     * The same slot does both. A ring you can get into and not obviously out of
-     * is the worst version of this, so the way in is also a way out, alongside
-     * the hub and the whole surface around the wedges.
-     *
-     * The rails stay live behind it and only dim, for that reason: the slot
-     * that opened the ring has to still be there to close it.
-     */
-    private fun showRing(open: Boolean) {
-        if (ring.isVisible() == open) return
-        ring.wedges = ringWedges()
-        ring.side = stored.settings.shortcutSide
-        ring.hapticsEnabled = stored.settings.haptics
-        ring.visibility = if (open) View.VISIBLE else View.GONE
+    /** What is over the trackpad, if anything. Only ever one thing. */
+    private enum class Panel { NONE, RING, PROFILES, SETTINGS }
 
-        val behind = if (open) DIMMED_BEHIND_RING else 1f
+    private var panel = Panel.NONE
+
+    /**
+     * Puts one panel up and every other one away.
+     *
+     * One function rather than a show and a hide per panel, because the rule
+     * that matters is that **only one thing is ever over the pad**. Two panels
+     * open at once is not a state this interface has, and the only reliable way
+     * to keep it that way is to have one place that decides.
+     *
+     * The ring and the profile menu only dim the rails behind them: the slot
+     * that opened them has to still be there to close them. Settings takes the
+     * whole screen, so there is nothing behind it to dim, and its own back
+     * arrow is the way out.
+     */
+    private fun show(next: Panel) {
+        if (panel == next) return
+        panel = next
+
+        if (next == Panel.RING) {
+            ring.wedges = ringWedges()
+            ring.side = stored.settings.shortcutSide
+            ring.hapticsEnabled = stored.settings.haptics
+        }
+        if (next == Panel.PROFILES) {
+            profileMenu.rows = profileRows()
+            profileMenu.side = stored.settings.shortcutSide
+            profileMenu.hapticsEnabled = stored.settings.haptics
+        }
+        if (next == Panel.SETTINGS) showSettings()
+
+        ring.visibility = if (next == Panel.RING) View.VISIBLE else View.GONE
+        profileMenu.visibility = if (next == Panel.PROFILES) View.VISIBLE else View.GONE
+        settingsPanel.visibility = if (next == Panel.SETTINGS) View.VISIBLE else View.GONE
+
+        val overThePad = next == Panel.RING || next == Panel.PROFILES
+        val behind = if (overThePad) DIMMED_BEHIND_RING else 1f
         railStart.alpha = behind
         railEnd.alpha = behind
         padHint.alpha = behind
+
+        waitBeforeReturning()
     }
+
+    /**
+     * Sends the trackpad back after a while, because a panel left open stops
+     * being a trackpad.
+     *
+     * The design's own words. Somebody who opens settings, is interrupted, and
+     * comes back to the desk should find the surface they plugged in for rather
+     * than the screen they forgot about. Zero seconds means never, for anyone
+     * who would rather it stayed where they left it.
+     */
+    private val returnToPad = Runnable { show(Panel.NONE) }
+
+    private fun waitBeforeReturning() {
+        idle.removeCallbacks(returnToPad)
+        val after = stored.settings.returnToPadSeconds
+        if (panel == Panel.NONE || after <= 0) return
+        idle.postDelayed(returnToPad, after * 1000L)
+    }
+
+    // -- settings ------------------------------------------------------------
+
+    /**
+     * Connects the settings controls to what they change, once.
+     *
+     * Each one writes through immediately rather than waiting for a Save. There
+     * is nothing here that needs to be applied as a set, and a settings screen
+     * that can be abandoned half-applied is a settings screen somebody has to
+     * remember to finish.
+     */
+    private fun bindSettings() {
+        val handedness = findViewById<SegmentedView>(R.id.settings_handedness)
+        handedness.options = listOf(
+            getString(R.string.settings_hand_right),
+            getString(R.string.settings_hand_left),
+        )
+        handedness.onChoose = { index ->
+            update { it.copy(shortcutSide = if (index == 0) Side.RIGHT else Side.LEFT) }
+            layOutRails()
+        }
+
+        val returnAfter = findViewById<SegmentedView>(R.id.settings_return)
+        returnAfter.options = Settings.RETURN_CHOICES.map(::describeWait)
+        returnAfter.onChoose = { index ->
+            update { it.copy(returnToPadSeconds = Settings.RETURN_CHOICES[index]) }
+            waitBeforeReturning()
+        }
+
+        findViewById<PillToggle>(R.id.settings_fade).onChange = { on ->
+            update { it.copy(fadeWhenIdle = on) }
+            screen.fadeWhenIdle = on
+        }
+        findViewById<PillToggle>(R.id.settings_haptics).onChange = { on ->
+            update { it.copy(haptics = on) }
+            layOutRails()
+        }
+        findViewById<PillToggle>(R.id.settings_awake).onChange = { on ->
+            update { it.copy(keepScreenAwake = on) }
+            applyKeepAwake(on)
+        }
+    }
+
+    /** "15 s", "1 min", "Never" — the wait, as the design words it. */
+    private fun describeWait(seconds: Int): String = when {
+        seconds <= 0 -> getString(R.string.settings_never)
+        seconds % 60 == 0 && seconds == 60 -> getString(R.string.settings_minute)
+        else -> getString(R.string.settings_seconds, seconds)
+    }
+
+    /** Puts the current settings on the controls, whenever the screen opens. */
+    private fun showSettings() {
+        val settings = stored.settings
+        findViewById<SegmentedView>(R.id.settings_handedness).chosen =
+            if (settings.shortcutSide == Side.RIGHT) 0 else 1
+        findViewById<SegmentedView>(R.id.settings_return).chosen =
+            Settings.RETURN_CHOICES.indexOf(settings.returnToPadSeconds).coerceAtLeast(0)
+        findViewById<PillToggle>(R.id.settings_fade).checked = settings.fadeWhenIdle
+        findViewById<PillToggle>(R.id.settings_haptics).checked = settings.haptics
+        findViewById<PillToggle>(R.id.settings_awake).checked = settings.keepScreenAwake
+        findViewById<TextView>(R.id.settings_active_profile).text = settings.activeProfile
+        findViewById<TextView>(R.id.settings_version).text = getString(
+            R.string.settings_version,
+            packageManager.getPackageInfo(packageName, 0).versionName.orEmpty(),
+            speaking ?: getString(R.string.settings_not_speaking),
+        )
+        showConnectionIn(settingsPanel)
+    }
+
+    /** The connection card, which is the same fact the trouble card carries. */
+    private fun showConnectionIn(panel: View) {
+        val state = lastState
+        panel.findViewById<TextView>(R.id.settings_status).setText(
+            when (state) {
+                ConnectionState.CONNECTED -> R.string.status_connected
+                ConnectionState.LIMITED -> R.string.status_limited
+                ConnectionState.BUSY -> R.string.status_busy
+                ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> R.string.status_connecting
+                else -> R.string.status_disconnected
+            }
+        )
+        panel.findViewById<View>(R.id.settings_status_dot).backgroundTintList =
+            android.content.res.ColorStateList.valueOf(
+                getColor(if (state.carriesActions) R.color.lime else R.color.amber)
+            )
+        panel.findViewById<TextView>(R.id.settings_speaking).text =
+            speaking ?: getString(R.string.settings_not_speaking)
+    }
+
+    /** Changes one setting and writes the file, which is small enough to do here. */
+    private fun update(change: (Settings) -> Settings) {
+        stored = stored.copy(settings = change(stored.settings))
+        ProfileStore.save(settingsFile, stored)
+    }
+
+    private fun chooseProfile(name: String) {
+        update { it.copy(activeProfile = name) }
+        layOutRails()
+        show(Panel.NONE)
+    }
+
+    private fun applyKeepAwake(on: Boolean) {
+        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    /** The rows of the profile menu: every profile, then the ways onward. */
+    private fun profileRows(): List<ProfileMenuView.Row> =
+        stored.profiles.map { profile ->
+            ProfileMenuView.Row.Profile(
+                name = profile.name,
+                active = profile.name == stored.settings.activeProfile,
+            )
+        } + ProfileMenuView.Row.Destination(
+            label = getString(R.string.profile_settings),
+            press = SlotPress.Settings,
+        )
 
     /**
      * What the ring holds: the shortcuts that fit on neither rail.
@@ -277,15 +463,32 @@ class MainActivity : AppCompatActivity() {
      * mechanism is the same either way.
      */
     private fun ringWedges(): List<RailSlot?> {
-        val beyond = activeProfile.ring.drop(Rails.SLOTS)
+        // The last two wedges are the ways out of the surface and into the rest
+        // of the app. They are fixed positions for the same reason slot five of
+        // a rail is: a destination that moved when a profile gained a shortcut
+        // would have to be looked for every time.
+        val destinations = listOf(
+            RailSlot(
+                label = getString(R.string.profile_heading),
+                icon = RailIcons.path("profiles"),
+                press = SlotPress.Profiles,
+            ),
+            RailSlot(
+                label = getString(R.string.profile_settings),
+                icon = RailIcons.path("gear"),
+                press = SlotPress.Settings,
+            ),
+        )
+        val shortcuts = activeProfile.ring.drop(Rails.SLOTS).map { slot ->
+            RailSlot(
+                label = slot.label,
+                icon = RailIcons.path(RailIcons.forAction(slot.action)),
+                press = SlotPress.Send(slot.action),
+            )
+        }
+        val first = RingGeometry.WEDGES - destinations.size
         return List(RingGeometry.WEDGES) { index ->
-            beyond.getOrNull(index)?.let { slot ->
-                RailSlot(
-                    label = slot.label,
-                    icon = RailIcons.path(RailIcons.forAction(slot.action)),
-                    press = SlotPress.Send(slot.action),
-                )
-            }
+            if (index >= first) destinations[index - first] else shortcuts.getOrNull(index)
         }
     }
 
@@ -308,11 +511,19 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         screen.resume()
+        waitBeforeReturning()
+    }
+
+    override fun onBackPressed() {
+        // The system back gesture closes whatever is over the pad before it
+        // closes the app. Leaving the app is what the second press is for.
+        if (panel != Panel.NONE) show(Panel.NONE) else @Suppress("DEPRECATION") super.onBackPressed()
     }
 
     override fun onPause() {
         screen.pause()
         pulse?.cancel()
+        idle.removeCallbacks(returnToPad)
         super.onPause()
     }
 
@@ -382,6 +593,13 @@ class MainActivity : AppCompatActivity() {
      * shortcut that goes nowhere is worse than one that is visibly unavailable.
      */
     private fun showState(state: ConnectionState, detail: String?) {
+        lastState = state
+        if (state == ConnectionState.CONNECTED || state == ConnectionState.LIMITED) {
+            speaking = detail
+        } else if (state == ConnectionState.ERROR || state == ConnectionState.DISCONNECTED) {
+            speaking = null
+        }
+        if (panel == Panel.SETTINGS) showConnectionIn(settingsPanel)
         showLive(state.carriesActions)
 
         when (state) {

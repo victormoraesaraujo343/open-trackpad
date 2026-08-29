@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Settings, from Settings.dc.html: a back arrow, a title, and cards.
+
+  Sized in dp rather than millimetres, which is the rule from Artboard rather
+  than an exception to it — millimetres are for what a hand aims at without
+  looking, system sizing is for what eyes read at reading distance. A settings
+  screen is read, and somebody who has turned their display size up has said
+  they want text bigger. This is exactly where to obey that.
+
+  Two columns rather than the drawing's three. The third holds Modes: display
+  mirroring, a second display, and which profile to open in — none of which
+  exists yet on either side of the cable. A card of controls that do nothing
+  would be worse than the gap.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/settings_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ground"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:id="@+id/settings_back"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingVertical="4dp"
+        android:paddingEnd="12dp">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:contentDescription="@string/settings_back"
+            android:src="@drawable/ic_back" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:fontFamily="@font/space_grotesk_semibold"
+            android:text="@string/settings_title"
+            android:textColor="@color/ink"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <!-- Connection, then the screen. -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                style="@style/SettingsCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <TextView style="@style/CardHeading" android:text="@string/settings_connection" />
+
+                <LinearLayout style="@style/SettingRow">
+                    <TextView style="@style/SettingLabel" android:text="@string/settings_status" />
+                    <View
+                        android:id="@+id/settings_status_dot"
+                        android:layout_width="6dp"
+                        android:layout_height="6dp"
+                        android:layout_gravity="center_vertical"
+                        android:layout_marginEnd="6dp"
+                        android:background="@drawable/status_dot" />
+                    <TextView
+                        android:id="@+id/settings_status"
+                        style="@style/SettingValue"
+                        tools:text="Connected" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/SettingRow">
+                    <TextView style="@style/SettingLabel" android:text="@string/settings_speaking" />
+                    <TextView
+                        android:id="@+id/settings_speaking"
+                        style="@style/SettingValue"
+                        android:textColor="@color/body"
+                        tools:text="OTP/4" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                style="@style/SettingsCard"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="12dp"
+                android:layout_weight="1">
+
+                <TextView style="@style/CardHeading" android:text="@string/settings_screen" />
+
+                <LinearLayout style="@style/SettingRow">
+                    <TextView style="@style/SettingLabel" android:text="@string/settings_fade" />
+                    <org.opentrackpad.client.PillToggle
+                        android:id="@+id/settings_fade"
+                        android:layout_width="28dp"
+                        android:layout_height="16dp"
+                        android:layout_gravity="center_vertical" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/SettingRow">
+                    <TextView style="@style/SettingLabel" android:text="@string/settings_awake" />
+                    <org.opentrackpad.client.PillToggle
+                        android:id="@+id/settings_awake"
+                        android:layout_width="28dp"
+                        android:layout_height="16dp"
+                        android:layout_gravity="center_vertical" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/SettingLabelBlock"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/settings_return" />
+
+                <org.opentrackpad.client.SegmentedView
+                    android:id="@+id/settings_return"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" />
+
+                <TextView
+                    style="@style/CardNote"
+                    android:text="@string/settings_return_note" />
+
+                <Space
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Controls. -->
+        <LinearLayout
+            style="@style/SettingsCard"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1">
+
+            <TextView style="@style/CardHeading" android:text="@string/settings_controls" />
+
+            <LinearLayout style="@style/SettingRow">
+                <TextView style="@style/SettingLabel" android:text="@string/settings_handedness" />
+                <org.opentrackpad.client.SegmentedView
+                    android:id="@+id/settings_handedness"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/SettingRow">
+                <TextView style="@style/SettingLabel" android:text="@string/settings_haptics" />
+                <org.opentrackpad.client.PillToggle
+                    android:id="@+id/settings_haptics"
+                    android:layout_width="28dp"
+                    android:layout_height="16dp"
+                    android:layout_gravity="center_vertical" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="4dp"
+                android:background="@color/hairline" />
+
+            <LinearLayout style="@style/SettingRow">
+                <TextView style="@style/SettingLabel" android:text="@string/settings_active_profile" />
+                <TextView
+                    android:id="@+id/settings_active_profile"
+                    style="@style/SettingValue"
+                    tools:text="Desktop" />
+            </LinearLayout>
+
+            <Space
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/settings_version"
+                style="@style/CardNote"
+                android:layout_marginTop="0dp"
+                tools:text="App 0.2.0 · protocol OTP/4" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

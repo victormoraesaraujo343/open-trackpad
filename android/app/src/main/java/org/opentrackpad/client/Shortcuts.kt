@@ -73,8 +73,27 @@ data class Settings(
     val shortcutSide: Side = Side.RIGHT,
     val keepScreenAwake: Boolean = true,
     val haptics: Boolean = true,
+    val fadeWhenIdle: Boolean = true,
+
+    /**
+     * How long a panel may sit open before the trackpad comes back.
+     *
+     * From the design: *a panel left open stops being a trackpad*. Settings and
+     * the profile menu cover the surface, and somebody who opens one and then
+     * reaches for the pad should find the pad rather than the panel they forgot
+     * about. Zero means never.
+     */
+    val returnToPadSeconds: Int = 30,
 ) {
     val applicationsSide: Side get() = shortcutSide.opposite()
+
+    companion object {
+        /** What the design offers, and the only values a stored file may hold. */
+        val RETURN_CHOICES = listOf(15, 30, 60, 0)
+
+        /** Longer than this and it is not a timeout, it is "never" spelled oddly. */
+        const val MAX_RETURN_SECONDS = 3600
+    }
 }
 
 /**

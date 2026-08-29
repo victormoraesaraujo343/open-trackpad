@@ -51,6 +51,10 @@ object RailIcons {
         "undo" to "M7 6.4 4 9.4l3 3M4.4 9.4h8a3.6 3.6 0 0 1 0 7.2h-2",
         "vol" to "M4.2 8.2h2.6L10.4 5v10L6.8 11.8H4.2zM13.4 7.6a3.4 3.4 0 0 1 0 4.8",
         "win" to "M3.4 4.6h13.2v10.8H3.4zM3.4 7.8h13.2M6.6 4.6v3.2",
+        // The ways in to the rest of the app, drawn in the same hand.
+        "profiles" to "M4 15.4v-.8a3.4 3.4 0 0 1 3.4-3.4h1.2A3.4 3.4 0 0 1 12 14.6v.8" +
+            "M8 9.4a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2M13.6 15.4v-.8a3.4 3.4 0 0 0-2-3.1" +
+            "M13 4.4a2.6 2.6 0 0 1 0 5",
 
         // Drawn here, in the same hand, for shortcuts the screens never showed.
         "close" to "M5.6 5.6 14.4 14.4M14.4 5.6 5.6 14.4",

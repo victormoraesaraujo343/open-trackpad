@@ -27,6 +27,8 @@ object ProfileStore {
         )
         appendLine(listOf("setting", "awake", "${settings.keepScreenAwake}").joinToString(FIELD))
         appendLine(listOf("setting", "haptics", "${settings.haptics}").joinToString(FIELD))
+        appendLine(listOf("setting", "fade", "${settings.fadeWhenIdle}").joinToString(FIELD))
+        appendLine(listOf("setting", "return", "${settings.returnToPadSeconds}").joinToString(FIELD))
         for (profile in stored.profiles) {
             appendLine(listOf("profile", profile.name).joinToString(FIELD))
             for (slot in profile.shortcuts) {
@@ -48,6 +50,8 @@ object ProfileStore {
         var side: Side? = null
         var awake: Boolean? = null
         var haptics: Boolean? = null
+        var fade: Boolean? = null
+        var returnAfter: Int? = null
         val profiles = mutableListOf<Profile>()
         var name: String? = null
         var slots = mutableListOf<Slot>()
@@ -68,6 +72,12 @@ object ProfileStore {
                         "side" -> side = Side.entries.find { it.name.equals(parts[2], true) }
                         "awake" -> awake = parts[2].toBooleanStrictOrNull()
                         "haptics" -> haptics = parts[2].toBooleanStrictOrNull()
+                        "fade" -> fade = parts[2].toBooleanStrictOrNull()
+                        // Clamped rather than refused: a file written by a
+                        // later version may offer a longer wait than this one
+                        // does, and the nearest sane value beats the default.
+                        "return" -> returnAfter = parts[2].toIntOrNull()
+                            ?.coerceIn(0, Settings.MAX_RETURN_SECONDS)
                     }
                 }
 
@@ -97,6 +107,8 @@ object ProfileStore {
                 shortcutSide = side ?: fallback.shortcutSide,
                 keepScreenAwake = awake ?: fallback.keepScreenAwake,
                 haptics = haptics ?: fallback.haptics,
+                fadeWhenIdle = fade ?: fallback.fadeWhenIdle,
+                returnToPadSeconds = returnAfter ?: fallback.returnToPadSeconds,
             ),
             profiles = recovered,
         )

@@ -27,8 +27,14 @@ sealed interface SlotPress {
     /** Send a shortcut to the computer. */
     data class Send(val action: Action) : SlotPress
 
-    /** Open the Quick Ring. Nothing yet: the ring is not built. */
+    /** Open the Quick Ring, the way in to everything below. */
     data object QuickRing : SlotPress
+
+    /** Which set of shortcuts the rails are showing. */
+    data object Profiles : SlotPress
+
+    /** The settings screen. */
+    data object Settings : SlotPress
 
     /** Reserved space that answers to nothing. */
     data object None : SlotPress

@@ -208,9 +208,13 @@ class HostConnection(
                         Handshake.ACCEPTED -> {
                             everConnected = true
                             backoff = RETRY_MIN_MS
+                            // The detail carries which version was agreed, so
+                            // the settings screen can say it rather than assume
+                            // the newest one was the one that worked.
                             report(
                                 if (version == Protocol.VERSION) ConnectionState.CONNECTED
-                                else ConnectionState.LIMITED
+                                else ConnectionState.LIMITED,
+                                version,
                             )
                             pump(writer)
                         }
