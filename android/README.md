@@ -64,7 +64,8 @@ against a shared literal rather than against each other's assumptions.
 
 | File | Responsibility |
 | --- | --- |
-| `Protocol.kt` | The OTP/2 wire format, and nothing else. |
+| `Protocol.kt` | The OTP/3 wire format, and nothing else. |
+| `Action.kt` | The closed set of things a control button may ask for. |
 | `TouchSurfaceView.kt` | Turning `MotionEvent` into complete contact snapshots. |
 | `FrameQueue.kt` | What to discard when frames outpace the socket. |
 | `HostConnection.kt` | The socket, the sender thread, reconnection. |
@@ -80,6 +81,11 @@ Three decisions worth knowing about:
 - **Historical samples are sent too.** Android batches several touch samples
   into one `MotionEvent`; sending only the latest would throw away the
   digitiser's sampling rate and keep only the display's refresh rate.
+
+Shortcuts share the socket but never queue behind movement: a button has to
+feel immediate, while a snapshot that waits is superseded by the next one
+anyway. The host treats the two as unrelated, so nothing is lost by letting
+shortcuts overtake.
 
 `FrameQueue` is where backpressure is handled. Movement may be dropped, because
 every frame is a complete snapshot and a newer one supersedes an older one

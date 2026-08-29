@@ -55,7 +55,7 @@ it, which do not depend on how the screens look.
 - [x] `ACTION` messages alongside touch frames
 - [x] Release every held key when a session ends, however it ended
 - [x] Drop actions arriving faster than a hand could produce them
-- [ ] Send actions from the Android client
+- [x] Send actions from the Android client
 - [ ] Profiles: which shortcuts appear where
 - [ ] Mouse buttons as actions
 

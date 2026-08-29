@@ -35,10 +35,16 @@ class HostConnection(
         const val RETRY_MIN_MS = 250L
         const val RETRY_MAX_MS = 4_000L
 
+        /** Far more shortcuts than a hand can produce, so a wedged socket cannot pile them up. */
+        const val MAX_PENDING_ACTIONS = 32
     }
 
     private val main = Handler(Looper.getMainLooper())
     private val pending = FrameQueue()
+
+    /// Actions ride the same socket but never queue behind movement: a button
+    /// press has to feel immediate, and the host treats the two as unrelated.
+    private val actions = ArrayDeque<Action>()
     private val lock = Object()
 
     @Volatile private var running = false
@@ -94,6 +100,22 @@ class HostConnection(
     /**
      * Queues one snapshot. Returns immediately; never blocks the caller.
      */
+    /**
+     * Queues a shortcut. Returns immediately; never blocks the caller.
+     */
+    fun send(action: Action) {
+        synchronized(lock) {
+            if (!running) return
+            if (actions.size >= MAX_PENDING_ACTIONS) {
+                // Only a bug produces this many, and the host drops floods
+                // anyway. Better to lose them here than to grow without bound.
+                return
+            }
+            actions.addLast(action)
+            lock.notifyAll()
+        }
+    }
+
     fun send(frame: TouchFrame) {
         synchronized(lock) {
             if (!running) return
@@ -142,6 +164,7 @@ class HostConnection(
             // Anything queued belongs to the previous session's coordinate
             // space and sequence; start clean.
             pending.clear()
+            actions.clear()
             sequence = 0
         }
         writer.write(
@@ -154,13 +177,13 @@ class HostConnection(
         )
         writer.write("\n")
         writer.flush()
-
         while (true) {
-            val frame = nextFrame() ?: break
-            sequence += 1
-            writer.write(frame.encode(sequence))
+            when (val next = nextMessage() ?: break) {
+                is Outgoing.Shortcut -> writer.write(next.action.encode(++sequence))
+                is Outgoing.Snapshot -> writer.write(next.frame.encode(++sequence))
+            }
             writer.write("\n")
-            // Flushing per frame keeps latency down; these lines are tiny.
+            // Flushing per message keeps latency down; these lines are tiny.
             writer.flush()
         }
 
@@ -181,10 +204,23 @@ class HostConnection(
         }
     }
 
-    /** Blocks until a frame is available, or returns null when the session ends. */
-    private fun nextFrame(): TouchFrame? {
+    /** One thing to write: a shortcut, or a snapshot of the fingers. */
+    private sealed interface Outgoing {
+        data class Shortcut(val action: Action) : Outgoing
+        data class Snapshot(val frame: TouchFrame) : Outgoing
+    }
+
+    /**
+     * Blocks until there is something to write, or returns null when the
+     * session ends.
+     *
+     * Shortcuts go first. They are rare and a button has to feel immediate,
+     * while a snapshot that waits a few milliseconds is superseded by the next
+     * one anyway.
+     */
+    private fun nextMessage(): Outgoing? {
         synchronized(lock) {
-            while (running && !surfaceChanged && pending.size == 0) {
+            while (running && !surfaceChanged && actions.isEmpty() && pending.size == 0) {
                 try {
                     lock.wait()
                 } catch (_: InterruptedException) {
@@ -193,7 +229,8 @@ class HostConnection(
                 }
             }
             if (!running || surfaceChanged) return null
-            return pending.poll()
+            actions.removeFirstOrNull()?.let { return Outgoing.Shortcut(it) }
+            return pending.poll()?.let { Outgoing.Snapshot(it) }
         }
     }
 

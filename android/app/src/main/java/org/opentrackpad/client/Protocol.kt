@@ -7,7 +7,7 @@ package org.opentrackpad.client
  * read and tested on its own.
  */
 object Protocol {
-    const val VERSION = "OTP/2"
+    const val VERSION = "OTP/3"
 
     /** The host rejects anything above this, and so should we. */
     const val MAX_CONTACTS = 10
