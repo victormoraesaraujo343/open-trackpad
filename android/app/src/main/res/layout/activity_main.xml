@@ -12,6 +12,14 @@
   swiping the pad are two independent streams. The pad therefore only ever sees
   contacts that started on the pad, and a finger that slides off it stays with
   it until it lifts, so no contact can be left behind on the host.
+
+  Every text size here is in dp rather than sp, which lint is told to allow.
+  This is a peripheral with a fixed layout: a rail is 70dp wide and a slot is a
+  fixed fifth of the screen, so at a large system font scale an sp label would
+  either overflow its slot or push the glyph out of it. The surface is meant to
+  be used without looking, and the shapes staying where they are matters more
+  here than following the system size. It is a real accessibility trade rather
+  than an oversight, and it is written down so it can be reversed on purpose.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -63,6 +71,7 @@
                 android:focusable="false"
                 android:importantForAccessibility="no"
                 android:text="@string/pad_hint"
+                android:fontFamily="@font/inter_regular"
                 android:textColor="@color/faint"
                 android:textSize="10dp"
                 tools:ignore="SpUsage" />
@@ -114,10 +123,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="13dp"
                 android:gravity="center"
+                android:fontFamily="@font/space_grotesk_semibold"
                 android:textColor="@color/ink"
                 android:textSize="19dp"
-                android:textStyle="bold"
-                android:fontFamily="sans-serif-medium"
                 tools:ignore="SpUsage" />
 
             <TextView
@@ -127,6 +135,7 @@
                 android:layout_marginTop="6dp"
                 android:gravity="center"
                 android:lineSpacingMultiplier="1.5"
+                android:fontFamily="@font/inter_regular"
                 android:textColor="@color/body"
                 android:textSize="13dp"
                 tools:ignore="SpUsage" />
@@ -154,6 +163,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/mismatch_phone_label"
+                        android:fontFamily="@font/inter_regular"
                         android:textColor="@color/muted"
                         android:textSize="10dp"
                         tools:ignore="SpUsage" />
@@ -163,7 +173,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="3dp"
-                        android:fontFamily="sans-serif-medium"
+                        android:fontFamily="@font/inter_medium"
                         android:textColor="@color/ink"
                         android:textSize="13dp"
                         tools:ignore="SpUsage" />
@@ -183,6 +193,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/mismatch_host_label"
+                        android:fontFamily="@font/inter_regular"
                         android:textColor="@color/muted"
                         android:textSize="10dp"
                         tools:ignore="SpUsage" />
@@ -192,7 +203,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="3dp"
-                        android:fontFamily="sans-serif-medium"
+                        android:fontFamily="@font/inter_medium"
                         android:textColor="@color/amber"
                         android:textSize="13dp"
                         tools:ignore="SpUsage" />
@@ -219,7 +230,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/trouble_seeking"
-                    android:textColor="@color/muted"
+                    android:fontFamily="@font/inter_regular"
+                        android:textColor="@color/muted"
                     android:textSize="11dp"
                     tools:ignore="SpUsage" />
             </LinearLayout>
@@ -231,6 +243,7 @@
                 android:layout_marginTop="15dp"
                 android:gravity="center"
                 android:lineSpacingMultiplier="1.45"
+                android:fontFamily="@font/inter_regular"
                 android:textColor="@color/faint"
                 android:textSize="10dp"
                 tools:ignore="SpUsage" />

@@ -14,6 +14,7 @@ import android.util.SparseIntArray
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.PathParser
 
 /**
@@ -43,8 +44,8 @@ class RailView @JvmOverloads constructor(
 
         const val BORDER_DP = 1f
 
-        /** Glyphs are drawn on a 20-unit grid, at 20dp, stroked at 1.4. */
-        const val ICON_DP = 20f
+        /** Glyphs are drawn on a 20-unit grid, at 22dp, stroked at 1.4. */
+        const val ICON_DP = 22f
         const val ICON_GRID = 20f
         const val ICON_STROKE = 1.4f
 
@@ -54,13 +55,13 @@ class RailView @JvmOverloads constructor(
         /**
          * Label size in dp, not sp, on purpose.
          *
-         * A rail is 70dp wide and a slot is a fixed fifth of the screen. At a
+         * A rail is 78dp wide and a slot is a fixed fifth of the screen. At a
          * large system font scale an sp label would either overflow the slot or
          * push the glyph out of it, and this surface is meant to be used without
          * looking — the shapes staying put matters more here than following the
          * system size. The label is a reminder beside an icon, not reading.
          */
-        const val LABEL_DP = 10f
+        const val LABEL_DP = 12f
 
         /** Left and right of the label before it is cut short. */
         const val LABEL_INSET_DP = 5f
@@ -127,7 +128,11 @@ class RailView @JvmOverloads constructor(
     private val label = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         textSize = LABEL_DP * density
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        // Inter Medium, the weight the design draws rail labels at. Falls back
+        // to the system's own medium if the face cannot be loaded, so a missing
+        // font costs the look and not the button.
+        typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
+            ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
 
     private val bounds = RectF()
