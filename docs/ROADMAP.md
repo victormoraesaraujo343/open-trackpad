@@ -178,60 +178,81 @@ an afterthought.
       without looking cannot have its buttons shift position, and a stable grid
       is worth more than a full one.
 
-### Screens still to draw
+### Screens
 
-Counted on 2026-08-29, after the audio panel. Eleven remain before the client
-can be built without inventing anything. Drawn ones live in the screens
-artifact linked from `docs/DESIGN.md`.
+All of them are drawn as of 2026-08-29 and live in the screens artifact linked
+from `docs/DESIGN.md`. The eleven counted that day are listed below with what
+each one settled, because the list is the brief for building the client.
 
 **The audio panel is one short.**
 
-- [ ] Audio · input. Same shape as output, microphones instead of speakers.
+- [x] Audio · input. Same shape as output, microphones instead of speakers.
 
 **Shortcuts have the largest hole.** The recorder that appears on the computer
 is drawn; nothing on the phone yet asks for it, and the profile editor holds
 rails and buttons but no shortcuts to put in them.
 
-- [ ] The shortcut picker — the list you drag from. Fifty ready-made plus
+- [x] The shortcut picker — the list you drag from. Fifty ready-made plus
       unlimited custom ones is a real list needing grouping and search, not the
       short menu the editor implies today.
-- [ ] `+ New shortcut` inside that picker, which is what asks the computer to
+- [x] `+ New shortcut` inside that picker, which is what asks the computer to
       open its recorder. The moment is right there: you are building a rail,
       you notice one is missing, you make it.
-- [ ] Renaming and deleting a custom shortcut. Anything that can be created has
+- [x] Renaming and deleting a custom shortcut. Anything that can be created has
       to be undoable or the list only ever grows.
-- [ ] The profile editor reworked around the picker above.
+- [x] The profile editor reworked around the picker above.
 
 **Two of the three control shapes were named and never drawn.** Both were
 described in this file months before anything could show them; the panel work
 has now overtaken them.
 
-- [ ] The dial. What a continuous slot looks like while a thumb is on it —
+- [x] The dial. What a continuous slot looks like while a thumb is on it —
       volume, brightness, seeking. The iPod click wheel is the reference, and
       the value is deliberately absent: the desktop shows its own overlay.
-- [ ] A held key. The rail slot stays lit while the other hand works the
+- [x] A held key. The rail slot stays lit while the other hand works the
       trackpad, and everything releases when the session ends.
 
 **Removing the status bar left states with nowhere to go.** The v0.1 screens
 carry a compact bar; v0.2 deliberately has none, so the states it used to hold
 need a home.
 
-- [ ] Cable pulled while in use, and coming back.
-- [ ] The host refusing the version — the phone must say so in a way that names
+- [x] Cable pulled while in use, and coming back.
+- [x] The host refusing the version — the phone must say so in a way that names
       the fix, since the answer is always "update the other side".
 
 **The computer has surfaces too**, and they should not be invented ad hoc in
 code the way the recorder nearly was.
 
-- [ ] The tray menu. It exists and works, and nobody has ever drawn it.
+- [x] The tray menu. It exists and works, and nobody has ever drawn it.
 
 **The recent-applications rail**, whose blocker is gone.
 
-- [ ] Four recent windows on the far rail, and the fifth slot listing the rest.
+- [x] Four recent windows on the far rail, and the fifth slot listing the rest.
 
 The return channel that shipped today is what the rail was waiting for, so the
 screens can be drawn now. Building it still means one path per desktop —
 KDE, wlroots, GNOME, X11 — which is why it stays behind the v0.2 client.
+
+### Open decision: is recording a permission?
+
+Raised 2026-08-29 while widening the vocabulary for custom shortcuts. Adding the
+name `print` made `alt+print+b` reachable from the phone, which is the kernel
+magic SysRq sequence and reboots the machine without unmounting. It was proven
+reachable, refused, and enforced on both the wire and the recorder — a rule one
+path enforces is a rule with a way around it.
+
+That patch narrows what is reachable without changing the shape of the problem.
+The host accepts any chord built from names it knows, so recording does not gate
+anything: it only fills a list to draw buttons from. This file already describes
+the other model — the vocabulary "stays closed, it just becomes editable by the
+person sitting at the machine" — and under it the phone could only fire chords
+somebody physically pressed on this keyboard, so the SysRq patch would be
+unnecessary rather than load-bearing.
+
+The cost is a product one, which is why it is not settled here: gating means a
+fresh install ships with the built-in shortcuts already recorded, and what a
+stranger's first launch contains is a decision, not an implementation detail. The
+store has a `contains(chord)` waiting for the answer either way.
 
 ## Milestone 5 — recent applications rail
 
