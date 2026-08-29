@@ -160,8 +160,9 @@ An `<entity>` is seven fields:
 
 - `kind`: `output`, `input` or `stream`
 - `id`: the sound daemon's own number. The only identifier that crosses the wire
-- `volume`: 0 to 1000, where 1000 is 100%. Per-mille because a fader that runs
-  the height of a phone screen has room for far more than a hundred steps
+- `volume`: 0 to 1500, where 1000 is 100%. Per-mille because a fader that runs
+  the height of a phone screen has room for far more than a hundred steps, and
+  the ceiling sits above the reference because louder than 100% is offered
 - `muted`, `default`: `0` or `1`. `default` is always `0` for a stream
 - `target`: for a stream, the output it plays through; `-` for a device
 - `name`: percent-encoded (see below)
@@ -262,12 +263,22 @@ Monitor sources are not listed. Every output has one and none of them is a
 microphone; showing them would double the input page with rows that mean nothing
 to the person reading it.
 
-The accepted level range is 0 to 1000 today, so nothing louder than 100% can be
-asked for. That is a smaller range than the panel is designed around: the fader
-is drawn against a scale that runs to 150%, with everything past 100% painted in
-the amber the rest of the app uses for a degraded state, and offered only to
-someone who has turned it on in the panel's settings. Raising the ceiling is
-pending on the host; the client must not send a level the host will refuse.
+Two numbers, not one. 1000 is what reads as 100%; 1500 is the highest level
+that may be asked for. They were a single constant while they happened to be
+equal, which is how a ceiling silently becomes a reference and caps everything
+back at 100%.
+
+Above 100% is offered, not hidden. The fader is drawn against the full scale to
+150% with a mark at 100, and everything past that mark — bar, knob and number —
+turns the amber the rest of the app uses for a degraded state, so a glance shows
+you are in the distorting range without reading anything. The client only offers
+it once someone turns it on in the panel's settings.
+
+Reported levels are not capped either. A device left at 130% by another tool
+reaches the client as 1300, because telling the phone the machine is quieter
+than it is actually playing is the wrong half of the decision. Past 150% the
+host reports 150, since the client has no way to draw more and a number it
+cannot show is worse than the edge it can.
 
 ## Future binary framing
 
