@@ -82,6 +82,25 @@ object Protocol {
         val parts = line?.trim()?.split(' ') ?: return false
         return parts.size >= 2 && parts[0] == "WELCOME" && parts[1] == VERSION
     }
+
+    /**
+     * What the host actually agreed to serve.
+     *
+     * The answer is what was asked for kept to what this machine can do, so it
+     * may be smaller than the request and never larger. A host with no sound
+     * daemon answers `-` and the phone draws no panel — absent rather than
+     * broken, which is the whole reason the reply carries a list at all.
+     */
+    fun welcomeCapabilities(line: String?): Set<String> {
+        if (!welcomeIsOurs(line)) return emptySet()
+        val granted = line!!.trim().split(' ').getOrNull(2) ?: return emptySet()
+        if (granted == NO_CAPABILITIES) return emptySet()
+        return granted.split(',').filter { it.isNotBlank() }.toSet()
+    }
+
+    /** The handshake's capability field, as the host expects to read it. */
+    fun capabilities(wanted: Collection<String>): String =
+        if (wanted.isEmpty()) NO_CAPABILITIES else wanted.joinToString(",")
 }
 
 /**

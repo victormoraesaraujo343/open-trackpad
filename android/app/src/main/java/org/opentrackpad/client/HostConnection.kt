@@ -56,7 +56,16 @@ enum class ConnectionState {
 class HostConnection(
     private val host: String = "127.0.0.1",
     private val port: Int = 4242,
+
+    /** What to ask the host to tell us about. Empty asks for a trackpad only. */
+    private val wanted: Set<String> = emptySet(),
     private val onState: (ConnectionState, String?) -> Unit,
+
+    /** What the host agreed to serve, which may be less than [wanted]. */
+    private val onGranted: (Set<String>) -> Unit = {},
+
+    /** One line the host sent, on the main thread, already trimmed. */
+    private val onLine: (String) -> Unit = {},
 ) {
     private companion object {
         const val CONNECT_TIMEOUT_MS = 2_000
@@ -73,6 +82,15 @@ class HostConnection(
          */
         const val HANDSHAKE_TIMEOUT_MS = 1_500
 
+        /**
+         * How long to wait for the reader to notice the socket has gone.
+         *
+         * Short, because it is only tidiness: the read fails the instant the
+         * socket closes. Joining at all is what stops a line from a finished
+         * session being delivered during the next one.
+         */
+        const val READER_JOIN_MS = 250L
+
         /** Backoff between reconnect attempts, capped so it stays responsive. */
         const val RETRY_MIN_MS = 250L
         const val RETRY_MAX_MS = 4_000L
@@ -80,6 +98,16 @@ class HostConnection(
         /** Far more shortcuts than a hand can produce, so a wedged socket cannot pile them up. */
         const val MAX_PENDING_ACTIONS = 32
     }
+
+    /**
+     * A line the client sends that is neither touch nor a shortcut.
+     *
+     * A wrapper rather than a bare string so that nothing can queue arbitrary
+     * text on the socket by accident. The only things that build one are the
+     * request encoders in [Audio], which draw from a closed vocabulary.
+     */
+    @JvmInline
+    value class Request(val line: String)
 
     /** How an attempt at a session ended, before any frame was sent. */
     private enum class Handshake {
@@ -99,6 +127,10 @@ class HostConnection(
     /// Actions ride the same socket but never queue behind movement: a button
     /// press has to feel immediate, and the host treats the two as unrelated.
     private val actions = ArrayDeque<Action>()
+
+    /// Panel requests share the shortcut lane: both are somebody's finger on a
+    /// control, and both would feel wrong queued behind pointer movement.
+    private val requests = ArrayDeque<Request>()
     private val lock = Object()
 
     @Volatile private var running = false
@@ -168,6 +200,20 @@ class HostConnection(
     }
 
     /**
+     * Queues one request to a panel's domain. Never blocks the caller.
+     */
+    fun send(request: Request) {
+        synchronized(lock) {
+            if (!running) return
+            // A dragged fader sends a level per frame, which is real; a stuck
+            // one would pile up the same way a wedged shortcut would.
+            if (requests.size >= MAX_PENDING_ACTIONS) return
+            requests.addLast(request)
+            lock.notifyAll()
+        }
+    }
+
+    /**
      * Queues one snapshot. Returns immediately; never blocks the caller.
      */
     fun send(frame: TouchFrame) {
@@ -216,7 +262,18 @@ class HostConnection(
                                 else ConnectionState.LIMITED,
                                 version,
                             )
-                            pump(writer)
+                            // Only version 4 says anything back, so only
+                            // version 4 is listened to.
+                            val reader =
+                                if (version == Protocol.VERSION) listen(socket) else null
+                            try {
+                                pump(writer)
+                            } finally {
+                                // The socket closing is what stops the reader;
+                                // joining afterwards keeps a dead session's
+                                // last line from arriving during the next one.
+                                reader?.join(READER_JOIN_MS)
+                            }
                         }
 
                         Handshake.UNANSWERED -> report(ConnectionState.BUSY)
@@ -272,7 +329,13 @@ class HostConnection(
                 widthMicrometres = metrics.widthMicrometres,
                 heightMicrometres = metrics.heightMicrometres,
                 version = version,
-                capabilities = if (version == Protocol.VERSION) Protocol.NO_CAPABILITIES else null,
+                capabilities = if (version == Protocol.VERSION) {
+                    Protocol.capabilities(wanted)
+                } else {
+                    // The field does not exist before version 4, and an older
+                    // host treats a trailing one as fatal.
+                    null
+                },
             )
         )
         writer.write("\n")
@@ -292,7 +355,10 @@ class HostConnection(
         }
         // A closed connection with no reply is the version check failing, which
         // the host does before anything else.
-        return if (Protocol.welcomeIsOurs(reply)) Handshake.ACCEPTED else Handshake.REFUSED
+        if (!Protocol.welcomeIsOurs(reply)) return Handshake.REFUSED
+        val granted = Protocol.welcomeCapabilities(reply)
+        main.post { onGranted(granted) }
+        return Handshake.ACCEPTED
     }
 
     /**
@@ -316,6 +382,35 @@ class HostConnection(
         return line.toString()
     }
 
+    /**
+     * Reads whatever the host says, on a thread of its own.
+     *
+     * A separate thread rather than a poll inside the writer, because the
+     * writer spends its life blocked waiting for the next frame and a read
+     * folded into it would either add latency to touch or never happen. The two
+     * directions share only the socket.
+     *
+     * It ends by itself: closing the socket makes the read fail, which is how
+     * every session finishes.
+     */
+    private fun listen(socket: Socket): Thread =
+        Thread({
+            try {
+                val input = socket.getInputStream()
+                while (true) {
+                    val line = readLine(input) ?: break
+                    if (line.isEmpty()) continue
+                    main.post { onLine(line) }
+                }
+            } catch (_: IOException) {
+                // The session ended. The writer already knows, and the state it
+                // reports is the one the person should see.
+            }
+        }, "opentrackpad-reader").apply {
+            isDaemon = true
+            start()
+        }
+
     /** Runs one session until the socket dies or the surface changes size. */
     private fun pump(writer: BufferedWriter) {
         synchronized(lock) {
@@ -324,11 +419,15 @@ class HostConnection(
             // space and sequence; start clean.
             pending.clear()
             actions.clear()
+            requests.clear()
             sequence = 0
         }
         while (true) {
             when (val next = nextMessage() ?: break) {
                 is Outgoing.Shortcut -> writer.write(next.action.encode(++sequence))
+                // Requests carry their own numbering, which the host echoes
+                // back only when refusing, so it is not the frame sequence.
+                is Outgoing.Ask -> writer.write(next.request.line)
                 is Outgoing.Snapshot -> writer.write(next.frame.encode(++sequence))
             }
             writer.write("\n")
@@ -356,6 +455,7 @@ class HostConnection(
     /** One thing to write: a shortcut, or a snapshot of the fingers. */
     private sealed interface Outgoing {
         data class Shortcut(val action: Action) : Outgoing
+        data class Ask(val request: Request) : Outgoing
         data class Snapshot(val frame: TouchFrame) : Outgoing
     }
 
@@ -369,7 +469,9 @@ class HostConnection(
      */
     private fun nextMessage(): Outgoing? {
         synchronized(lock) {
-            while (running && !surfaceChanged && actions.isEmpty() && pending.size == 0) {
+            while (running && !surfaceChanged &&
+                actions.isEmpty() && requests.isEmpty() && pending.size == 0
+            ) {
                 try {
                     lock.wait()
                 } catch (_: InterruptedException) {
@@ -379,6 +481,7 @@ class HostConnection(
             }
             if (!running || surfaceChanged) return null
             actions.removeFirstOrNull()?.let { return Outgoing.Shortcut(it) }
+            requests.removeFirstOrNull()?.let { return Outgoing.Ask(it) }
             return pending.poll()?.let { Outgoing.Snapshot(it) }
         }
     }

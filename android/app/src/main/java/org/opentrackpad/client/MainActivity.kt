@@ -137,7 +137,15 @@ class MainActivity : AppCompatActivity() {
         // below depends on it: which shortcuts exist, and which hand holds them.
         stored = ProfileStore.load(settingsFile)
 
-        connection = HostConnection(onState = ::showState)
+        connection = HostConnection(
+            // Asked for every time. A host that cannot serve it answers with a
+            // shorter list and the panel is simply absent, which is the whole
+            // reason the handshake carries one.
+            wanted = setOf(Audio.CAPABILITY),
+            onState = ::showState,
+            onGranted = ::onGranted,
+            onLine = ::onHostLine,
+        )
         surface.onFrame = ::onFrame
         surface.onSurfaceSize = ::onSurfaceSize
 
@@ -501,6 +509,42 @@ class MainActivity : AppCompatActivity() {
             started = true
             connection.start(metrics)
         }
+    }
+
+    /** What the phone believes about sound. Empty until a host grants it. */
+    private val audio = AudioState()
+
+    private var requestSequence = 0L
+
+    private fun onGranted(granted: Set<String>) {
+        audio.grant(Audio.CAPABILITY in granted)
+        audio.reset()
+        if (audio.granted) ask(Audio.refresh(++requestSequence))
+        Log.i(TAG, "host granted: " + granted.ifEmpty { setOf("nothing") }.joinToString(","))
+    }
+
+    /**
+     * One line from the host.
+     *
+     * Domains that are not ours are ignored rather than treated as errors: a
+     * later host will send messages this version has never heard of, and the
+     * client has to be able to be older than the computer it is plugged into.
+     */
+    private fun onHostLine(line: String) {
+        val message = Audio.parse(line) ?: return
+        if (message is AudioMessage.Refused) {
+            // The fader springs back to whatever the host says is true, which
+            // the picture already holds. Saying why is the panel's job.
+            Log.i(TAG, "refused " + message.sequence + ": " + message.reason.wire)
+            return
+        }
+        // True means we hold a picture that was superseded by one we never saw,
+        // so patching it would be guesswork. Ask for the whole thing instead.
+        if (audio.apply(message)) ask(Audio.refresh(++requestSequence))
+    }
+
+    private fun ask(line: String?) {
+        connection.send(HostConnection.Request(line ?: return))
     }
 
     private fun onFrame(frame: TouchFrame) {
