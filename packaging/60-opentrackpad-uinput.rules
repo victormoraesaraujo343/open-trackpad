@@ -1,0 +1,24 @@
+# Give the user logged in at the local seat access to /dev/uinput, so the
+# OpenTrackpad daemon can create its virtual touchpad without root.
+#
+# TAG+="uaccess" asks systemd-logind to put an ACL on the device for whoever is
+# currently logged in at the seat, and to remove it when they log out. That is
+# far narrower than adding a group or making the node world-writable: a user who
+# is not sitting at this machine gets nothing, and nothing gains the ability to
+# synthesise input permanently.
+#
+# Many distributions already do this. Check before installing:
+#
+#   getfacl /dev/uinput
+#
+# If your own user already appears with rw, you do not need this file.
+#
+# Install with:
+#
+#   sudo cp packaging/60-opentrackpad-uinput.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --name-match=uinput
+#
+# static_node covers the case where the uinput module has not been loaded yet,
+# so the permissions are right the first time something opens it.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

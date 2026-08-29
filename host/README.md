@@ -16,6 +16,7 @@ cargo run               # listen on 127.0.0.1:4242
 | `ADDRESS` | Loopback address to listen on. Default `127.0.0.1:4242`. |
 | `--self-test` | Replay a scripted contact sequence and exit, without listening. |
 | `--dry-run` | Do not create a virtual device; print pad events instead. |
+| `--soak MINUTES` | Replay them on a loop for that long, then report stuck contacts and memory growth. |
 | `--print-events` | Also print every pad event while a client is connected. |
 
 ## Validating
@@ -39,9 +40,47 @@ user an ACL on `/dev/uinput`, so nothing needs configuring. Check with:
 getfacl /dev/uinput
 ```
 
-If your distribution does not do that, add the user to the group owning
-`/dev/uinput` or ship a udev rule. Do **not** `chmod 666 /dev/uinput`: that hands
-every process on the machine the ability to synthesise input.
+If your own user does not appear there with `rw`, install the udev rule:
+
+```bash
+sudo cp ../packaging/60-opentrackpad-uinput.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger --name-match=uinput
+```
+
+It tags the device for `uaccess`, which asks logind to grant an ACL to whoever
+is logged in at the local seat and to withdraw it at logout. Do **not**
+`chmod 666 /dev/uinput`: that hands every process on the machine the ability to
+synthesise input, permanently.
+
+## Running it as a service
+
+```bash
+cargo build --release
+install -Dm755 target/release/opentrackpadd ~/.local/bin/opentrackpadd
+install -Dm644 ../packaging/opentrackpad.service \
+  ~/.config/systemd/user/opentrackpad.service
+systemctl --user daemon-reload
+systemctl --user enable --now opentrackpad.service
+```
+
+A user service rather than a system one, deliberately: the daemon injects input
+into one person's desktop session and should live and die with it. Logs go to
+the journal:
+
+```bash
+journalctl --user -u opentrackpad.service -f
+```
+
+## Checking stability
+
+```bash
+cargo run -- --soak 30
+```
+
+Replays synthetic contacts on a loop for thirty minutes and reports stuck
+contacts and memory growth at the end. It moves the pointer the whole time, so
+run it when you are away from the machine.
 
 ## Layout
 

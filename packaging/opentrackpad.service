@@ -1,0 +1,41 @@
+# OpenTrackpad host daemon, as a systemd user service.
+#
+#   cargo build --release
+#   install -Dm755 host/target/release/opentrackpadd ~/.local/bin/opentrackpadd
+#   install -Dm644 packaging/opentrackpad.service ~/.config/systemd/user/opentrackpad.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now opentrackpad.service
+#
+# A user service, not a system one, on purpose: the daemon injects input into
+# one person's desktop session and should live and die with it. It never needs
+# root — see packaging/60-opentrackpad-uinput.rules for /dev/uinput access.
+
+[Unit]
+Description=OpenTrackpad host daemon
+Documentation=https://github.com/victormoraesaraujo343/open-trackpad
+# The virtual touchpad is only useful once there is a session to inject into.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/opentrackpadd
+Restart=on-failure
+RestartSec=2
+
+# The daemon needs a loopback socket and /dev/uinput. Nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=graphical-session.target

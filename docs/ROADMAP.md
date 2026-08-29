@@ -17,7 +17,8 @@
 - [x] Verify injected contacts move the desktop pointer
 - [x] Verify two-finger scrolling and three- and four-finger swipe gestures
 - [ ] Verify on a second distribution and desktop (GNOME as well as KDE)
-- [ ] Add a minimal udev rule and systemd user service
+- [x] Add a udev rule and systemd user service
+- [ ] Confirm 30 minutes of use leaves no stuck contact (`--soak 30`)
 
 ## Milestone 2 — Android sender
 

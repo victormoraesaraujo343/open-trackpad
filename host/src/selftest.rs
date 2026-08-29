@@ -3,7 +3,7 @@
 
 use std::io;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::pad::PadEvent;
 use crate::protocol::{Contact, Frame, Hello};
@@ -39,11 +39,99 @@ struct Step {
     contacts: Vec<(u8, u32, u32)>,
 }
 
+/// Turns a synthetic `(id, x, y)` triple into a protocol contact.
+///
+/// Pressure and contact size are filled in with plausible values even though
+/// the virtual device declares no such axes, so the parser sees realistic input.
+fn contact(&(id, x, y): &(u8, u32, u32)) -> Contact {
+    Contact {
+        id,
+        x,
+        y,
+        pressure: 600,
+        major: 12,
+    }
+}
+
 fn step(name: &'static str, contacts: &[(u8, u32, u32)]) -> Step {
     Step {
         name,
         contacts: contacts.to_vec(),
     }
+}
+
+/// Reads this process's resident memory in kilobytes, for leak checking.
+///
+/// Returns `None` where /proc is unavailable rather than guessing.
+fn resident_kb() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("VmRSS:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// Replays the sequence on a loop for `minutes`, to answer the acceptance
+/// criterion that half an hour of use causes no stuck touch, crash or leak.
+///
+/// This moves the pointer continuously for the whole duration, so it is meant to
+/// be run on an idle machine.
+pub fn soak(state: &mut ContactState, sink: &mut dyn PadSink, minutes: u64) -> io::Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(minutes * 60);
+    let started_kb = resident_kb();
+    let mut cycles = 0u64;
+    let mut frames = 0u64;
+    let mut reported = Instant::now();
+
+    println!("soak: running for {minutes} minute(s); the pointer will move throughout");
+    sink.emit(&state.begin_session(&SURFACE))?;
+
+    while Instant::now() < deadline {
+        for (index, step) in sequence().into_iter().enumerate() {
+            let frame = Frame {
+                sequence: frames + index as u64 + 1,
+                event_time_ns: (frames + index as u64 + 1) * 10_000_000,
+                contacts: step.contacts.iter().map(contact).collect(),
+            };
+            sink.emit(&state.apply(&frame))?;
+            sleep(FRAME_INTERVAL);
+        }
+        frames += sequence().len() as u64;
+        cycles += 1;
+
+        // Every cycle ends with contacts deliberately left down, so this also
+        // exercises the release path a dropped connection would take.
+        sink.emit(&state.release_all())?;
+        if state.active_contacts() != 0 {
+            return Err(io::Error::other(format!(
+                "soak failed: {} contact(s) stuck after release",
+                state.active_contacts()
+            )));
+        }
+
+        if reported.elapsed() >= Duration::from_secs(60) {
+            reported = Instant::now();
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            println!(
+                "  {cycles} cycles, {frames} frames, {} minute(s) left",
+                remaining.as_secs() / 60
+            );
+        }
+    }
+
+    println!("soak: finished after {cycles} cycles and {frames} frames");
+    println!("  contacts still down: {}", state.active_contacts());
+    match (started_kb, resident_kb()) {
+        (Some(before), Some(after)) => println!(
+            "  resident memory: {before} kB -> {after} kB ({:+} kB)",
+            after as i64 - before as i64
+        ),
+        _ => println!("  resident memory: unavailable"),
+    }
+    Ok(())
 }
 
 /// Replays the synthetic sequence through `state` into `sink`.
@@ -150,17 +238,7 @@ pub fn run(state: &mut ContactState, sink: &mut dyn PadSink) -> io::Result<()> {
         let frame = Frame {
             sequence: index as u64 + 1,
             event_time_ns: (index as u64 + 1) * 10_000_000,
-            contacts: step
-                .contacts
-                .iter()
-                .map(|&(id, x, y)| Contact {
-                    id,
-                    x,
-                    y,
-                    pressure: 600,
-                    major: 12,
-                })
-                .collect(),
+            contacts: step.contacts.iter().map(contact).collect(),
         };
         sink.emit(&state.apply(&frame))?;
         sleep(FRAME_INTERVAL);

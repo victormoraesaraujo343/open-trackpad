@@ -15,7 +15,8 @@ by a real machine.
 | Injected contacts move the desktop pointer | observed |
 | Two-finger scrolling reaches the desktop | observed |
 | Three- and four-finger swipe gestures reach the desktop | observed |
-| 30 minutes of real use is stable | **not yet verified** |
+| Runs as a systemd user service | observed |
+| 30 minutes of use leaves no stuck contact | **not yet verified** |
 
 ## Automated tests
 
@@ -76,6 +77,20 @@ Please add the result to the observed-results section below, along with your
 distribution, kernel and desktop. That table is the only evidence the project
 has that it is not accidentally KDE-specific.
 
+## Checking stability
+
+The acceptance criterion is that half an hour of use causes no stuck touch,
+crash or leak:
+
+```bash
+cd host
+cargo run -- --soak 30
+```
+
+It replays contacts on a loop and reports stuck contacts and resident memory at
+the end. The pointer moves the whole time, so run it while you are away from the
+machine.
+
 ## Doing it by hand
 
 The script automates the checks below; run them individually when you need to
@@ -126,7 +141,7 @@ before working on the Android client.
 
 ### 2026-08-29 — CachyOS, kernel 7.2.0-1-cachyos, KDE Plasma on Wayland, libinput 1.31.3
 
-`cargo test`: 36 passed.
+`cargo test`:  39 passed.
 
 The daemon creates `/dev/input/event28`, named `OpenTrackpad Touchpad`.
 
@@ -176,6 +191,10 @@ KWin's view of the device, over D-Bus, with no root needed:
 libinput accepts the device and treats it as a touchpad with tap-to-click,
 three-finger tap and two-finger scrolling. This is the milestone gate, and it
 passes on this host.
+
+The same device, created by the daemon running under
+`packaging/opentrackpad.service` with its full sandbox applied, is accepted
+identically: the hardening does not block `/dev/uinput`.
 
 ### The palm-detection trap
 

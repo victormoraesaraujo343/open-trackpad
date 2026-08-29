@@ -28,6 +28,9 @@ usage: opentrackpadd [OPTIONS] [ADDRESS]
 
   --dry-run          do not create a virtual device; print pad events instead
   --self-test        replay synthetic contacts and exit, without listening
+  --soak MINUTES     replay them on a loop for that long, then report on
+                     stuck contacts and memory growth. Moves the pointer
+                     continuously, so run it on an idle machine.
   --print-events     also print every pad event while a client is connected
   -h, --help         show this message
 ";
@@ -36,6 +39,7 @@ struct Options {
     address: String,
     dry_run: bool,
     self_test: bool,
+    soak_minutes: Option<u64>,
     print_events: bool,
 }
 
@@ -44,14 +48,28 @@ fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, Str
         address: DEFAULT_ADDRESS.to_owned(),
         dry_run: false,
         self_test: false,
+        soak_minutes: None,
         print_events: false,
     };
     let mut address_seen = false;
+    let mut expecting_soak = false;
 
     for argument in arguments {
+        if expecting_soak {
+            let minutes = argument
+                .parse::<u64>()
+                .map_err(|_| format!("--soak needs a number of minutes, got: {argument}"))?;
+            if minutes == 0 {
+                return Err("--soak needs at least one minute".to_owned());
+            }
+            options.soak_minutes = Some(minutes);
+            expecting_soak = false;
+            continue;
+        }
         match argument.as_str() {
             "--dry-run" => options.dry_run = true,
             "--self-test" => options.self_test = true,
+            "--soak" => expecting_soak = true,
             "--print-events" => options.print_events = true,
             "-h" | "--help" => return Err(USAGE.to_owned()),
             other if other.starts_with('-') => {
@@ -65,6 +83,9 @@ fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, Str
                 address_seen = true;
             }
         }
+    }
+    if expecting_soak {
+        return Err("--soak needs a number of minutes".to_owned());
     }
     Ok(options)
 }
@@ -194,6 +215,12 @@ fn run() -> io::Result<()> {
         sink
     };
 
+    if let Some(minutes) = options.soak_minutes {
+        let result = selftest::soak(&mut state, sink, minutes);
+        end_session(&mut state, sink, 0);
+        return result;
+    }
+
     if options.self_test {
         let result = selftest::run(&mut state, sink);
         end_session(&mut state, sink, 0);
@@ -253,5 +280,33 @@ mod tests {
     #[test]
     fn unknown_options_are_rejected_rather_than_treated_as_an_address() {
         assert!(parse_options(["--nope".to_owned()].into_iter()).is_err());
+    }
+
+    #[test]
+    fn soak_takes_a_duration_in_minutes() {
+        let options = parse_options(["--soak".to_owned(), "30".to_owned()].into_iter()).unwrap();
+        assert_eq!(options.soak_minutes, Some(30));
+    }
+
+    #[test]
+    fn soak_rejects_a_missing_or_nonsense_duration() {
+        assert!(parse_options(["--soak".to_owned()].into_iter()).is_err());
+        assert!(parse_options(["--soak".to_owned(), "0".to_owned()].into_iter()).is_err());
+        assert!(parse_options(["--soak".to_owned(), "forever".to_owned()].into_iter()).is_err());
+    }
+
+    #[test]
+    fn a_soak_duration_is_not_mistaken_for_an_address() {
+        let options = parse_options(
+            [
+                "--soak".to_owned(),
+                "5".to_owned(),
+                "127.0.0.1:1".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        assert_eq!(options.soak_minutes, Some(5));
+        assert_eq!(options.address, "127.0.0.1:1");
     }
 }
