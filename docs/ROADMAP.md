@@ -276,6 +276,61 @@ X11 has EWMH, which works everywhere it applies.
 - [ ] Measure latency and reconnection behavior against USB
 - [ ] Document security and pairing behavior
 
+
+## Later — how it should feel
+
+Decided on 2026-08-29 as direction, not as work. None of this touches v0.2.
+
+### Two visual languages, one app
+
+A second look was drawn in parallel — skeuomorphic, drawn from a hardware audio
+controller, and good enough to keep. Victor wants both available with the person
+choosing, and the current one stays exactly as it is.
+
+It ships as a theme, not a second app. Settings already carries a Minimal/HUD
+switch, so the slot exists; two published builds would mean two things to
+release, two bug surfaces and a person who picked wrong having to reinstall. The
+skeuomorphic one is expected to earn its keep on larger screens, where its
+weight has room.
+
+### The trackpad's texture is a feature
+
+The surface texture in the shipping light client gives the thing character, and
+it survives into v1 rather than being flattened into a plain panel. Worth
+saying because it looks like decoration and is not: it is the one place the app
+admits to being a physical object.
+
+### The click should feel like a click
+
+The goal is the Apple trackpad: no moving part, yet a press that feels like one.
+That machine has a force sensor and a linear actuator; a phone has an actuator
+and no force sensor worth the name. The gap is smaller than it sounds, because
+what sells the illusion is timing and shape, not force measurement.
+
+Three things this needs, in order of how much they buy:
+
+- **Fire on the real event, not a guess.** libinput decides what a tap is, on
+  the host — the phone never learns of a click today. The return channel built
+  for the audio panel is what makes it possible to say so. The catch is latency:
+  a round trip plus an actuator's own start-up delay lands past the window where
+  a tick still reads as the cause of the press. So the client should fire
+  locally on the same thresholds libinput uses, and the host's event is how we
+  find out when it guessed wrong.
+- **A click is two events.** Apple ticks on press and again, softer, on release.
+  A single tick reads as a notification; the pair reads as a mechanism.
+- **Composed primitives, not a buzz.** Android exposes click, tick and rise/fall
+  primitives that can be composed with scale and delay. A crisp scaled click for
+  a press, a low tick for a release, a distinct shape for a two-finger click, and
+  detents while scrolling. Amplitude control is not universal, so it degrades to
+  a plain short pulse on hardware that lacks it.
+
+On the missing force sensor: contact area already crosses the wire — the
+protocol carries pressure and the contact major axis, and on a capacitive screen
+those are the same measurement wearing two names. A finger pressing harder
+spreads wider. That is a real signal and a poor one, and it should be treated as
+a possible refinement to test rather than the foundation. The foundation is
+timing.
+
 ## Non-goals for the first release
 
 - Emulating Apple's proprietary Magic Trackpad protocol
