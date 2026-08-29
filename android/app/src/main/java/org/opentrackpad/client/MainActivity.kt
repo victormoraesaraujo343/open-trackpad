@@ -109,7 +109,7 @@ class MainActivity : AppCompatActivity() {
         // not have to stay bright, though; ScreenCare handles that.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         goImmersive()
-        keepClearOfSystemEdges()
+        takeTheWholeScreen()
         layOutRails()
     }
 
@@ -211,36 +211,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Keeps the rails out from under the camera and out of the system's way.
+     * Takes the whole screen, and asks the system to stop taking bits of it
+     * back.
      *
-     * In landscape the cutout sits on one short edge, which is exactly where a
-     * rail is, so the layout is pushed in by whatever the cutout takes. The
-     * back gesture lives on those same two edges; claiming the rails as
-     * exclusion rects asks the system to let a press through instead of reading
-     * it as a swipe. Android caps how much of an edge may be claimed, so this
-     * improves the odds rather than settling them.
+     * The layout is not inset for anything: not for the hidden system bars, and
+     * not for the camera. A rail is buttons with generous padding around their
+     * middles, and a notch across the outer few millimetres of one costs
+     * nothing worth a strip of a 6.7-inch screen. The only margin is the 12dp
+     * the design asks for.
+     *
+     * Drawing there is the easy half. The hard half is that the same edges
+     * belong to Android's own gestures — a swipe in from the left or right is
+     * Back before it is anything of ours, and the bottom strip is Home — and a
+     * trackpad stroke that gets taken for a system gesture is a finger that
+     * starts a drag and vanishes. So the whole window is claimed as an
+     * exclusion rect, which is the most an app may ask for.
+     *
+     * It is not the most it may *get*. Android caps the claim at 200dp of each
+     * side edge and honours nothing at all along the bottom, where Home always
+     * wins. What survives that cap is measured rather than assumed; see the
+     * report in the commit that turned this on.
      */
-    private fun keepClearOfSystemEdges() {
-        val frame = findViewById<View>(R.id.frame)
-        // Added to the margin the design already asks for, never instead of it.
-        // Replacing it would leave the rail on the uncut side flat against the
-        // edge of the screen and the one under the camera the only inset thing.
-        val edge = resources.getDimensionPixelSize(R.dimen.edge)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.root)) { _, insets ->
-            val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            frame.setPadding(
-                edge + cutout.left,
-                edge + cutout.top,
-                edge + cutout.right,
-                edge + cutout.bottom,
-            )
-            insets
-        }
+    private fun takeTheWholeScreen() {
+        val root = findViewById<View>(R.id.root)
+        // Consume nothing and inset nothing: the listener exists only so that
+        // no ancestor quietly applies the insets on our behalf.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets -> insets }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            for (rail in listOf(railStart, railEnd)) {
-                rail.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
-                    view.systemGestureExclusionRects =
-                        listOf(Rect(0, 0, view.width, view.height))
+            root.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+                val whole = listOf(Rect(0, 0, view.width, view.height))
+                if (view.systemGestureExclusionRects != whole) {
+                    view.systemGestureExclusionRects = whole
                 }
             }
         }
