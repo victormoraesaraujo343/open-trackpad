@@ -199,6 +199,19 @@ pub fn name_of(code: KeyCode) -> Option<&'static str> {
         .map(|(name, _)| *name)
 }
 
+/// The table's own copy of a name, if it holds one.
+///
+/// Import builds chord text out of names it has translated from another
+/// desktop's spelling. Asking the table for the name rather than trusting the
+/// translation means a name that has been renamed or removed here fails at the
+/// lookup instead of turning into a chord that no longer parses.
+pub fn canonical_name(name: &str) -> Option<&'static str> {
+    NAMED_KEYS
+        .iter()
+        .find(|(known, _)| *known == name)
+        .map(|(known, _)| *known)
+}
+
 /// Every key the virtual keyboard must declare it can produce.
 pub fn all_keys() -> impl Iterator<Item = KeyCode> {
     NAMED_KEYS.iter().map(|(_, code)| *code)

@@ -5,6 +5,7 @@
 //! libinput and the desktop interpret gestures natively.
 
 mod audio;
+mod import;
 mod json;
 mod keyboard;
 mod keys;
@@ -44,6 +45,8 @@ usage: opentrackpadd [OPTIONS] [ADDRESS]
   --soak MINUTES     replay them on a loop for that long, then report on
                      stuck contacts and memory growth. Moves the pointer
                      continuously, so run it on an idle machine.
+  --shortcuts        list what the phone may fire, and what this computer
+                     could add to it, then exit
   --print-events     also print every pad event while a client is connected
   --trace-timing     log how frames are spaced, on the phone and on arrival.
                      Pointer acceleration is computed from velocity, so
@@ -58,6 +61,7 @@ struct Options {
     soak_minutes: Option<u64>,
     print_events: bool,
     trace_timing: bool,
+    list_shortcuts: bool,
 }
 
 fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, String> {
@@ -68,6 +72,7 @@ fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, Str
         soak_minutes: None,
         print_events: false,
         trace_timing: false,
+        list_shortcuts: false,
     };
     let mut address_seen = false;
     let mut expecting_soak = false;
@@ -88,6 +93,7 @@ fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, Str
             "--dry-run" => options.dry_run = true,
             "--self-test" => options.self_test = true,
             "--soak" => expecting_soak = true,
+            "--shortcuts" => options.list_shortcuts = true,
             "--print-events" => options.print_events = true,
             "--trace-timing" => options.trace_timing = true,
             "-h" | "--help" => return Err(USAGE.to_owned()),
@@ -127,6 +133,61 @@ impl PadSink for Tee<'_> {
 
     fn describe(&mut self) -> String {
         self.inner.describe()
+    }
+}
+
+/// Prints the list and what this computer could add to it.
+///
+/// The review screen that offers these is still being drawn, and this is how
+/// the reading gets checked without it — on a desktop nobody here has, by
+/// somebody who has it. `docs/TESTING.md` exists because "it works on this
+/// machine" is not an answer, and import is exactly that kind of claim.
+fn report_shortcuts(shortcuts: &Shortcuts) {
+    println!(
+        "Recorded, and firable from the phone ({}):",
+        shortcuts.list().len()
+    );
+    for entry in shortcuts.list() {
+        println!("  {:<28} {}", entry.chord.to_string(), entry.name);
+    }
+
+    let (source, candidates) = import::read();
+    let fresh: Vec<_> = candidates
+        .iter()
+        .filter(|candidate| !shortcuts.allows(&candidate.chord))
+        .collect();
+    let already = candidates.len() - fresh.len();
+
+    println!();
+    match (source, candidates.is_empty()) {
+        (import::Source::Unknown, _) => {
+            println!(
+                "Found on this computer: nothing — reading shortcuts from {source} \
+                 is not supported yet."
+            );
+            println!("The list above still works, and anything else can be recorded by hand.");
+            return;
+        }
+        (_, true) => {
+            println!("Found on {source}: nothing readable.");
+            return;
+        }
+        _ => {}
+    }
+
+    println!("Found on {source}, not recorded yet ({}):", fresh.len());
+    let mut groups: Vec<&str> = fresh.iter().map(|found| found.group.as_str()).collect();
+    groups.sort_unstable();
+    groups.dedup();
+    for group in groups {
+        println!("  {group}");
+        for found in fresh.iter().filter(|found| found.group == group) {
+            println!("    {:<26} {}", found.chord.to_string(), found.name);
+        }
+    }
+    if already > 0 {
+        println!();
+        println!("({already} more match something already recorded.)");
     }
 }
 
@@ -367,6 +428,14 @@ fn run() -> io::Result<()> {
             std::process::exit(2);
         }
     };
+
+    // Answered before anything touches a device: listing shortcuts needs no
+    // uinput access, and someone checking what import found on their desktop
+    // should not have to have set permissions up first.
+    if options.list_shortcuts {
+        report_shortcuts(&Shortcuts::open());
+        return Ok(());
+    }
 
     let mut device = LazyTouchpad::default();
     let mut debug = DebugSink;
