@@ -86,33 +86,33 @@ pub const MAX_NAME_CHARS: usize = 64;
 /// refusals a chord recorded by hand does — `every_convention_is_a_chord_this_host_would_accept`
 /// pins that, and if a rule ever refuses one of these, the rule wins and this
 /// table is what changes.
-const CONVENTIONS: &[(&str, &str)] = &[
+const CONVENTIONS: &[(&str, &str, Group)] = &[
     // Editing. The same keys since before any of these desktops existed.
-    ("Copy", "ctrl+c"),
-    ("Paste", "ctrl+v"),
-    ("Cut", "ctrl+x"),
-    ("Undo", "ctrl+z"),
+    ("Copy", "ctrl+c", Group::Text),
+    ("Paste", "ctrl+v", Group::Text),
+    ("Cut", "ctrl+x", Group::Text),
+    ("Undo", "ctrl+z", Group::Text),
     // Applications disagree between this and ctrl+y; this one is the more
     // common of the two and the only one that is not also a shortcut for
     // something else.
-    ("Redo", "ctrl+shift+z"),
-    ("Select all", "ctrl+a"),
-    ("Save", "ctrl+s"),
-    ("Find", "ctrl+f"),
+    ("Redo", "ctrl+shift+z", Group::Text),
+    ("Select all", "ctrl+a", Group::Text),
+    ("Save", "ctrl+s", Group::Text),
+    ("Find", "ctrl+f", Group::Text),
     // Windows and tabs.
-    ("New tab", "ctrl+t"),
-    ("Close tab", "ctrl+w"),
-    ("Reopen closed tab", "ctrl+shift+t"),
-    ("Full screen", "f11"),
+    ("New tab", "ctrl+t", Group::Browser),
+    ("Close tab", "ctrl+w", Group::Browser),
+    ("Reopen closed tab", "ctrl+shift+t", Group::Browser),
+    ("Full screen", "f11", Group::Browser),
     // Media. Single keys, which is the shape the roadmap decided to allow.
-    ("Play or pause", "playpause"),
-    ("Next track", "nexttrack"),
-    ("Previous track", "previoustrack"),
-    ("Volume up", "volumeup"),
-    ("Volume down", "volumedown"),
-    ("Mute", "mute"),
-    ("Brightness up", "brightnessup"),
-    ("Brightness down", "brightnessdown"),
+    ("Play or pause", "playpause", Group::Media),
+    ("Next track", "nexttrack", Group::Media),
+    ("Previous track", "previoustrack", Group::Media),
+    ("Volume up", "volumeup", Group::Sound),
+    ("Volume down", "volumedown", Group::Sound),
+    ("Mute", "mute", Group::Sound),
+    ("Brightness up", "brightnessup", Group::Power),
+    ("Brightness down", "brightnessdown", Group::Power),
 ];
 
 /// Where a shortcut came from.
@@ -183,6 +183,12 @@ pub enum Group {
     Power,
     Keyboard,
     Accessibility,
+    /// Copy, paste, undo, save, find. Not a desktop bucket at all: these are
+    /// the application conventions this host ships, and asking a vocabulary
+    /// shaped for imported desktop shortcuts to hold them was the gap.
+    Text,
+    Browser,
+    Terminal,
     Other,
 }
 
@@ -198,6 +204,9 @@ impl Group {
         Group::Power,
         Group::Keyboard,
         Group::Accessibility,
+        Group::Text,
+        Group::Browser,
+        Group::Terminal,
         Group::Other,
     ];
 
@@ -212,6 +221,9 @@ impl Group {
             Group::Power => "power",
             Group::Keyboard => "keyboard",
             Group::Accessibility => "accessibility",
+            Group::Text => "text",
+            Group::Browser => "browser",
+            Group::Terminal => "terminal",
             Group::Other => "other",
         }
     }
@@ -300,6 +312,13 @@ pub struct Shortcuts {
     /// Lines the file held that could not be read. Kept so the daemon can say
     /// so once, rather than silently dropping somebody's shortcut.
     damaged: Vec<String>,
+    /// When this host last wrote the file itself.
+    ///
+    /// The watcher compares the file against this rather than against what it
+    /// last saw, so accepting an import does not read back the list it has just
+    /// written and send the client a second copy of it. Only somebody *else*
+    /// writing — the recorder — is a change worth acting on.
+    written_at: Option<std::time::SystemTime>,
 }
 
 #[allow(dead_code)]
@@ -315,6 +334,7 @@ impl Shortcuts {
         let fresh = existing.is_none();
         let mut shortcuts = Self::parse(existing.as_deref().unwrap_or_default());
         shortcuts.path = path;
+        shortcuts.written_at = file_changed_at(shortcuts.path.as_deref());
         if fresh {
             shortcuts.seed();
         }
@@ -329,7 +349,7 @@ impl Shortcuts {
     /// and the table is what changes — so this drops it and says so rather than
     /// finding a way to force it in.
     fn seed(&mut self) {
-        for (name, chord) in CONVENTIONS {
+        for (name, chord, group) in CONVENTIONS {
             let keys = match Chord::parse(chord) {
                 Ok(parsed) => parsed,
                 Err(error) => {
@@ -337,7 +357,7 @@ impl Shortcuts {
                     continue;
                 }
             };
-            if let Err(error) = self.adopt(name, keys, Origin::Convention, None, false) {
+            if let Err(error) = self.adopt(name, keys, Origin::Convention, Some(*group), false) {
                 eprintln!("not starting with {name} ({chord}): {error}");
             }
         }
@@ -348,11 +368,10 @@ impl Shortcuts {
         self.path.as_deref()
     }
 
-    /// When the file was last written, for noticing that something else wrote
-    /// it. `None` when there is no file, which is itself a state worth telling
-    /// apart from a file that has not changed.
-    pub fn changed_at(&self) -> Option<std::time::SystemTime> {
-        file_changed_at(self.path.as_deref())
+    /// When this host last wrote the file itself. A file whose modification
+    /// time differs from this was written by something else.
+    pub fn written_at(&self) -> Option<std::time::SystemTime> {
+        self.written_at
     }
 
     /// Reads the file's contents. Free of I/O, so every shape it can arrive in
@@ -405,6 +424,7 @@ impl Shortcuts {
             entries,
             next_id,
             damaged,
+            written_at: None,
         }
     }
 
@@ -526,7 +546,7 @@ impl Shortcuts {
     /// Failures are swallowed on purpose, as with the status file: nobody
     /// should lose their trackpad because a shortcut could not be saved. The
     /// change stays in memory for this session either way.
-    fn save(&self) {
+    fn save(&mut self) {
         let Some(path) = &self.path else {
             return;
         };
@@ -534,9 +554,11 @@ impl Shortcuts {
             let _ = fs::create_dir_all(directory);
         }
         let temporary = path.with_extension("tmp");
-        if fs::write(&temporary, self.render()).is_ok() {
+        let rendered = self.render();
+        if fs::write(&temporary, rendered).is_ok() {
             let _ = fs::rename(&temporary, path);
         }
+        self.written_at = file_changed_at(self.path.as_deref());
     }
 }
 
@@ -893,7 +915,7 @@ mod tests {
         // these — the SysRq pair, the chord ceiling, a key nobody named — this
         // fails here rather than silently shipping a shortcut that does not
         // work, and the table is what changes.
-        for (name, chord) in CONVENTIONS {
+        for (name, chord, _) in CONVENTIONS {
             let parsed = Chord::parse(chord)
                 .unwrap_or_else(|error| panic!("{name} ({chord}) is not a chord: {error}"));
             assert_eq!(&parsed.to_string(), chord, "{name} does not round-trip");
@@ -906,9 +928,12 @@ mod tests {
         // Two rows with the same name are two buttons nobody can tell apart.
         let mut names = std::collections::HashSet::new();
         let mut chords = std::collections::HashSet::new();
-        for (name, chord) in CONVENTIONS {
+        for (name, chord, group) in CONVENTIONS {
             assert!(names.insert(*name), "{name} appears twice");
             assert!(chords.insert(*chord), "{chord} appears twice");
+            // Every convention is placed by hand; none may fall to Other,
+            // which means "could not be placed with confidence".
+            assert_ne!(*group, Group::Other, "{name} was not given a group");
         }
     }
 

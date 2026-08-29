@@ -6,9 +6,11 @@
 use std::fmt;
 
 use crate::audio;
+use crate::import;
 use crate::keys::Chord;
 use crate::pointer::Button;
-use crate::text::escape_text;
+use crate::shortcuts;
+use crate::text::{escape_text, unescape_text};
 
 /// The protocol version this host speaks.
 ///
@@ -41,6 +43,13 @@ pub const MAX_PROTOCOL_PRESSURE: u16 = 1024;
 /// line-framed protocol otherwise invites.
 pub const MAX_LINE_BYTES: usize = 4096;
 
+/// How many candidates one request may accept.
+///
+/// A review screen offers seventy-five on a busy machine and somebody may well
+/// tick most of them, so this is generous. It exists so a single line stays
+/// bounded and so a client cannot ask for arbitrarily much work in one message.
+pub const MAX_ACCEPTED: usize = 128;
+
 /// What a client may ask to be kept informed about, and what the host may agree
 /// to serve.
 ///
@@ -53,10 +62,16 @@ pub const MAX_LINE_BYTES: usize = 4096;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Capabilities {
     pub audio: bool,
+    pub shortcuts: bool,
+    pub import: bool,
 }
 
 impl Capabilities {
-    pub const NONE: Self = Self { audio: false };
+    pub const NONE: Self = Self {
+        audio: false,
+        shortcuts: false,
+        import: false,
+    };
 
     /// Reads a comma-separated list, or `-` for none.
     ///
@@ -66,8 +81,13 @@ impl Capabilities {
     pub fn parse(text: &str) -> Self {
         let mut capabilities = Self::NONE;
         for name in text.split(',') {
-            if name == "audio" {
-                capabilities.audio = true;
+            match name {
+                "audio" => capabilities.audio = true,
+                "shortcuts" => capabilities.shortcuts = true,
+                "import" => capabilities.import = true,
+                // Ignored, not refused: that is what lets a later panel be
+                // added without another version bump.
+                _ => {}
             }
         }
         capabilities
@@ -78,26 +98,40 @@ impl Capabilities {
     pub fn intersect(self, other: Self) -> Self {
         Self {
             audio: self.audio && other.audio,
+            shortcuts: self.shortcuts && other.shortcuts,
+            import: self.import && other.import,
         }
     }
 
     pub fn is_empty(self) -> bool {
-        !self.audio
+        !self.audio && !self.shortcuts && !self.import
     }
 
     pub fn allows(self, domain: Domain) -> bool {
         match domain {
             Domain::Audio => self.audio,
+            Domain::Shortcuts => self.shortcuts,
+            Domain::Import => self.import,
         }
     }
 }
 
 impl fmt::Display for Capabilities {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut named = Vec::new();
         if self.audio {
-            return formatter.write_str("audio");
+            named.push("audio");
         }
-        formatter.write_str("-")
+        if self.shortcuts {
+            named.push("shortcuts");
+        }
+        if self.import {
+            named.push("import");
+        }
+        if named.is_empty() {
+            return formatter.write_str("-");
+        }
+        formatter.write_str(&named.join(","))
     }
 }
 
@@ -108,18 +142,32 @@ impl fmt::Display for Capabilities {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Domain {
     Audio,
+    /// What is recorded and fireable: the profile editor's library.
+    Shortcuts,
+    /// What this computer has that OpenTrackpad does not — offered, reviewed,
+    /// and accepted or not.
+    ///
+    /// Its own domain rather than a flag on a shortcut, because a candidate is
+    /// a different kind of object with a different life. Folding it in would
+    /// leave `shortcuts` carrying entries that cannot be fired, which is
+    /// exactly how a button that does nothing gets built.
+    Import,
 }
 
 impl Domain {
     pub fn as_str(self) -> &'static str {
         match self {
             Domain::Audio => "audio",
+            Domain::Shortcuts => "shortcuts",
+            Domain::Import => "import",
         }
     }
 
     pub fn parse(text: &str) -> Option<Self> {
         match text {
             "audio" => Some(Domain::Audio),
+            "shortcuts" => Some(Domain::Shortcuts),
+            "import" => Some(Domain::Import),
             _ => None,
         }
     }
@@ -240,7 +288,7 @@ pub enum Action {
 /// thing to it. There is no verb that names a device by string, none that names
 /// a command, and none that can reach anything the host did not put in a
 /// snapshot first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     /// The client's own numbering, echoed back when a request is refused so it
     /// knows which fader to put back. Parsed and otherwise not acted on.
@@ -255,7 +303,7 @@ pub struct Request {
 /// the sound daemon, so sink 53 and source 53 exist at the same time and are
 /// different devices. An id alone would be ambiguous, and the way that failure
 /// shows up is a fader moving the wrong device's volume.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verb {
     /// Set one entity's level, nought to `audio::MAX_VOLUME`.
     Volume {
@@ -270,6 +318,20 @@ pub enum Verb {
     },
     /// Make this device the one new sound goes to.
     MakeDefault { kind: audio::Kind, id: u32 },
+    /// Give a recorded shortcut a different name.
+    ///
+    /// Only a recorded one: a shipped convention and a shortcut read out of
+    /// somebody's desktop configuration are not ours to rename, and a rename
+    /// that quietly reappeared on the next read would be worse than a refusal.
+    Rename { id: u32, name: String },
+    /// Forget a recorded shortcut.
+    Delete { id: u32 },
+    /// Record a set of the candidates last offered.
+    ///
+    /// All or nothing. A partly-applied set leaves somebody looking at a screen
+    /// that half agrees with the machine, and there is no way for them to tell
+    /// which half.
+    Accept { generation: u64, ids: Vec<u32> },
     /// Send the whole picture again. What the client asks for when it opens the
     /// panel, and its way out of any disagreement about state.
     Refresh,
@@ -294,6 +356,10 @@ pub enum Refusal {
     BackendFailed,
     /// Requests are arriving faster than a hand can produce them.
     TooFast,
+    /// The list cannot hold everything that was asked for.
+    Full,
+    /// The offer these numbers came from is no longer the current one.
+    Stale,
 }
 
 impl Refusal {
@@ -304,6 +370,8 @@ impl Refusal {
             Refusal::Unavailable => "unavailable",
             Refusal::BackendFailed => "backend-failed",
             Refusal::TooFast => "too-fast",
+            Refusal::Full => "full",
+            Refusal::Stale => "stale",
         }
     }
 }
@@ -348,18 +416,20 @@ pub enum Outbound {
     Entry {
         domain: Domain,
         generation: u64,
-        entity: audio::Entity,
+        record: Record,
     },
     /// One entity that has appeared or is no longer what it was.
     Changed {
         domain: Domain,
         generation: u64,
-        entity: audio::Entity,
+        record: Record,
     },
     Removed {
         domain: Domain,
         generation: u64,
-        kind: audio::Kind,
+        /// The same word the entry used, so the client knows which list to
+        /// take it out of.
+        kind: &'static str,
         id: u32,
     },
     /// This domain has nothing to show. The panel should be absent, not broken.
@@ -368,21 +438,70 @@ pub enum Outbound {
     Refused { sequence: u64, reason: Refusal },
 }
 
-fn render_entity(entity: &audio::Entity) -> String {
-    let target = match entity.target {
-        Some(id) => id.to_string(),
-        None => "-".to_owned(),
-    };
-    format!(
-        "{} {} {} {} {} {} {}",
-        entity.kind.as_str(),
-        entity.id,
-        entity.volume,
-        u8::from(entity.muted),
-        u8::from(entity.default),
-        target,
-        escape_text(&entity.name),
-    )
+/// One thing a domain has to say, whatever kind of thing it is.
+///
+/// Each renders as `<kind> <id> <fields...>`, which is the shape the audio
+/// domain already established: the kind names what the fields mean, so one line
+/// format serves three domains without any of them having to know about the
+/// others.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Record {
+    Audio(audio::Entity),
+    /// Something recorded and fireable.
+    Shortcut(shortcuts::Shortcut),
+    /// Something this computer has that is not recorded yet.
+    ///
+    /// Carries a number of its own so a set of them can be accepted. It is the
+    /// host's, valid for the generation it arrived in, and deliberately not the
+    /// number the shortcut gets if it is accepted — nothing has been recorded
+    /// yet, so there is no shortcut to have a number.
+    Candidate {
+        id: u32,
+        offer: import::Candidate,
+    },
+}
+
+impl Record {
+    fn render(&self) -> String {
+        match self {
+            Record::Audio(entity) => {
+                let target = match entity.target {
+                    Some(id) => id.to_string(),
+                    None => "-".to_owned(),
+                };
+                format!(
+                    "{} {} {} {} {} {} {}",
+                    entity.kind.as_str(),
+                    entity.id,
+                    entity.volume,
+                    u8::from(entity.muted),
+                    u8::from(entity.default),
+                    target,
+                    escape_text(&entity.name),
+                )
+            }
+            // No recommendation here: that is an import idea, and a shortcut
+            // already recorded is past being recommended.
+            Record::Shortcut(shortcut) => format!(
+                "shortcut {} {} {} {} {}",
+                shortcut.id,
+                shortcut.chord,
+                shortcut.origin.as_str(),
+                shortcut.group.map_or("-", shortcuts::Group::as_str),
+                escape_text(&shortcut.name),
+            ),
+            // No origin here: everything offered came from this computer's own
+            // configuration, so the field would say the same thing every time.
+            Record::Candidate { id, offer } => format!(
+                "candidate {} {} {} {} {}",
+                id,
+                offer.chord,
+                offer.group.as_str(),
+                u8::from(offer.recommended),
+                escape_text(&offer.name),
+            ),
+        }
+    }
 }
 
 impl fmt::Display for Outbound {
@@ -399,31 +518,23 @@ impl fmt::Display for Outbound {
             Outbound::Entry {
                 domain,
                 generation,
-                entity,
-            } => write!(
-                formatter,
-                "ENTRY {domain} {generation} {}",
-                render_entity(entity)
-            ),
+                record,
+            } => write!(formatter, "ENTRY {domain} {generation} {}", record.render()),
             Outbound::Changed {
                 domain,
                 generation,
-                entity,
+                record,
             } => write!(
                 formatter,
                 "CHANGED {domain} {generation} {}",
-                render_entity(entity)
+                record.render()
             ),
             Outbound::Removed {
                 domain,
                 generation,
                 kind,
                 id,
-            } => write!(
-                formatter,
-                "REMOVED {domain} {generation} {} {id}",
-                kind.as_str()
-            ),
+            } => write!(formatter, "REMOVED {domain} {generation} {kind} {id}"),
             Outbound::Unavailable { domain, reason } => {
                 write!(formatter, "UNAVAILABLE {domain} {}", reason.as_str())
             }
@@ -599,8 +710,16 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                 .ok_or_else(|| ProtocolError("missing request domain".into()))?;
             let domain = Domain::parse(domain)
                 .ok_or_else(|| ProtocolError(format!("unknown request domain: {domain}")))?;
-            let verb = match parts.next() {
-                Some("VOLUME") => {
+            let kind = parts.next();
+
+            // `REFRESH` means the same thing everywhere: send the whole picture
+            // again. Everything else belongs to exactly one domain, and asking
+            // one domain for another's verb is a protocol error rather than a
+            // refusal — that is a client which is broken or probing.
+            let verb = match (domain, kind) {
+                (_, Some("REFRESH")) => Verb::Refresh,
+
+                (Domain::Audio, Some("VOLUME")) => {
                     let (kind, id) = parse_entity(&mut parts)?;
                     let level: u16 = parse_number(parts.next(), "level")?;
                     // Out of range is refused outright rather than clamped, the
@@ -615,7 +734,7 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                     }
                     Verb::Volume { kind, id, level }
                 }
-                Some("MUTE") => {
+                (Domain::Audio, Some("MUTE")) => {
                     let (kind, id) = parse_entity(&mut parts)?;
                     Verb::Mute {
                         kind,
@@ -623,7 +742,7 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                         muted: parse_flag(parts.next(), "mute")?,
                     }
                 }
-                Some("DEFAULT") => {
+                (Domain::Audio, Some("DEFAULT")) => {
                     let (kind, id) = parse_entity(&mut parts)?;
                     // Refused here rather than left for the panel to discover:
                     // there is no default stream to be, and a request that
@@ -637,9 +756,64 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                     }
                     Verb::MakeDefault { kind, id }
                 }
-                Some("REFRESH") => Verb::Refresh,
-                Some(other) => return Err(ProtocolError(format!("unknown request kind: {other}"))),
-                None => return Err(ProtocolError("missing request kind".into())),
+
+                (Domain::Shortcuts, Some("RENAME")) => {
+                    let id = parse_number(parts.next(), "shortcut id")?;
+                    // The one place a client's own free text crosses into this
+                    // host. It arrives escaped like every other name, and it is
+                    // refused rather than half-read if it is not: a field with
+                    // a raw space in it was not written by anything that knows
+                    // the rules.
+                    let name = parts
+                        .next()
+                        .ok_or_else(|| ProtocolError("missing name".into()))?;
+                    let name = unescape_text(name)
+                        .ok_or_else(|| ProtocolError("name is not escaped".into()))?;
+                    Verb::Rename { id, name }
+                }
+                (Domain::Shortcuts, Some("DELETE")) => Verb::Delete {
+                    id: parse_number(parts.next(), "shortcut id")?,
+                },
+
+                (Domain::Import, Some("ACCEPT")) => {
+                    // The generation the offer was made in. A set accepted
+                    // against a stale offer is refused rather than applied to
+                    // whatever those numbers mean now — the numbers are the
+                    // host's, and they are only meaningful within one offer.
+                    let generation = parse_number(parts.next(), "generation")?;
+                    let ids = parts
+                        .next()
+                        .ok_or_else(|| ProtocolError("missing candidate ids".into()))?;
+                    let mut wanted = Vec::new();
+                    for id in ids.split(',') {
+                        let id: u32 = id
+                            .parse()
+                            .map_err(|_| ProtocolError(format!("invalid candidate id: {id}")))?;
+                        if wanted.contains(&id) {
+                            return Err(ProtocolError("candidate id repeated".into()));
+                        }
+                        if wanted.len() >= MAX_ACCEPTED {
+                            return Err(ProtocolError(format!(
+                                "at most {MAX_ACCEPTED} candidates may be accepted at once"
+                            )));
+                        }
+                        wanted.push(id);
+                    }
+                    if wanted.is_empty() {
+                        return Err(ProtocolError("no candidate ids".into()));
+                    }
+                    Verb::Accept {
+                        generation,
+                        ids: wanted,
+                    }
+                }
+
+                (_, Some(other)) => {
+                    return Err(ProtocolError(format!(
+                        "{domain} has no request kind {other}"
+                    )))
+                }
+                (_, None) => return Err(ProtocolError("missing request kind".into())),
             };
             ensure_finished(&mut parts)?;
             Ok(Message::Request(Request {
@@ -761,7 +935,10 @@ mod tests {
         session
             .accept("HELLO OTP/4 2400 1080 10 156000 69000 audio")
             .unwrap();
-        session.grant(Capabilities { audio: true });
+        session.grant(Capabilities {
+            audio: true,
+            ..Capabilities::NONE
+        });
         session
     }
 
@@ -1106,8 +1283,18 @@ mod tests {
 
     #[test]
     fn the_host_serves_only_what_both_sides_can_do() {
-        let wanted = Capabilities { audio: true };
-        assert!(wanted.intersect(Capabilities { audio: true }).audio);
+        let wanted = Capabilities {
+            audio: true,
+            ..Capabilities::NONE
+        };
+        assert!(
+            wanted
+                .intersect(Capabilities {
+                    audio: true,
+                    ..Capabilities::NONE
+                })
+                .audio
+        );
         // Asked for, but this machine has no audio daemon.
         assert!(!wanted.intersect(Capabilities::NONE).audio);
         // Servable, but never asked for.
@@ -1276,7 +1463,10 @@ mod tests {
             .accept("HELLO OTP/4 2400 1080 10 156000 69000 audio")
             .unwrap();
         assert!(session.accept("REQUEST 1 audio REFRESH").is_err());
-        session.grant(Capabilities { audio: true });
+        session.grant(Capabilities {
+            audio: true,
+            ..Capabilities::NONE
+        });
         assert!(session.accept("REQUEST 1 audio REFRESH").is_ok());
     }
 
@@ -1307,7 +1497,11 @@ mod tests {
     #[test]
     fn renders_the_handshake_answer() {
         assert_eq!(
-            Outbound::Welcome(Capabilities { audio: true }).to_string(),
+            Outbound::Welcome(Capabilities {
+                audio: true,
+                ..Capabilities::NONE
+            })
+            .to_string(),
             "WELCOME OTP/4 audio"
         );
         assert_eq!(
@@ -1331,7 +1525,7 @@ mod tests {
             Outbound::Entry {
                 domain: Domain::Audio,
                 generation: 7,
-                entity: entity(audio::Kind::Output, 53, "HDMI Digital Stereo"),
+                record: Record::Audio(entity(audio::Kind::Output, 53, "HDMI Digital Stereo")),
             }
             .to_string(),
             "ENTRY audio 7 output 53 950 0 1 - HDMI%20Digital%20Stereo"
@@ -1347,7 +1541,7 @@ mod tests {
             Outbound::Changed {
                 domain: Domain::Audio,
                 generation: 7,
-                entity: stream,
+                record: Record::Audio(stream),
             }
             .to_string(),
             "CHANGED audio 7 stream 1348 950 0 0 53 Firefox"
@@ -1360,7 +1554,7 @@ mod tests {
             Outbound::Removed {
                 domain: Domain::Audio,
                 generation: 8,
-                kind: audio::Kind::Input,
+                kind: audio::Kind::Input.as_str(),
                 id: 57,
             }
             .to_string(),
@@ -1398,7 +1592,7 @@ mod tests {
         let rendered = Outbound::Entry {
             domain: Domain::Audio,
             generation: 1,
-            entity: entity(audio::Kind::Output, 53, hostile),
+            record: Record::Audio(entity(audio::Kind::Output, 53, hostile)),
         }
         .to_string();
         assert_eq!(rendered.lines().count(), 1);
@@ -1409,7 +1603,10 @@ mod tests {
     fn every_line_the_host_sends_is_one_line_with_no_gaps_in_it() {
         let awkward = entity(audio::Kind::Output, 1, "a b\tc\nd  e");
         for message in [
-            Outbound::Welcome(Capabilities { audio: true }),
+            Outbound::Welcome(Capabilities {
+                audio: true,
+                ..Capabilities::NONE
+            }),
             Outbound::Snapshot {
                 domain: Domain::Audio,
                 generation: 1,
@@ -1418,17 +1615,17 @@ mod tests {
             Outbound::Entry {
                 domain: Domain::Audio,
                 generation: 1,
-                entity: awkward.clone(),
+                record: Record::Audio(awkward.clone()),
             },
             Outbound::Changed {
                 domain: Domain::Audio,
                 generation: 1,
-                entity: awkward,
+                record: Record::Audio(awkward),
             },
             Outbound::Removed {
                 domain: Domain::Audio,
                 generation: 1,
-                kind: audio::Kind::Stream,
+                kind: audio::Kind::Stream.as_str(),
                 id: 1,
             },
             Outbound::Unavailable {
@@ -1449,5 +1646,178 @@ mod tests {
                 "{rendered:?} is longer than a line may be"
             );
         }
+    }
+
+    // --- the shortcut and import domains ---
+
+    #[test]
+    fn parses_the_requests_of_both_new_domains() {
+        assert_eq!(
+            parse_message("REQUEST 1 shortcuts RENAME 7 My%20name"),
+            Ok(Message::Request(Request {
+                sequence: 1,
+                domain: Domain::Shortcuts,
+                verb: Verb::Rename {
+                    id: 7,
+                    name: "My name".to_owned()
+                },
+            }))
+        );
+        assert_eq!(
+            parse_message("REQUEST 2 shortcuts DELETE 7"),
+            Ok(Message::Request(Request {
+                sequence: 2,
+                domain: Domain::Shortcuts,
+                verb: Verb::Delete { id: 7 },
+            }))
+        );
+        assert_eq!(
+            parse_message("REQUEST 3 import ACCEPT 4 1,2,9"),
+            Ok(Message::Request(Request {
+                sequence: 3,
+                domain: Domain::Import,
+                verb: Verb::Accept {
+                    generation: 4,
+                    ids: vec![1, 2, 9]
+                },
+            }))
+        );
+    }
+
+    #[test]
+    fn one_domain_cannot_be_asked_for_anothers_verb() {
+        // Not a refusal: a client asking the shortcut list to change a volume
+        // is broken or probing, and either way the next message cannot be
+        // trusted.
+        assert!(parse_message("REQUEST 1 shortcuts VOLUME output 53 500").is_err());
+        assert!(parse_message("REQUEST 1 audio RENAME 7 Name").is_err());
+        assert!(parse_message("REQUEST 1 audio ACCEPT 1 1").is_err());
+        assert!(parse_message("REQUEST 1 import RENAME 7 Name").is_err());
+        assert!(parse_message("REQUEST 1 import DELETE 7").is_err());
+        assert!(parse_message("REQUEST 1 shortcuts ACCEPT 1 1").is_err());
+    }
+
+    #[test]
+    fn every_domain_can_be_asked_to_say_it_all_again() {
+        for domain in ["audio", "shortcuts", "import"] {
+            assert!(
+                parse_message(&format!("REQUEST 1 {domain} REFRESH")).is_ok(),
+                "{domain} could not be refreshed"
+            );
+        }
+    }
+
+    #[test]
+    fn a_name_from_the_client_must_arrive_escaped() {
+        // The one place a client's own free text crosses into this host. A
+        // field with a raw space was not written by anything that knows the
+        // rules, so it is refused rather than half-read.
+        assert!(parse_message("REQUEST 1 shortcuts RENAME 7 My name").is_err());
+        assert!(parse_message("REQUEST 1 shortcuts RENAME 7 %").is_err());
+        assert!(parse_message("REQUEST 1 shortcuts RENAME 7 %zz").is_err());
+        assert!(parse_message("REQUEST 1 shortcuts RENAME 7").is_err());
+        // And it comes back out as what was written.
+        let Ok(Message::Request(request)) =
+            parse_message("REQUEST 1 shortcuts RENAME 7 A%C3%A7%C3%A3o%20r%C3%A1pida")
+        else {
+            panic!("expected a rename");
+        };
+        assert_eq!(
+            request.verb,
+            Verb::Rename {
+                id: 7,
+                name: "Ação rápida".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn an_accepted_set_is_bounded_and_has_no_repeats() {
+        assert!(parse_message("REQUEST 1 import ACCEPT 1 1,1").is_err());
+        assert!(parse_message("REQUEST 1 import ACCEPT 1 ").is_err());
+        assert!(parse_message("REQUEST 1 import ACCEPT 1 x").is_err());
+        assert!(parse_message("REQUEST 1 import ACCEPT 1 1,,2").is_err());
+        assert!(parse_message("REQUEST 1 import ACCEPT 1").is_err());
+
+        let many: Vec<String> = (1..=MAX_ACCEPTED as u32 + 1)
+            .map(|id| id.to_string())
+            .collect();
+        assert!(
+            parse_message(&format!("REQUEST 1 import ACCEPT 1 {}", many.join(","))).is_err(),
+            "an unbounded set should be refused"
+        );
+    }
+
+    #[test]
+    fn renders_a_shortcut_and_a_candidate() {
+        let shortcut = shortcuts::Shortcut {
+            id: 7,
+            name: "Reopen closed tab".to_owned(),
+            chord: Chord::parse("ctrl+shift+t").unwrap(),
+            origin: shortcuts::Origin::Convention,
+            group: Some(shortcuts::Group::Browser),
+            recommended: false,
+        };
+        assert_eq!(
+            Outbound::Entry {
+                domain: Domain::Shortcuts,
+                generation: 3,
+                record: Record::Shortcut(shortcut),
+            }
+            .to_string(),
+            "ENTRY shortcuts 3 shortcut 7 ctrl+shift+t convention browser Reopen%20closed%20tab"
+        );
+
+        let offer = import::Candidate {
+            group: shortcuts::Group::Session,
+            recommended: true,
+            name: "Lock Session".to_owned(),
+            chord: Chord::parse("super+l").unwrap(),
+        };
+        assert_eq!(
+            Outbound::Entry {
+                domain: Domain::Import,
+                generation: 2,
+                record: Record::Candidate { id: 4, offer },
+            }
+            .to_string(),
+            "ENTRY import 2 candidate 4 super+l session 1 Lock%20Session"
+        );
+    }
+
+    #[test]
+    fn a_recorded_shortcut_says_it_has_no_group_rather_than_guessing_one() {
+        // The person did not say what theirs is for, and a guess from a chord
+        // would be worse than silence. The screen groups those by origin.
+        let shortcut = shortcuts::Shortcut {
+            id: 9,
+            name: "Mine".to_owned(),
+            chord: Chord::parse("super+j").unwrap(),
+            origin: shortcuts::Origin::Recorded,
+            group: None,
+            recommended: false,
+        };
+        assert_eq!(
+            Outbound::Entry {
+                domain: Domain::Shortcuts,
+                generation: 1,
+                record: Record::Shortcut(shortcut),
+            }
+            .to_string(),
+            "ENTRY shortcuts 1 shortcut 9 super+j recorded - Mine"
+        );
+    }
+
+    #[test]
+    fn the_handshake_can_ask_for_every_domain_at_once() {
+        let Ok(Message::Hello(hello)) =
+            parse_message("HELLO OTP/4 2400 1080 10 156000 69000 audio,shortcuts,import")
+        else {
+            panic!("expected a handshake");
+        };
+        assert!(hello.capabilities.audio);
+        assert!(hello.capabilities.shortcuts);
+        assert!(hello.capabilities.import);
+        assert_eq!(hello.capabilities.to_string(), "audio,shortcuts,import");
     }
 }

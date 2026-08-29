@@ -540,6 +540,11 @@ fn is_recommended(key: &str) -> bool {
         // The desktop as a whole.
         "overview",
         "toggle-overview",
+        // Tapping Meta to open the launcher may be the single best rail button
+        // on a KDE machine.
+        "activate application launcher",
+        "activate-application-launcher",
+        "panel-run-dialog",
         "show desktop",
         "show-desktop",
         "expose",

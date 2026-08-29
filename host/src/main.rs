@@ -8,6 +8,7 @@ mod audio;
 mod import;
 mod json;
 mod keyboard;
+mod library;
 mod pactl;
 mod pad;
 mod panel;
@@ -28,6 +29,7 @@ use std::time::Duration;
 use opentrackpadd::{keys, shortcuts, text};
 
 use keyboard::{ActionRate, Controls};
+use library::{Library, Watched};
 use panel::{AudioPanel, Outbox};
 use pointer::Buttons;
 use protocol::{Accepted, Action, Capabilities, Domain, Outbound, Session};
@@ -256,7 +258,7 @@ const RELOAD_INTERVAL: Duration = Duration::from_secs(2);
 ///
 /// Its own thread because the one that matters is blocked on the socket, and a
 /// stat every two seconds has no business anywhere near it.
-fn watch_shortcuts(shortcuts: Arc<RwLock<Shortcuts>>) {
+fn watch_shortcuts(shortcuts: Arc<RwLock<Shortcuts>>, watched: Watched) {
     let path = shortcuts
         .read()
         .expect("the list is never poisoned")
@@ -266,17 +268,24 @@ fn watch_shortcuts(shortcuts: Arc<RwLock<Shortcuts>>) {
         // Nowhere to keep them means nothing can change them.
         return;
     };
-    let mut seen = shortcuts::file_changed_at(Some(&path));
 
     let _ = std::thread::Builder::new()
         .name("shortcut-watch".to_owned())
         .spawn(move || loop {
             std::thread::sleep(RELOAD_INTERVAL);
-            let now = shortcuts::file_changed_at(Some(&path));
-            if now == seen {
+            // Compared against what this host last wrote, not against what
+            // this loop last saw: accepting an import writes the file, and
+            // reading that back would send the client a second copy of a list
+            // it has just been given. Only somebody else writing — the
+            // recorder — is a change worth acting on.
+            let on_disk = shortcuts::file_changed_at(Some(&path));
+            let ours = shortcuts
+                .read()
+                .map(|held| held.written_at())
+                .unwrap_or(None);
+            if on_disk == ours {
                 continue;
             }
-            seen = now;
 
             // Re-read through the same door as the first read, so a file the
             // recorder wrote gets exactly the validation a hand-edited one
@@ -291,6 +300,13 @@ fn watch_shortcuts(shortcuts: Arc<RwLock<Shortcuts>>) {
                 Err(_) => return,
             }
             println!("shortcuts reloaded: {count} now available");
+            // And tell whoever is connected, so the shortcut somebody has just
+            // recorded appears on their phone rather than after a reconnect.
+            if let Ok(slot) = watched.lock() {
+                if let Some(notifier) = slot.as_ref() {
+                    notifier.changed();
+                }
+            }
         });
 }
 
@@ -306,7 +322,9 @@ struct Serving<'a> {
     buttons: &'a mut Buttons,
     /// What the phone is allowed to fire. Read-only here: this list is changed
     /// by somebody at the keyboard, never by anything arriving on the socket.
-    shortcuts: &'a RwLock<Shortcuts>,
+    shortcuts: &'a Arc<RwLock<Shortcuts>>,
+    /// Where this session leaves its notifier for the file watcher.
+    watched: &'a Watched,
     status: &'a StatusFile,
     trace_timing: bool,
     dry_run: bool,
@@ -323,6 +341,7 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
         controls,
         buttons,
         shortcuts,
+        watched,
         status,
         trace_timing,
         dry_run,
@@ -341,6 +360,7 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
     let mut millimetres_per_pixel = 0.0;
     let mut panel: Option<AudioPanel> = None;
     let mut recorder: Option<std::process::Child> = None;
+    let mut library: Option<Library> = None;
 
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -418,6 +438,13 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                 // drawing a broken one.
                 let servable = Capabilities {
                     audio: pactl::probe().is_ok(),
+                    // Always servable: the list is in memory and there is
+                    // nothing that could be missing.
+                    shortcuts: true,
+                    // Offered even when this desktop cannot be read — the
+                    // domain is then simply empty, the way audio is absent
+                    // with no sound daemon.
+                    import: true,
                 };
                 let granted = hello.capabilities.intersect(servable);
                 session.grant(granted);
@@ -425,15 +452,22 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                 // line the client reads.
                 out.send(Outbound::Welcome(granted));
                 if !hello.capabilities.is_empty() {
-                    println!(
-                        "  audio panel: {}",
-                        if granted.audio {
-                            "serving"
-                        } else {
-                            "no sound daemon answered; not offered"
-                        }
-                    );
+                    println!("  serving: {granted}");
                 }
+
+                // The library first: it needs no probing, so it can answer
+                // while the sound daemon is still being asked about.
+                if granted.shortcuts || granted.import {
+                    let started = Library::start(out.clone(), Arc::clone(shortcuts), granted);
+                    // Left where the file watcher can find it, so a shortcut
+                    // recorded while this phone is connected reaches it without
+                    // a reconnect.
+                    if let Ok(mut slot) = watched.lock() {
+                        *slot = Some(started.notifier());
+                    }
+                    library = Some(started);
+                }
+
                 if granted.audio {
                     // Probed a second time, from inside. The first answer was
                     // for the handshake and this one is for the panel; a daemon
@@ -505,20 +539,24 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                 }
             }
             Accepted::Request(request) => {
-                // Handed over rather than carried out here. Talking to the
-                // sound daemon costs milliseconds, and this is the thread
-                // carrying touch.
-                let refusal = match panel.as_mut() {
-                    Some(panel) => panel.request(request, std::time::Instant::now()),
-                    // Granted at the handshake and gone since; the session
-                    // survives it, the panel does not.
-                    None => Some(protocol::Refusal::Unavailable),
+                // Handed over rather than carried out here. Reading a sound
+                // daemon or a desktop's configuration costs milliseconds, and
+                // this is the thread carrying touch.
+                let sequence = request.sequence;
+                let refusal = match request.domain {
+                    Domain::Audio => match panel.as_mut() {
+                        Some(panel) => panel.request(request, std::time::Instant::now()),
+                        // Granted at the handshake and gone since; the session
+                        // survives it, the panel does not.
+                        None => Some(protocol::Refusal::Unavailable),
+                    },
+                    Domain::Shortcuts | Domain::Import => match library.as_mut() {
+                        Some(library) => library.request(request, std::time::Instant::now()),
+                        None => Some(protocol::Refusal::Unavailable),
+                    },
                 };
                 if let Some(reason) = refusal {
-                    out.send(Outbound::Refused {
-                        sequence: request.sequence,
-                        reason,
-                    });
+                    out.send(Outbound::Refused { sequence, reason });
                 }
             }
             Accepted::Frame(frame) => {
@@ -660,7 +698,11 @@ fn run() -> io::Result<()> {
         count => println!("  {count} custom shortcuts"),
     }
 
-    watch_shortcuts(Arc::clone(&shortcuts));
+    // Where a connected session leaves its notifier. At most one session at a
+    // time, because the accept loop serves them one after another, so a single
+    // slot is the whole registry needed.
+    let watched: Watched = Arc::new(std::sync::Mutex::new(None));
+    watch_shortcuts(Arc::clone(&shortcuts), Arc::clone(&watched));
 
     let listener = TcpListener::bind(&options.address)?;
     println!("  listening on {}", options.address);
@@ -686,12 +728,18 @@ fn run() -> io::Result<()> {
                     controls: &mut controls,
                     buttons: &mut buttons,
                     shortcuts: &shortcuts,
+                    watched: &watched,
                     status: &status,
                     trace_timing: options.trace_timing,
                     dry_run: options.dry_run,
                 };
                 if let Err(error) = handle_client(stream, serving) {
                     eprintln!("client failed: {error}");
+                }
+                // The session is over: nothing should be told about changes
+                // through a sender that is being taken apart.
+                if let Ok(mut slot) = watched.lock() {
+                    *slot = None;
                 }
                 end_session(&mut state, sink, dropped_before);
 

@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 
 use crate::audio::{self, Entity, Snapshot};
 use crate::pactl::{self, Facility, Subscription};
-use crate::protocol::{Absence, Domain, Outbound, Refusal, Request, Verb};
+use crate::protocol::{Absence, Domain, Outbound, Record, Refusal, Request, Verb};
 use crate::timing::TokenBucket;
 
 /// How many lines may be waiting to go out.
@@ -408,11 +408,13 @@ impl Worker {
                         println!("    would change {:?}", request.verb);
                         continue;
                     }
-                    let outcome = match request.verb {
-                        Verb::Volume { level, .. } => pactl::set_volume(kind, id, level),
-                        Verb::Mute { muted, .. } => pactl::set_mute(kind, id, muted),
+                    let outcome = match &request.verb {
+                        Verb::Volume { level, .. } => pactl::set_volume(kind, id, *level),
+                        Verb::Mute { muted, .. } => pactl::set_mute(kind, id, *muted),
                         Verb::MakeDefault { .. } => pactl::set_default(kind, id),
-                        Verb::Refresh => unreachable!("a refresh decides to rebuild"),
+                        // Only the audio domain reaches this function, and the
+                        // parser will not build another domain's verb for it.
+                        other => unreachable!("the audio panel was given {other:?}"),
                     };
                     if outcome.is_err() {
                         self.refuse(request.sequence, Refusal::BackendFailed);
@@ -485,12 +487,12 @@ impl Worker {
                 audio::Change::Upserted(entity) => Outbound::Changed {
                     domain: Domain::Audio,
                     generation: self.generation,
-                    entity,
+                    record: Record::Audio(entity),
                 },
                 audio::Change::Removed(kind, id) => Outbound::Removed {
                     domain: Domain::Audio,
                     generation: self.generation,
-                    kind,
+                    kind: kind.as_str(),
                     id,
                 },
             };
@@ -521,7 +523,7 @@ impl Worker {
             self.out.send(Outbound::Entry {
                 domain: Domain::Audio,
                 generation: self.generation,
-                entity: entity.clone(),
+                record: Record::Audio(entity.clone()),
             });
         }
     }
@@ -564,11 +566,15 @@ fn decide(snapshot: &Snapshot, available: bool, request: &Request) -> Decision {
     if !available {
         return Decision::Refuse(Refusal::Unavailable);
     }
-    let (kind, id) = match request.verb {
+    let (kind, id) = match &request.verb {
         Verb::Refresh => return Decision::Rebuild,
         Verb::Volume { kind, id, .. }
         | Verb::Mute { kind, id, .. }
-        | Verb::MakeDefault { kind, id } => (kind, id),
+        | Verb::MakeDefault { kind, id } => (*kind, *id),
+        // The parser refuses another domain's verb before it reaches here.
+        Verb::Rename { .. } | Verb::Delete { .. } | Verb::Accept { .. } => {
+            return Decision::Refuse(Refusal::WrongKind)
+        }
     };
     // The entity has to be one this host published, and still be published. A
     // client can only name a number it was given, and only while that number
@@ -623,7 +629,7 @@ fn coalesce(requests: Vec<Request>) -> Vec<Request> {
 /// fader and then mutes expects both, and expects the level to be there when
 /// they unmute.
 fn supersedes(later: &Request, earlier: &Request) -> bool {
-    match (later.verb, earlier.verb) {
+    match (&later.verb, &earlier.verb) {
         (
             Verb::Volume {
                 kind: left,
