@@ -48,6 +48,15 @@ fail() {
 command -v libinput >/dev/null || fail "libinput debug utilities are missing (Arch: pacman -S libinput-tools)"
 [ -x "$BIN" ] || fail "daemon not built; run: cd $REPO/host && cargo build"
 
+# ------------------------------------------------------------- synthetic input
+# The touch surface the synthetic client claims: a landscape 2400x1080 phone.
+
+SURFACE_WIDTH=2400
+SURFACE_HEIGHT=1080
+# Physical size in micrometres: a 6.7-inch phone held in landscape.
+SURFACE_WIDTH_UM=155000
+SURFACE_HEIGHT_UM=69000
+
 # ---------------------------------------------------------------- daemon setup
 
 "$BIN" "$ADDRESS" > "$DAEMON_LOG" 2>&1 &
@@ -55,7 +64,18 @@ DAEMON=$!
 sleep 1
 kill -0 "$DAEMON" 2>/dev/null || { cat "$DAEMON_LOG"; fail "the daemon exited immediately"; }
 
-NODE=$(grep -o '/dev/input/event[0-9]*' "$DAEMON_LOG" | head -1)
+# The virtual device is built to match whoever connects, so the handshake comes
+# before there is anything for libinput to look at.
+exec 3<>"/dev/tcp/127.0.0.1/$PORT" || fail "could not connect to the daemon"
+printf 'HELLO OTP/2 %d %d 10 %d %d\n' \
+  "$SURFACE_WIDTH" "$SURFACE_HEIGHT" "$SURFACE_WIDTH_UM" "$SURFACE_HEIGHT_UM" >&3
+
+NODE=
+for _ in $(seq 20); do
+  NODE=$(grep -o '/dev/input/event[0-9]*' "$DAEMON_LOG" | head -1)
+  [ -n "$NODE" ] && break
+  sleep 0.2
+done
 [ -n "$NODE" ] || { cat "$DAEMON_LOG"; fail "the daemon did not report a device node"; }
 
 echo "device:  $NODE"
@@ -74,14 +94,6 @@ libinput debug-events --verbose --device "$NODE" > "$VERBOSE" 2>&1 &
 WATCHER=$!
 sleep 2
 
-# ------------------------------------------------------------- synthetic input
-# The touch surface the synthetic client claims: a landscape 2400x1080 phone.
-
-SURFACE_WIDTH=2400
-SURFACE_HEIGHT=1080
-# Physical size in micrometres: a 6.7-inch phone held in landscape.
-SURFACE_WIDTH_UM=155000
-SURFACE_HEIGHT_UM=69000
 FINGER_SPACING=260
 SEQUENCE=0
 
@@ -118,10 +130,6 @@ glide() {
   send_frame
   sleep 0.2
 }
-
-exec 3<>"/dev/tcp/127.0.0.1/$PORT" || fail "could not connect to the daemon"
-printf 'HELLO OTP/2 %d %d 10 %d %d\n' \
-  "$SURFACE_WIDTH" "$SURFACE_HEIGHT" "$SURFACE_WIDTH_UM" "$SURFACE_HEIGHT_UM" >&3
 
 echo "== injecting synthetic strokes =="
 echo "   one finger, sideways"

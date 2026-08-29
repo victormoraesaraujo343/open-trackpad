@@ -47,6 +47,45 @@ impl PadSink for crate::uinput::UinputTouchpad {
     }
 }
 
+/// Owns the virtual device, building it only once a client says how big its
+/// touch surface is.
+///
+/// Creating a device up front and swapping it out on the first handshake would
+/// mean two hotplugs where one will do, and desktop settings panels do not
+/// always cope with a device they are configuring disappearing underneath them.
+#[derive(Default)]
+pub struct LazyTouchpad {
+    device: Option<crate::uinput::UinputTouchpad>,
+}
+
+impl PadSink for LazyTouchpad {
+    fn emit(&mut self, events: &[PadEvent]) -> io::Result<()> {
+        match &mut self.device {
+            Some(device) => device.emit(events),
+            // Nothing has connected yet, so there is nothing to move.
+            None => Ok(()),
+        }
+    }
+
+    fn configure(&mut self, geometry: PadGeometry) -> io::Result<bool> {
+        match &mut self.device {
+            Some(device) => device.configure(geometry),
+            None => {
+                self.device = Some(crate::uinput::UinputTouchpad::create(geometry)?);
+                Ok(true)
+            }
+        }
+    }
+
+    fn describe(&mut self) -> String {
+        match &mut self.device {
+            Some(device) => device.describe(),
+            None => "no virtual device yet; one is created to match the first phone that connects"
+                .to_owned(),
+        }
+    }
+}
+
 /// Prints events instead of injecting them. Useful when `/dev/uinput` is not
 /// writable, and for seeing exactly what the state machine decided.
 pub struct DebugSink;

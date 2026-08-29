@@ -16,10 +16,9 @@ use std::io::{self, BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
 
 use protocol::{Accepted, Session};
-use sink::{DebugSink, PadSink};
+use sink::{DebugSink, LazyTouchpad, PadSink};
 use state::ContactState;
 use timing::TimingTrace;
-use uinput::UinputTouchpad;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4242";
 
@@ -166,10 +165,11 @@ fn handle_client(
                 // consistent across devices.
                 if sink.configure(hello.geometry())? {
                     state.device_replaced();
-                    println!(
-                        "  resized the virtual touchpad to match: {}",
-                        sink.describe()
-                    );
+                    println!("  {}", sink.describe());
+                    // Classification is what actually matters, and only the real
+                    // host can answer it. Point at the check rather than
+                    // claiming success.
+                    println!("  verify with: libinput list-devices | grep -A9 OpenTrackpad");
                 }
             }
             Accepted::Frame(frame) => {
@@ -219,21 +219,24 @@ fn run() -> io::Result<()> {
         }
     };
 
-    let mut device;
+    let mut device = LazyTouchpad::default();
     let mut debug = DebugSink;
     let sink: &mut dyn PadSink = if options.dry_run {
         &mut debug
     } else {
-        // Created before any client connects, so the device is there for
-        // `libinput list-devices`. A client that reports a different screen size
-        // replaces it.
-        device = UinputTouchpad::create(pad::PadGeometry::DEFAULT).map_err(|error| {
+        // The device is built to match the first phone that connects, not now:
+        // every screen is a different size, and creating one at a guessed size
+        // only to replace it means two hotplugs where one will do. Permissions
+        // are still checked up front, so a problem surfaces here rather than
+        // mid-session as a mysterious failure.
+        uinput::check_access().map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!(
-                    "could not create the virtual touchpad via /dev/uinput: {error}\n\
-                     Check that /dev/uinput exists and is writable by this user, \
-                     or re-run with --dry-run to test the protocol only."
+                    "cannot open /dev/uinput for writing: {error}\n\
+                     Check that it exists and that this user has access (see \
+                     host/README.md), or re-run with --dry-run to test the \
+                     protocol only."
                 ),
             )
         })?;
@@ -242,11 +245,6 @@ fn run() -> io::Result<()> {
 
     println!("OpenTrackpad host daemon");
     println!("  output: {}", sink.describe());
-    if !options.dry_run {
-        // Classification is what actually matters, and only the real host can
-        // answer it. Point at the check rather than claiming success.
-        println!("  verify classification with: libinput list-devices | grep -A6 OpenTrackpad");
-    }
 
     let mut state = ContactState::new();
     let mut teed;

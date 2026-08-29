@@ -90,6 +90,7 @@ pub fn soak(state: &mut ContactState, sink: &mut dyn PadSink, minutes: u64) -> i
     let mut frames = 0u64;
     let mut reported = Instant::now();
 
+    sink.configure(SURFACE.geometry())?;
     println!("soak: running for {minutes} minute(s); the pointer will move throughout");
     sink.emit(&state.begin_session(&SURFACE))?;
 
@@ -225,6 +226,7 @@ fn sequence() -> Vec<Step> {
 }
 
 pub fn run(state: &mut ContactState, sink: &mut dyn PadSink) -> io::Result<()> {
+    sink.configure(SURFACE.geometry())?;
     println!(
         "self-test: waiting {}s for the desktop to open the new device",
         HOTPLUG_GRACE.as_secs()

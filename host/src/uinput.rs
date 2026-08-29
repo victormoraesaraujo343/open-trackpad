@@ -31,6 +31,18 @@ const TOOL_KEYS: [KeyCode; MAX_REPORTED_FINGERS as usize] = [
     KeyCode::BTN_TOOL_QUINTTAP,
 ];
 
+/// Fails early if `/dev/uinput` cannot be written.
+///
+/// The device itself is only built once a client reports its screen size, but
+/// waiting until then to discover a permissions problem would surface it as a
+/// mysterious failure mid-session rather than at startup.
+pub fn check_access() -> io::Result<()> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/uinput")
+        .map(drop)
+}
+
 pub struct UinputTouchpad {
     device: VirtualDevice,
     /// The size the current device claims, so it is only rebuilt when it must be.
