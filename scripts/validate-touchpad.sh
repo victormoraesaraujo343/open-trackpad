@@ -4,9 +4,16 @@
 #
 #   sudo ./scripts/validate-touchpad.sh
 #
-# Starts the daemon, watches its device with libinput, feeds it synthetic one-,
-# two-, three- and four-finger strokes over the protocol socket, and reports
-# what libinput made of each one.
+# Starts the daemon, watches its devices with libinput, feeds it synthetic one-,
+# two-, three- and four-finger strokes over the protocol socket, then a click on
+# each mouse button, and reports what libinput made of each one.
+#
+# The clicks are checked separately because they are a separate device: the
+# buttons cannot live on the touchpad, which libinput re-resolves from finger
+# count, so they have one of their own. A click is also a press and a release
+# with nothing between them, and this project has measured events sent that
+# close together collapsing into one, so it is worth proving rather than
+# assuming.
 #
 # Root is required because libinput must open /dev/input/*. Without it,
 # `libinput list-devices` reports nothing at all, which looks exactly like a
@@ -28,6 +35,7 @@ BIN=$REPO/host/target/debug/opentrackpadd
 WORK=$(mktemp -d)
 DAEMON_LOG=$WORK/daemon.log
 VERBOSE=$WORK/libinput.log
+CLICKS=$WORK/clicks.log
 RECORD=$WORK/record.yml
 
 cleanup() {
@@ -67,18 +75,28 @@ kill -0 "$DAEMON" 2>/dev/null || { cat "$DAEMON_LOG"; fail "the daemon exited im
 # The virtual device is built to match whoever connects, so the handshake comes
 # before there is anything for libinput to look at.
 exec 3<>"/dev/tcp/127.0.0.1/$PORT" || fail "could not connect to the daemon"
-printf 'HELLO OTP/2 %d %d 10 %d %d\n' \
+# The version matters: the daemon refuses a handshake it does not recognise and
+# closes the connection, so a stale number here fails as "no device node" rather
+# than as "wrong version". This said OTP/2 for two versions and the script had
+# quietly stopped working.
+printf 'HELLO OTP/4 %d %d 10 %d %d\n' \
   "$SURFACE_WIDTH" "$SURFACE_HEIGHT" "$SURFACE_WIDTH_UM" "$SURFACE_HEIGHT_UM" >&3
-
 NODE=
+BUTTONS=
+# By name, not by position. The daemon reports a keyboard and a pointer before
+# the touchpad, so taking the first node in the log watches the wrong device and
+# every count below comes out zero.
 for _ in $(seq 20); do
-  NODE=$(grep -o '/dev/input/event[0-9]*' "$DAEMON_LOG" | head -1)
-  [ -n "$NODE" ] && break
+  NODE=$(grep 'virtual touchpad' "$DAEMON_LOG" | grep -o '/dev/input/event[0-9]*' | head -1)
+  BUTTONS=$(grep 'virtual pointer' "$DAEMON_LOG" | grep -o '/dev/input/event[0-9]*' | head -1)
+  [ -n "$NODE" ] && [ -n "$BUTTONS" ] && break
   sleep 0.2
 done
-[ -n "$NODE" ] || { cat "$DAEMON_LOG"; fail "the daemon did not report a device node"; }
+[ -n "$NODE" ] || { cat "$DAEMON_LOG"; fail "the daemon did not report a touchpad node"; }
+[ -n "$BUTTONS" ] || { cat "$DAEMON_LOG"; fail "the daemon did not report a pointer node"; }
 
-echo "device:  $NODE"
+echo "touchpad: $NODE"
+echo "buttons:  $BUTTONS"
 echo "address: $ADDRESS"
 echo
 
@@ -92,6 +110,9 @@ libinput record --output-file="$RECORD" "$NODE" >/dev/null 2>&1 &
 RECORDER=$!
 libinput debug-events --verbose --device "$NODE" > "$VERBOSE" 2>&1 &
 WATCHER=$!
+# The buttons are a device of their own, so they need a watcher of their own.
+libinput debug-events --device "$BUTTONS" > "$CLICKS" 2>&1 &
+CLICKWATCHER=$!
 sleep 2
 
 FINGER_SPACING=260
@@ -162,13 +183,26 @@ pinch 400 1600 45
 echo "   two fingers, closing together (pinch)"
 pinch 1600 400 45
 
+
+# The buttons the rails send, on their own device. Worth its own check because
+# a click is press-and-release with nothing between them, and this project has
+# already measured that events sent microseconds apart can collapse into one
+# somewhere downstream. If a zero-duration click is too fast to survive, this is
+# where it shows up.
+echo "   mouse buttons, on the pointer device"
+for button in left right middle; do
+  SEQUENCE=$((SEQUENCE + 1))
+  printf 'ACTION %d BUTTON %s\n' "$SEQUENCE" "$button" >&3
+  sleep 0.3
+done
+sleep 0.5
 exec 3>&-
 exec 3<&-
 sleep 1
 
-kill "$RECORDER" "$WATCHER" 2>/dev/null
-wait "$RECORDER" "$WATCHER" 2>/dev/null
-RECORDER=; WATCHER=
+kill "$RECORDER" "$WATCHER" "$CLICKWATCHER" 2>/dev/null
+wait "$RECORDER" "$WATCHER" "$CLICKWATCHER" 2>/dev/null
+RECORDER=; WATCHER=; CLICKWATCHER=
 
 # ------------------------------------------------------------------ conclusion
 
@@ -180,6 +214,9 @@ scroll=$(count POINTER_SCROLL_FINGER)
 swipe=$(count GESTURE_SWIPE)
 pinch_events=$(count GESTURE_PINCH)
 palm=$(count 'palm detected')
+# Each click should be one press and one release on the pointer device.
+clicks_pressed=$(grep -c 'POINTER_BUTTON.*pressed' "$CLICKS" 2>/dev/null || echo 0)
+clicks_released=$(grep -c 'POINTER_BUTTON.*released' "$CLICKS" 2>/dev/null || echo 0)
 
 echo
 echo "== results =="
@@ -189,6 +226,8 @@ printf '  %-34s %s\n' "scroll (two fingers)" "$scroll"
 printf '  %-34s %s\n' "swipe gestures (three, four)" "$swipe"
 printf '  %-34s %s\n' "pinch updates (zoom)" "$pinch_events"
 printf '  %-34s %s\n' "contacts discarded as palms" "$palm"
+printf '  %-34s %s of 3\n' "button presses (left, right, middle)" "$clicks_pressed"
+printf '  %-34s %s of 3\n' "button releases" "$clicks_released"
 
 echo
 status=0
@@ -206,6 +245,15 @@ else
   [ "$scroll" -eq 0 ] && echo "note: no two-finger scrolling was produced."
   [ "$swipe" -eq 0 ] && echo "note: no three- or four-finger swipe gestures were produced."
   [ "$pinch_events" -eq 0 ] && echo "note: no pinch gestures were produced."
+  if [ "$clicks_pressed" -lt 3 ] || [ "$clicks_released" -lt 3 ]; then
+    # Not a note. The rails have a click on them, and a click that arrives as
+    # a press with no release leaves a button held down on the desktop.
+    echo "FAIL: the pointer device did not deliver three complete clicks."
+    echo "      A press and release sent in the same instant may be too fast;"
+    echo "      see the timing note in docs/TESTING.md."
+    sed -n '1,12p' "$CLICKS" | sed 's/^/        /'
+    status=1
+  fi
 fi
 
 echo

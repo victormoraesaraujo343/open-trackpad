@@ -12,6 +12,7 @@ mod keys;
 mod pactl;
 mod pad;
 mod panel;
+mod pointer;
 mod protocol;
 mod selftest;
 mod shortcuts;
@@ -26,6 +27,7 @@ use std::net::{TcpListener, TcpStream};
 
 use keyboard::{ActionRate, Controls};
 use panel::{AudioPanel, Outbox};
+use pointer::Buttons;
 use protocol::{Accepted, Action, Capabilities, Domain, Outbound, Session};
 use shortcuts::Shortcuts;
 use sink::{DebugSink, LazyTouchpad, PadSink};
@@ -200,6 +202,7 @@ struct Serving<'a> {
     state: &'a mut ContactState,
     sink: &'a mut dyn PadSink,
     controls: &'a mut Controls,
+    buttons: &'a mut Buttons,
     /// What the phone is allowed to fire. Read-only here: this list is changed
     /// by somebody at the keyboard, never by anything arriving on the socket.
     shortcuts: &'a Shortcuts,
@@ -217,6 +220,7 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
         state,
         sink,
         controls,
+        buttons,
         shortcuts,
         status,
         trace_timing,
@@ -297,6 +301,14 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                 } else if let Some(description) = controls.describe() {
                     println!("  {description}");
                 }
+                // Same reason, same moment: a desktop discards events from a
+                // device it has not finished opening, so the first click would
+                // be the one lost.
+                if let Err(error) = buttons.prepare() {
+                    eprintln!("could not create the virtual pointer: {error}");
+                } else if let Some(description) = buttons.describe() {
+                    println!("  {description}");
+                }
 
                 // What the client asked to be told about, kept to what this
                 // machine can actually answer. A host with no sound daemon
@@ -360,6 +372,17 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                     eprintln!("ignored a shortcut that is not in the list: {chord}");
                 } else if let Err(error) = controls.press_chord(&chord) {
                     eprintln!("could not send shortcut: {error}");
+                }
+            }
+            Accepted::Action(Action::Button(button)) => {
+                // Not fatal, and not gated. The gate exists because a hundred
+                // and thirty key names combine into anything; three button
+                // names that can do nothing a mouse cannot already do are
+                // their own protection, and there is nothing here to record.
+                if !action_rate.allow(std::time::Instant::now()) {
+                    eprintln!("dropped a click: they are arriving too fast to be real");
+                } else if let Err(error) = buttons.click(button) {
+                    eprintln!("could not send click: {error}");
                 }
             }
             Accepted::Request(request) => {
@@ -521,6 +544,7 @@ fn run() -> io::Result<()> {
     // send one, and an unused keyboard device would show up in every desktop's
     // input settings for no reason.
     let mut controls = Controls::new(options.dry_run);
+    let mut buttons = Buttons::new(options.dry_run);
 
     for connection in listener.incoming() {
         match connection {
@@ -530,6 +554,7 @@ fn run() -> io::Result<()> {
                     state: &mut state,
                     sink: &mut *sink,
                     controls: &mut controls,
+                    buttons: &mut buttons,
                     shortcuts: &shortcuts,
                     status: &status,
                     trace_timing: options.trace_timing,
@@ -546,6 +571,15 @@ fn run() -> io::Result<()> {
                     Ok(0) => {}
                     Ok(count) => println!("released {count} key(s) still held by the client"),
                     Err(error) => eprintln!("failed to release held keys: {error}"),
+                }
+
+                // And the buttons, which matter more: a stuck modifier makes a
+                // desktop unusable, a stuck mouse button makes it unusable and
+                // unfixable, because nothing can be clicked to get out of it.
+                match buttons.release_all() {
+                    Ok(0) => {}
+                    Ok(count) => println!("released {count} button(s) still held by the client"),
+                    Err(error) => eprintln!("failed to release held buttons: {error}"),
                 }
                 status.set(&State::Waiting);
             }

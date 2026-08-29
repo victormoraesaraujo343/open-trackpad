@@ -7,6 +7,7 @@ use std::fmt;
 
 use crate::audio;
 use crate::keys::Chord;
+use crate::pointer::Button;
 
 /// The protocol version this host speaks.
 ///
@@ -215,6 +216,13 @@ pub enum Message {
 pub enum Action {
     /// Press a chord and let it go.
     Key(Chord),
+    /// Click a mouse button and let it go.
+    ///
+    /// A second kind rather than a key name, because a button is not a key:
+    /// it goes to a different virtual device, for the reasons in
+    /// `crate::pointer`, and it is the one thing here that is not gated by
+    /// what somebody recorded.
+    Button(Button),
 }
 
 /// A change the client would like made to something the host told it about.
@@ -617,6 +625,15 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                     ensure_finished(&mut parts)?;
                     Ok(Message::Action(Action::Key(chord)))
                 }
+                Some("BUTTON") => {
+                    let name = parts
+                        .next()
+                        .ok_or_else(|| ProtocolError("missing button name".into()))?;
+                    let button = Button::parse(name)
+                        .ok_or_else(|| ProtocolError(format!("unknown button: {name}")))?;
+                    ensure_finished(&mut parts)?;
+                    Ok(Message::Action(Action::Button(button)))
+                }
                 Some(other) => Err(ProtocolError(format!("unknown action kind: {other}"))),
                 None => Err(ProtocolError("missing action kind".into())),
             }
@@ -965,6 +982,65 @@ mod tests {
                 Chord::parse("ctrl+c").unwrap()
             )))
         );
+    }
+
+    #[test]
+    fn parses_a_button_click() {
+        assert_eq!(
+            parse_message("ACTION 7 BUTTON right"),
+            Ok(Message::Action(Action::Button(Button::Right)))
+        );
+        assert_eq!(
+            parse_message("ACTION 8 BUTTON left"),
+            Ok(Message::Action(Action::Button(Button::Left)))
+        );
+        assert_eq!(
+            parse_message("ACTION 9 BUTTON middle"),
+            Ok(Message::Action(Action::Button(Button::Middle)))
+        );
+    }
+
+    #[test]
+    fn a_button_can_only_be_one_of_three_names() {
+        // The same rule as an unknown key name, and for the same reason: a
+        // button named by number, or a click with a count on it, is what turns
+        // a vocabulary back into an interface.
+        assert!(parse_message("ACTION 1 BUTTON 3").is_err());
+        assert!(parse_message("ACTION 1 BUTTON 0x110").is_err());
+        assert!(parse_message("ACTION 1 BUTTON BTN_LEFT").is_err());
+        assert!(parse_message("ACTION 1 BUTTON Left").is_err());
+        assert!(parse_message("ACTION 1 BUTTON back").is_err());
+        assert!(parse_message("ACTION 1 BUTTON").is_err());
+        assert!(parse_message("ACTION 1 BUTTON left 2").is_err());
+        assert!(parse_message("ACTION 1 BUTTON left left").is_err());
+    }
+
+    #[test]
+    fn there_is_no_way_to_hold_a_button_down() {
+        // A held button is a drag, and a drag needs the pointer moving while it
+        // is held — the other path's job. There is no message for it, so there
+        // is no way to leave one down.
+        assert!(parse_message("ACTION 1 BUTTON left down").is_err());
+        assert!(parse_message("ACTION 1 BUTTONDOWN left").is_err());
+        assert!(parse_message("ACTION 1 PRESS left").is_err());
+        assert!(parse_message("ACTION 1 BUTTON left hold").is_err());
+    }
+
+    #[test]
+    fn a_click_before_the_handshake_is_rejected() {
+        let mut session = Session::new();
+        assert!(session.accept("ACTION 1 BUTTON left").is_err());
+    }
+
+    #[test]
+    fn clicks_do_not_disturb_the_frame_sequence() {
+        // Same separate path as a chord: a click must not be able to reorder
+        // the frames the touchpad depends on.
+        let mut session = Session::new();
+        session.accept(HANDSHAKE).unwrap();
+        session.accept("FRAME 10 1000 0").unwrap();
+        session.accept("ACTION 1 BUTTON right").unwrap();
+        assert!(session.accept("FRAME 11 1001 0").is_ok());
     }
 
     #[test]
