@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The audio panel's body, from AudioOutput.dc.html and AudioSettings.dc.html.
+
+  It takes the pad's place rather than sitting over it, because it is a page
+  rather than a menu — and while it is open the rail opposite the Quick Ring
+  becomes its pages, so the way out of the app never moves.
+
+  The header is read and is therefore in sp; the faders are aimed at and are in
+  millimetres, drawn by AudioFadersView. That is the rule from Artboard rather
+  than an inconsistency.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/audio_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/panel"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/audio_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/space_grotesk_semibold"
+            android:textColor="@color/ink"
+            android:textSize="13sp"
+            tools:text="Output" />
+
+        <TextView
+            android:id="@+id/audio_hint"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:fontFamily="@font/inter_regular"
+            android:gravity="end"
+            android:textColor="@color/faint"
+            android:textSize="10sp"
+            tools:text="Green = the one in use · tap a knob to mute" />
+    </LinearLayout>
+
+    <!-- The faders, and what stands in for them when there are none. -->
+    <FrameLayout
+        android:id="@+id/audio_body"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="10dp"
+        android:layout_weight="1">
+
+        <org.opentrackpad.client.AudioFadersView
+            android:id="@+id/audio_faders"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/audio_empty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:fontFamily="@font/inter_regular"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.5"
+            android:paddingHorizontal="32dp"
+            android:textColor="@color/muted"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:text="Nothing is playing" />
+
+        <!-- The panel's own settings, which are about the panel and not sound. -->
+        <LinearLayout
+            android:id="@+id/audio_settings_page"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/SettingLabelBlock"
+                android:layout_marginTop="0dp"
+                android:text="@string/audio_opens_on" />
+
+            <org.opentrackpad.client.SegmentedView
+                android:id="@+id/audio_opens_on"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" />
+
+            <TextView style="@style/CardNote" android:text="@string/audio_opens_on_note" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="12dp"
+                android:background="@color/hairline" />
+
+            <LinearLayout style="@style/SettingRow" android:layout_marginTop="0dp">
+                <TextView style="@style/SettingLabel" android:text="@string/audio_boost" />
+                <org.opentrackpad.client.PillToggle
+                    android:id="@+id/audio_boost"
+                    android:layout_width="28dp"
+                    android:layout_height="16dp"
+                    android:layout_gravity="center_vertical" />
+            </LinearLayout>
+
+            <TextView style="@style/CardNote" android:text="@string/audio_boost_note" />
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

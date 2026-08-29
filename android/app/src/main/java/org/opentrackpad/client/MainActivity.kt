@@ -59,6 +59,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settingsPanel: View
     private lateinit var padHint: TextView
 
+    private lateinit var audioPanel: View
+    private lateinit var audioTitle: TextView
+    private lateinit var audioHint: TextView
+    private lateinit var audioEmpty: TextView
+    private lateinit var audioFaders: AudioFadersView
+    private lateinit var audioSettingsPage: View
+
     /** Runs the "back to the trackpad" wait. Nothing else uses it. */
     private val idle = Handler(Looper.getMainLooper())
 
@@ -118,6 +125,14 @@ class MainActivity : AppCompatActivity() {
         profileMenu.onChooseProfile = ::chooseProfile
         profileMenu.onChooseDestination = { press -> show(Panel.NONE); onPress(press) }
         profileMenu.onDismiss = { show(Panel.NONE) }
+
+        audioPanel = findViewById(R.id.audio_panel)
+        audioTitle = findViewById(R.id.audio_title)
+        audioHint = findViewById(R.id.audio_hint)
+        audioEmpty = findViewById(R.id.audio_empty)
+        audioFaders = findViewById(R.id.audio_faders)
+        audioSettingsPage = findViewById(R.id.audio_settings_page)
+        bindAudio()
 
         settingsPanel = findViewById(R.id.settings_panel)
         findViewById<View>(R.id.settings_back).setOnClickListener { show(Panel.NONE) }
@@ -247,7 +262,10 @@ class MainActivity : AppCompatActivity() {
         val onLeft = stored.settings.shortcutSide == Side.LEFT
 
         val shortcuts = Rails.shortcuts(profile).let { if (live) it else it.deadened() }
-        val overflow = Rails.overflow(profile).let { if (live) it else it.deadened() }
+        val opposite =
+            if (panel == Panel.AUDIO) Rails.audioPages(audioPage)
+            else Rails.overflow(profile)
+        val overflow = opposite.let { if (live || panel == Panel.AUDIO) it else it.deadened() }
 
         railStart.slots = if (onLeft) shortcuts else overflow
         railEnd.slots = if (onLeft) overflow else shortcuts
@@ -273,12 +291,14 @@ class MainActivity : AppCompatActivity() {
             SlotPress.QuickRing -> show(if (panel == Panel.RING) Panel.NONE else Panel.RING)
             SlotPress.Profiles -> show(Panel.PROFILES)
             SlotPress.Settings -> show(Panel.SETTINGS)
+            is SlotPress.Audio -> openAudio(press.page)
+            SlotPress.Close -> show(Panel.NONE)
             SlotPress.None -> Unit
         }
     }
 
     /** What is over the trackpad, if anything. Only ever one thing. */
-    private enum class Panel { NONE, RING, PROFILES, SETTINGS }
+    private enum class Panel { NONE, RING, PROFILES, SETTINGS, AUDIO }
 
     private var panel = Panel.NONE
 
@@ -314,6 +334,11 @@ class MainActivity : AppCompatActivity() {
         ring.visibility = if (next == Panel.RING) View.VISIBLE else View.GONE
         profileMenu.visibility = if (next == Panel.PROFILES) View.VISIBLE else View.GONE
         settingsPanel.visibility = if (next == Panel.SETTINGS) View.VISIBLE else View.GONE
+        audioPanel.visibility = if (next == Panel.AUDIO) View.VISIBLE else View.GONE
+        // The rail opposite the Quick Ring becomes the panel's pages while one
+        // is open, and goes back to being shortcuts when it closes. The rail
+        // with the ring on it never changes, so the way out never moves.
+        layOutRails()
 
         val overThePad = next == Panel.RING || next == Panel.PROFILES
         val behind = if (overThePad) DIMMED_BEHIND_RING else 1f
@@ -340,6 +365,44 @@ class MainActivity : AppCompatActivity() {
         val after = stored.settings.returnToPadSeconds
         if (panel == Panel.NONE || after <= 0) return
         idle.postDelayed(returnToPad, after * 1000L)
+    }
+
+    /** Connects the audio panel's own controls and its faders, once. */
+    private fun bindAudio() {
+        audioFaders.onLevel = { entity, level ->
+            ask(Audio.volume(++requestSequence, entity.kind, entity.id, level))
+            // The fader follows the finger rather than waiting for the host to
+            // agree. The CHANGED that comes back is the acknowledgement and
+            // carries what the value actually became, which corrects this if
+            // the machine had other ideas.
+            showLevelNow(entity, level)
+            waitBeforeReturning()
+        }
+        audioFaders.onMute = { entity, muted ->
+            ask(Audio.mute(++requestSequence, entity.kind, entity.id, muted))
+            waitBeforeReturning()
+        }
+        findViewById<PillToggle>(R.id.audio_boost).onChange = { on ->
+            update { it.copy(audioBoost = on) }
+            audioFaders.allowBoost = on
+        }
+        findViewById<SegmentedView>(R.id.audio_opens_on).onChoose = { index ->
+            update { it.copy(audioOpensOn = AudioPage.openable[index]) }
+        }
+    }
+
+    /**
+     * Moves one fader without waiting for the host.
+     *
+     * Only the drawing: the picture the client holds is still the host's, and
+     * the next `CHANGED` replaces this. Without it a dragged fader would stick
+     * where it was until the round trip finished, which reads as the app being
+     * broken rather than the network being slow.
+     */
+    private fun showLevelNow(entity: AudioEntity, level: Int) {
+        audioFaders.faders = audioFaders.faders.map {
+            if (it.key == entity.key) it.copy(volume = level) else it
+        }
     }
 
     // -- settings ------------------------------------------------------------
@@ -475,18 +538,34 @@ class MainActivity : AppCompatActivity() {
         // of the app. They are fixed positions for the same reason slot five of
         // a rail is: a destination that moved when a profile gained a shortcut
         // would have to be looked for every time.
-        val destinations = listOf(
-            RailSlot(
-                label = getString(R.string.profile_heading),
-                icon = RailIcons.path("profiles"),
-                press = SlotPress.Profiles,
-            ),
-            RailSlot(
-                label = getString(R.string.profile_settings),
-                icon = RailIcons.path("gear"),
-                press = SlotPress.Settings,
-            ),
-        )
+        val destinations = buildList {
+            // Only when the host said it could serve it. A wedge that opened a
+            // panel with nothing behind it would be the "broken" that the
+            // capability handshake exists to avoid — absent is the honest shape.
+            if (audio.granted) {
+                add(
+                    RailSlot(
+                        label = getString(R.string.audio_sound),
+                        icon = RailIcons.path("vol"),
+                        press = SlotPress.Audio(stored.settings.audioOpensOn),
+                    )
+                )
+            }
+            add(
+                RailSlot(
+                    label = getString(R.string.profile_heading),
+                    icon = RailIcons.path("profiles"),
+                    press = SlotPress.Profiles,
+                )
+            )
+            add(
+                RailSlot(
+                    label = getString(R.string.profile_settings),
+                    icon = RailIcons.path("gear"),
+                    press = SlotPress.Settings,
+                )
+            )
+        }
         val shortcuts = activeProfile.ring.drop(Rails.SLOTS).map { slot ->
             RailSlot(
                 label = slot.label,
@@ -514,12 +593,85 @@ class MainActivity : AppCompatActivity() {
     /** What the phone believes about sound. Empty until a host grants it. */
     private val audio = AudioState()
 
+    /** Which page the audio panel is on. */
+    private var audioPage = AudioPage.OUTPUT
+
+    private fun openAudio(page: AudioPage) {
+        audioPage = page
+        showAudio()
+        show(Panel.AUDIO)
+        // `show` returns early when the panel is already up, so the rails and
+        // the body are refreshed here rather than relying on it.
+        layOutRails()
+        waitBeforeReturning()
+    }
+
+    /** Puts the current picture on whichever page is open. */
+    private fun showAudio() {
+        val onSettings = audioPage == AudioPage.SETTINGS
+        audioTitle.setText(
+            when (audioPage) {
+                AudioPage.OUTPUT -> R.string.audio_output
+                AudioPage.INPUT -> R.string.audio_input
+                AudioPage.APPS -> R.string.audio_apps
+                AudioPage.SETTINGS -> R.string.audio_settings_title
+            }
+        )
+        audioHint.text = when (audioPage) {
+            AudioPage.APPS -> getString(R.string.audio_hint_apps)
+            AudioPage.SETTINGS -> ""
+            else -> getString(R.string.audio_hint)
+        }
+
+        audioSettingsPage.visibility = if (onSettings) View.VISIBLE else View.GONE
+        if (onSettings) {
+            audioFaders.visibility = View.GONE
+            audioEmpty.visibility = View.GONE
+            findViewById<PillToggle>(R.id.audio_boost).checked = stored.settings.audioBoost
+            findViewById<SegmentedView>(R.id.audio_opens_on).apply {
+                options = AudioPage.openable.map { getString(it.title()) }
+                chosen = AudioPage.openable.indexOf(stored.settings.audioOpensOn)
+                    .coerceAtLeast(0)
+            }
+            return
+        }
+
+        val kind = audioPage.kind ?: return
+        val shown = audio.of(kind)
+        audioFaders.allowBoost = stored.settings.audioBoost
+        audioFaders.hapticsEnabled = stored.settings.haptics
+        audioFaders.faders = shown
+        audioFaders.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
+        audioEmpty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+        if (shown.isEmpty()) audioEmpty.setText(emptyReason(kind))
+    }
+
+    /** What to say when a page has nothing on it, which is never just "empty". */
+    private fun emptyReason(kind: AudioKind): Int = when (audio.outage) {
+        AudioOutage.NO_TOOL -> R.string.audio_no_tool
+        AudioOutage.NO_DAEMON -> R.string.audio_no_daemon
+        AudioOutage.LOST -> R.string.audio_lost
+        null -> when (kind) {
+            AudioKind.OUTPUT -> R.string.audio_none_outputs
+            AudioKind.INPUT -> R.string.audio_none_inputs
+            AudioKind.STREAM -> R.string.audio_none_apps
+        }
+    }
+
+    private fun AudioPage.title(): Int = when (this) {
+        AudioPage.OUTPUT -> R.string.audio_output
+        AudioPage.INPUT -> R.string.audio_input
+        AudioPage.APPS -> R.string.audio_apps
+        AudioPage.SETTINGS -> R.string.audio_settings
+    }
+
     private var requestSequence = 0L
 
     private fun onGranted(granted: Set<String>) {
         audio.grant(Audio.CAPABILITY in granted)
         audio.reset()
         if (audio.granted) ask(Audio.refresh(++requestSequence))
+        if (panel == Panel.RING) ring.wedges = ringWedges()
         Log.i(TAG, "host granted: " + granted.ifEmpty { setOf("nothing") }.joinToString(","))
     }
 
@@ -541,6 +693,9 @@ class MainActivity : AppCompatActivity() {
         // True means we hold a picture that was superseded by one we never saw,
         // so patching it would be guesswork. Ask for the whole thing instead.
         if (audio.apply(message)) ask(Audio.refresh(++requestSequence))
+        // A picture that changed under an open panel has to reach the screen,
+        // and one that changed under a closed one costs nothing to ignore.
+        if (panel == Panel.AUDIO && !audio.settling) showAudio()
     }
 
     private fun ask(line: String?) {

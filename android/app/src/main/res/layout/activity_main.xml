@@ -82,6 +82,10 @@
               the ring is also the slot that closes it, and it would be a poor
               trick to put it out of reach.
             -->
+            <!-- Takes the pad's place while it is open, rather than sitting
+                 over it: it is a page, not a menu. -->
+            <include layout="@layout/panel_audio" />
+
             <org.opentrackpad.client.QuickRingView
                 android:id="@+id/quick_ring"
                 android:layout_width="match_parent"

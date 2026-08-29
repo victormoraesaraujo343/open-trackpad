@@ -12,6 +12,7 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /**
@@ -199,8 +200,12 @@ class SegmentedView @JvmOverloads constructor(
         val limit = MeasureSpec.getSize(widthSpec)
         val width = when (MeasureSpec.getMode(widthSpec)) {
             MeasureSpec.EXACTLY -> limit
-            MeasureSpec.AT_MOST -> minOf(naturalWidth().roundToInt(), limit)
-            else -> naturalWidth().roundToInt()
+            // Rounded up, never down. Rounding the natural width down leaves
+            // the last chip overflowing by a fraction of a pixel, and the wrap
+            // test then puts it on a line of its own — which looks like a
+            // deliberate two-row layout and is really half a pixel.
+            MeasureSpec.AT_MOST -> minOf(ceil(naturalWidth()).toInt(), limit)
+            else -> ceil(naturalWidth()).toInt()
         }
         val height = arrange(width.toFloat())
         setMeasuredDimension(width, resolveSize(height.roundToInt(), heightSpec))

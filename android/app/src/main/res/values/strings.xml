@@ -53,6 +53,33 @@
     <string name="profile_manage">Manage profiles</string>
     <string name="profile_settings">Settings</string>
 
+    <!-- The audio panel. -->
+    <string name="audio_sound">Sound</string>
+    <string name="audio_close">Close</string>
+    <string name="audio_output">Output</string>
+    <string name="audio_input">Input</string>
+    <string name="audio_apps">Apps</string>
+    <string name="audio_settings">Settings</string>
+    <string name="audio_settings_title">Audio settings</string>
+    <string name="audio_hint">Green = the one in use · tap a knob to mute</string>
+    <string name="audio_hint_apps">Tap a knob to mute</string>
+    <string name="audio_muted">Muted</string>
+    <string name="audio_percent">%1$d%%</string>
+    <string name="audio_in_use">In use</string>
+
+    <!-- Why the panel has nothing to show. Each says what to do about it. -->
+    <string name="audio_none_outputs">No outputs</string>
+    <string name="audio_none_inputs">No inputs</string>
+    <string name="audio_none_apps">Nothing is playing</string>
+    <string name="audio_no_tool">Your computer has no way to talk to its sound system.</string>
+    <string name="audio_no_daemon">No sound system is running on your computer.</string>
+    <string name="audio_lost">The sound system stopped. Looking for it.</string>
+
+    <string name="audio_boost">Allow louder than 100%</string>
+    <string name="audio_boost_note">Rescues a quiet video. Distorts the sound, and at high volume can damage speakers and ears. Anything past 100% turns amber on the fader.</string>
+    <string name="audio_opens_on">Opens on</string>
+    <string name="audio_opens_on_note">The page this panel shows first, every time.</string>
+
     <!-- The rails, for a screen reader. -->
     <string name="rail_shortcuts">Shortcuts</string>
     <string name="rail_overflow">More shortcuts</string>

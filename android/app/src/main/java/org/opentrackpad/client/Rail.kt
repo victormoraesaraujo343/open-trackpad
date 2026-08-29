@@ -36,6 +36,12 @@ sealed interface SlotPress {
     /** The settings screen. */
     data object Settings : SlotPress
 
+    /** The audio panel, on one of its pages. */
+    data class Audio(val page: AudioPage) : SlotPress
+
+    /** Out of whatever panel is open, back to the trackpad. */
+    data object Close : SlotPress
+
     /** Reserved space that answers to nothing. */
     data object None : SlotPress
 }
@@ -98,6 +104,31 @@ object Rails {
      */
     fun overflow(profile: Profile): List<RailSlot?> =
         List(SLOTS) { index -> profile.ring.getOrNull(index)?.let(::slotFor) }
+
+    /**
+     * The rail a panel takes over while it is open: the way out, then its pages.
+     *
+     * Slot one is Close and slot five is the panel's own settings, which is the
+     * same meaning those two slots carry everywhere — out, and everything else
+     * about this. That the audio panel has exactly four pages and a way out is
+     * what lets it fit a rail without bending the rule.
+     */
+    fun audioPages(current: AudioPage): List<RailSlot?> = listOf(
+        RailSlot("Close", RailIcons.path("back"), SlotPress.Close),
+        page(AudioPage.OUTPUT, "Output", "vol", current),
+        page(AudioPage.INPUT, "Input", "mic", current),
+        page(AudioPage.APPS, "Apps", "app", current),
+        page(AudioPage.SETTINGS, "Settings", "gear", current),
+    )
+
+    private fun page(page: AudioPage, label: String, icon: String, current: AudioPage) = RailSlot(
+        label = label,
+        icon = RailIcons.path(icon),
+        press = SlotPress.Audio(page),
+        // Lime means "this one, now", which on a rail of pages is the page you
+        // are looking at and nothing else.
+        style = if (page == current) SlotStyle.ACTIVE else SlotStyle.PLAIN,
+    )
 
     private fun slotFor(slot: Slot) = RailSlot(
         label = slot.label,

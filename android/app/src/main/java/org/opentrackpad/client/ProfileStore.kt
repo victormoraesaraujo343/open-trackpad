@@ -29,6 +29,8 @@ object ProfileStore {
         appendLine(listOf("setting", "haptics", "${settings.haptics}").joinToString(FIELD))
         appendLine(listOf("setting", "fade", "${settings.fadeWhenIdle}").joinToString(FIELD))
         appendLine(listOf("setting", "return", "${settings.returnToPadSeconds}").joinToString(FIELD))
+        appendLine(listOf("setting", "boost", "${settings.audioBoost}").joinToString(FIELD))
+        appendLine(listOf("setting", "audiopage", settings.audioOpensOn.wire).joinToString(FIELD))
         for (profile in stored.profiles) {
             appendLine(listOf("profile", profile.name).joinToString(FIELD))
             for (slot in profile.shortcuts) {
@@ -52,6 +54,8 @@ object ProfileStore {
         var haptics: Boolean? = null
         var fade: Boolean? = null
         var returnAfter: Int? = null
+        var boost: Boolean? = null
+        var audioPage: AudioPage? = null
         val profiles = mutableListOf<Profile>()
         var name: String? = null
         var slots = mutableListOf<Slot>()
@@ -73,6 +77,12 @@ object ProfileStore {
                         "awake" -> awake = parts[2].toBooleanStrictOrNull()
                         "haptics" -> haptics = parts[2].toBooleanStrictOrNull()
                         "fade" -> fade = parts[2].toBooleanStrictOrNull()
+                        "boost" -> boost = parts[2].toBooleanStrictOrNull()
+                        // Only a page that can be opened on: a file naming the
+                        // panel's own settings page would open on a screen
+                        // about the panel rather than on any sound.
+                        "audiopage" -> audioPage = AudioPage.of(parts[2])
+                            ?.takeIf { it in AudioPage.openable }
                         // Clamped rather than refused: a file written by a
                         // later version may offer a longer wait than this one
                         // does, and the nearest sane value beats the default.
@@ -109,6 +119,8 @@ object ProfileStore {
                 haptics = haptics ?: fallback.haptics,
                 fadeWhenIdle = fade ?: fallback.fadeWhenIdle,
                 returnToPadSeconds = returnAfter ?: fallback.returnToPadSeconds,
+                audioBoost = boost ?: fallback.audioBoost,
+                audioOpensOn = audioPage ?: fallback.audioOpensOn,
             ),
             profiles = recovered,
         )

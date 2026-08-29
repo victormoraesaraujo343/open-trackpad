@@ -9,6 +9,37 @@ package org.opentrackpad.client
  * tested on a desk.
  */
 
+/**
+ * The audio panel's pages.
+ *
+ * Four, which with the way out is exactly the five slots a rail always has.
+ * That is not a coincidence: while a panel is open the rail opposite the Quick
+ * Ring becomes its pages, so the way out of the app never moves.
+ */
+enum class AudioPage(val wire: String) {
+    OUTPUT("output"),
+    INPUT("input"),
+    APPS("apps"),
+    SETTINGS("settings"),
+    ;
+
+    /** Which entities this page shows, or null for the page about the panel. */
+    val kind: AudioKind?
+        get() = when (this) {
+            OUTPUT -> AudioKind.OUTPUT
+            INPUT -> AudioKind.INPUT
+            APPS -> AudioKind.STREAM
+            SETTINGS -> null
+        }
+
+    companion object {
+        fun of(wire: String): AudioPage? = entries.firstOrNull { it.wire == wire }
+
+        /** The pages a person may choose to open on: the ones showing sound. */
+        val openable = listOf(OUTPUT, INPUT, APPS)
+    }
+}
+
 /** What an entity is. The three are numbered independently by the sound daemon. */
 enum class AudioKind(val wire: String) {
     OUTPUT("output"),

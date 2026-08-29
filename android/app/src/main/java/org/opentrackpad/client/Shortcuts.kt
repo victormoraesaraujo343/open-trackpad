@@ -84,6 +84,18 @@ data class Settings(
      * about. Zero means never.
      */
     val returnToPadSeconds: Int = 30,
+
+    /**
+     * Whether the audio panel offers levels past 100%.
+     *
+     * Off by default and deliberately so: it distorts, and at high volume it
+     * can damage speakers and ears. Somebody who wants it can say so, and the
+     * fader turns amber past the mark so they can see where they are.
+     */
+    val audioBoost: Boolean = false,
+
+    /** Which page the audio panel shows first, every time. */
+    val audioOpensOn: AudioPage = AudioPage.OUTPUT,
 ) {
     val applicationsSide: Side get() = shortcutSide.opposite()
 
