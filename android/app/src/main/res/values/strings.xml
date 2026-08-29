@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenTrackpad</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected via USB</string>
+    <string name="status_reconnecting">Reconnecting…</string>
+    <string name="status_error">Host unreachable</string>
+    <string name="setup_hint">Run adb reverse tcp:4242 tcp:4242 on the computer</string>
+</resources>

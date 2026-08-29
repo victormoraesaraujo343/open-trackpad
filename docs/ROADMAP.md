@@ -22,11 +22,14 @@
 
 ## Milestone 2 — Android sender
 
-- [ ] Build an immersive Kotlin touch surface
-- [ ] Send complete multi-contact snapshots
-- [ ] Add orientation and coordinate normalization
-- [ ] Prevent sleep while connected
-- [ ] Show connection and latency status without consuming touch area
+- [x] Build an immersive Kotlin touch surface
+- [x] Send complete multi-contact snapshots
+- [x] Add orientation and coordinate normalization
+- [x] Prevent sleep while connected
+- [x] Show connection status without consuming touch area
+- [x] Coalesce movement under backpressure without losing lifts
+- [x] Reconnect with a fresh handshake
+- [ ] Test on a real phone against the host
 
 ## Milestone 3 — dedicated appliance mode
 

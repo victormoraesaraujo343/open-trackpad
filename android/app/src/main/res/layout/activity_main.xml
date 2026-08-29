@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The touch surface fills the screen. The status line sits on top of it but is
+  not clickable, so it can never swallow a touch meant for the trackpad.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/surface_background">
+
+    <org.opentrackpad.client.TouchSurfaceView
+        android:id="@+id/touch_surface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/surface_pad"
+        android:contentDescription="@string/app_name" />
+
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="6dp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="3dp"
+        android:clickable="false"
+        android:focusable="false"
+        android:duplicateParentState="false"
+        android:textSize="12sp"
+        android:textColor="@color/text_muted"
+        android:text="@string/status_connecting" />
+
+</FrameLayout>

@@ -1,13 +1,88 @@
 # Android client
 
-The Android client is not implemented yet.
+The v0.1 client is a single full-screen touch surface. It reports where fingers
+are and nothing else: it never decides that two fingers mean scrolling or that
+three mean Alt+Tab. Linux does that, which is the whole point of the project.
 
-The first client should be a native Kotlin application targeting Android 9 or newer. Its initial scope is intentionally small:
+## Building
 
-1. Open an immersive edge-to-edge touch surface.
-2. Capture complete multi-pointer snapshots from `MotionEvent`.
-3. Connect to `127.0.0.1:4242`, forwarded to the host with `adb reverse`.
-4. Send the `HELLO` line once and a `FRAME` line for every relevant touch event.
-5. Send a zero-contact frame on cancellation and before a clean disconnect.
+Needs a JDK 17 and the Android SDK; Gradle downloads itself through the wrapper.
 
-Before choosing the final minimum SDK, validate the actual dedicated device model and Android version.
+```bash
+cd android
+./gradlew assembleDebug
+```
+
+The APK lands in `app/build/outputs/apk/debug/app-debug.apk`.
+
+Point Gradle at your SDK with either `ANDROID_HOME` or a `local.properties`
+containing `sdk.dir=/path/to/Android/Sdk`. That file is per-machine and stays
+out of version control.
+
+## Running it against the host
+
+1. Enable USB debugging on the phone: Settings, About phone, tap Build number
+   seven times, then Developer options, USB debugging.
+2. Plug it in and forward the port:
+
+   ```bash
+   ./scripts/connect-usb.sh    # adb reverse tcp:4242 tcp:4242
+   ```
+
+3. Start the host daemon:
+
+   ```bash
+   cd host && cargo run
+   ```
+
+4. Install and launch the app:
+
+   ```bash
+   cd android && ./gradlew installDebug
+   ```
+
+The status line reads "Connected via USB" once the socket is up. It never shows
+a latency figure: the phone's clock and the computer's clock have no shared
+origin, so any number would be invented.
+
+## Tests
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+These run on the JVM, with no device or emulator. They cover the wire format and
+the frame queue. The encoded strings in `ProtocolTest` are byte-for-byte the same
+as the ones in the host's parser tests, so the two implementations are checked
+against a shared literal rather than against each other's assumptions.
+
+## How it is put together
+
+| File | Responsibility |
+| --- | --- |
+| `Protocol.kt` | The OTP/1 wire format, and nothing else. |
+| `TouchSurfaceView.kt` | Turning `MotionEvent` into complete contact snapshots. |
+| `FrameQueue.kt` | What to discard when frames outpace the socket. |
+| `HostConnection.kt` | The socket, the sender thread, reconnection. |
+| `MainActivity.kt` | Immersive landscape surface and connection status. |
+
+Three decisions worth knowing about:
+
+- **Pointer IDs, never pointer indices.** Indices shuffle as fingers come and
+  go; IDs identify the same finger for as long as it is down.
+- **`ACTION_POINTER_UP` excludes the lifting finger.** Android still lists it in
+  the event, so it has to be removed by hand or the host believes it is down.
+- **Historical samples are sent too.** Android batches several touch samples
+  into one `MotionEvent`; sending only the latest would throw away the
+  digitiser's sampling rate and keep only the display's refresh rate.
+
+`FrameQueue` is where backpressure is handled. Movement may be dropped, because
+every frame is a complete snapshot and a newer one supersedes an older one
+entirely. Frames that change *which fingers exist* never are — dropping one
+would leave the host believing a finger is still down. See its tests.
+
+## Not in v0.1
+
+No shortcut rails, radial menu, profiles, themes, left-handed layout, haptics,
+Bluetooth or Wi-Fi. Those are v0.2 and later, once the native trackpad is proven
+on real hardware.

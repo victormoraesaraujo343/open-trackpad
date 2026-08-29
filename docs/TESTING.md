@@ -16,6 +16,8 @@ by a real machine.
 | Two-finger scrolling reaches the desktop | observed |
 | Three- and four-finger swipe gestures reach the desktop | observed |
 | Runs as a systemd user service | observed |
+| The Android client builds and its unit tests pass | proven by `./gradlew testDebugUnitTest` |
+| The Android client works against the host on real hardware | **not yet verified** |
 | 30 minutes of use leaves no stuck contact | **not yet verified** |
 
 ## Automated tests

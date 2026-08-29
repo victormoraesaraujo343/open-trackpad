@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="surface_background">#FF101014</color>
+    <color name="surface_pad">#FF17171C</color>
+    <color name="surface_border">#FF2C2C34</color>
+    <color name="text_primary">#FFE6E6EA</color>
+    <color name="text_muted">#FF8A8A96</color>
+    <color name="status_connected">#FFA3E635</color>
+    <color name="status_pending">#FFEAB308</color>
+    <color name="status_error">#FFEF4444</color>
+</resources>
