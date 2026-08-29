@@ -128,8 +128,8 @@ object DefaultProfiles {
         name = "Media",
         shortcuts = listOf(
             key("Play", "playpause"),
-            key("Volume up", "volumeup"),
-            key("Volume down", "volumedown"),
+            key("Vol +", "volumeup"),
+            key("Vol −", "volumedown"),
             key("Mute", "mute"),
             key("Next", "nexttrack"),
             key("Previous", "previoustrack"),

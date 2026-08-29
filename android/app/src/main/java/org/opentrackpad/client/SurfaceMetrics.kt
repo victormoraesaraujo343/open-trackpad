@@ -50,6 +50,23 @@ data class SurfaceMetrics(
         }
 
         /**
+         * How many pixels make a millimetre on this panel.
+         *
+         * Shared with [Artboard], which lays the interface out at the size it
+         * was drawn rather than in density-independent pixels. Both need the
+         * same answer to the same question, and it is worth them being wrong
+         * together rather than differently if a device reports nonsense.
+         *
+         * Note which figure this rests on: `xdpi` and `ydpi` describe the
+         * panel and do not move when somebody changes the display-size
+         * setting. `densityDpi` does, which is why it is only a last resort.
+         */
+        fun pixelsPerMillimetre(metrics: DisplayMetrics): Double =
+            plausibleDpi(metrics) / MILLIMETRES_PER_INCH
+
+        private const val MILLIMETRES_PER_INCH = 25.4
+
+        /**
          * The screen's real dpi, falling back through progressively less exact
          * sources rather than returning something absurd.
          */

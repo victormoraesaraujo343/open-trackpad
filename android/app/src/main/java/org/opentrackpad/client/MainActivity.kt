@@ -5,7 +5,10 @@ import android.animation.ValueAnimator
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.util.TypedValue
 import android.view.View
+import android.view.ViewGroup.MarginLayoutParams
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -15,6 +18,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updateLayoutParams
 import java.io.File
 
 /**
@@ -25,6 +29,19 @@ import java.io.File
  * about the session takes over the middle of the screen instead.
  */
 class MainActivity : AppCompatActivity() {
+
+    private companion object {
+        const val TAG = "OpenTrackpad"
+
+        // Artboard units, from the screens. See [Artboard].
+
+        /** Around everything, and between a rail and the pad. */
+        const val EDGE_UNITS = 12f
+
+        /** The line on the pad, and how far it sits above the bottom edge. */
+        const val HINT_UNITS = 10f
+        const val HINT_GAP_UNITS = 13f
+    }
 
     private lateinit var surface: TouchSurfaceView
     private lateinit var connection: HostConnection
@@ -110,10 +127,59 @@ class MainActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         goImmersive()
         takeTheWholeScreen()
+        sizeToTheDrawing()
         layOutRails()
     }
 
     private fun View.isVisible() = visibility == View.VISIBLE
+
+    /**
+     * Puts the control surface on screen at the size it was drawn.
+     *
+     * The layout file carries the artboard's numbers as dp so the editor
+     * preview is not nonsense, and every one of them is replaced here. dp is
+     * relative to a display density the person can change; this is a
+     * peripheral, and its buttons are a fixed size in the hand. [Artboard] has
+     * the whole argument and the clamps.
+     *
+     * Only the control surface is treated this way — the rails, the pad, the
+     * margins between them and the hint on the pad. The card that explains a
+     * broken session is left in dp on purpose: that is text somebody reads,
+     * not a target hit without looking, and it is the one place where
+     * following the system's own sizing is the right answer.
+     */
+    private fun sizeToTheDrawing() {
+        val artboard = Artboard.measure(
+            resources.displayMetrics,
+            resources.displayMetrics.widthPixels,
+        )
+        val edge = artboard.size(EDGE_UNITS)
+
+        findViewById<View>(R.id.frame).setPadding(edge, edge, edge, edge)
+        for (rail in listOf(railStart, railEnd)) {
+            rail.updateLayoutParams { width = artboard.size(Artboard.RAIL_UNITS) }
+        }
+        findViewById<View>(R.id.pad_holder).updateLayoutParams<MarginLayoutParams> {
+            marginStart = edge
+            marginEnd = edge
+        }
+        findViewById<TextView>(R.id.pad_hint).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.px(HINT_UNITS))
+            updateLayoutParams<MarginLayoutParams> { bottomMargin = artboard.size(HINT_GAP_UNITS) }
+        }
+
+        // Worth being able to read back from a report rather than inferred from
+        // a screenshot: what the drawing actually measures on this glass.
+        Log.i(
+            TAG,
+            "artboard: 1 unit = %.3f px, rail %.1f mm across %d px%s".format(
+                artboard.pixelsPerUnit,
+                artboard.millimetres(Artboard.RAIL_UNITS),
+                artboard.size(Artboard.RAIL_UNITS),
+                if (artboard.clamped) " (clamped)" else "",
+            ),
+        )
+    }
 
     private val activeProfile: Profile
         get() = stored.profiles.firstOrNull { it.name == stored.settings.activeProfile }

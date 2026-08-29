@@ -27,8 +27,10 @@ import androidx.core.graphics.PathParser
  * fallen between, and has no child that might decline an event and let it
  * through. Everything below the rail's own bounds is somebody else's.
  *
- * It draws exactly what `Main.dc.html` draws: five equal slots, 8dp apart, each
- * a 12dp rounded rectangle holding a 20dp stroked glyph over a small label.
+ * It draws exactly what `Main.dc.html` draws, at the size it was drawn: five
+ * equal slots, 8 units apart, each a 12-unit rounded rectangle holding a
+ * 22-unit stroked glyph over a 12-unit label. Units are millimetres on the
+ * glass rather than density-independent pixels — see [Artboard].
  */
 class RailView @JvmOverloads constructor(
     context: Context,
@@ -36,35 +38,43 @@ class RailView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private companion object {
+        // Everything below is in artboard units, which are a physical length
+        // rather than a density-independent pixel. See [Artboard] for why, and
+        // note that the numbers themselves are unchanged: they are lifted from
+        // the screens, and only what a unit means has moved.
+
         /** Between slots. The rail's own margins belong to the layout. */
-        const val GAP_DP = 8f
+        const val GAP = 8f
 
         /** Panels are 12, things inside panels are 8. This is a panel. */
-        const val RADIUS_DP = 12f
+        const val RADIUS = 12f
 
-        const val BORDER_DP = 1f
+        const val BORDER = 1f
 
-        /** Glyphs are drawn on a 20-unit grid, at 22dp, stroked at 1.4. */
-        const val ICON_DP = 22f
+        /** Glyphs are drawn on a 20-unit grid, at 22 units, stroked at 1.4. */
+        const val ICON = 22f
         const val ICON_GRID = 20f
         const val ICON_STROKE = 1.4f
 
         /** Between the glyph and its label. */
-        const val LABEL_GAP_DP = 8f
+        const val LABEL_GAP = 8f
 
         /**
-         * Label size in dp, not sp, on purpose.
+         * The label, in artboard units and so in real millimetres.
          *
-         * A rail is 78dp wide and a slot is a fixed fifth of the screen. At a
-         * large system font scale an sp label would either overflow the slot or
-         * push the glyph out of it, and this surface is meant to be used without
-         * looking — the shapes staying put matters more here than following the
-         * system size. The label is a reminder beside an icon, not reading.
+         * Not sp, and this is the same argument the rail itself makes rather
+         * than a second one. A label here is not reading, it is the word under
+         * a key: it has to be recognisable at a glance on a surface used
+         * without looking, in a slot that cannot grow to hold it. Sizing it by
+         * the system font scale would overflow the slot or push the glyph out
+         * of it, and sizing it in dp made it unreadable on the first real
+         * phone. A physical size is the only one that means the same thing
+         * twice.
          */
-        const val LABEL_DP = 12f
+        const val LABEL = 12f
 
         /** Left and right of the label before it is cut short. */
-        const val LABEL_INSET_DP = 5f
+        const val LABEL_INSET = 5f
 
         val GROUND = Color.parseColor("#0E0F10")
         val INSET = Color.parseColor("#1B1D1F")
@@ -107,17 +117,23 @@ class RailView @JvmOverloads constructor(
             invalidate()
         }
 
-    private val density = resources.displayMetrics.density
-    private val gap = GAP_DP * density
-    private val radius = RADIUS_DP * density
-    private val iconSize = ICON_DP * density
-    private val labelGap = LABEL_GAP_DP * density
-    private val labelInset = LABEL_INSET_DP * density
+    private val artboard = Artboard.measure(
+        resources.displayMetrics,
+        resources.displayMetrics.widthPixels,
+    )
+    private val gap = artboard.px(GAP)
+    private val radius = artboard.px(RADIUS)
+    private val iconSize = artboard.px(ICON)
+    private val labelGap = artboard.px(LABEL_GAP)
+    private val labelInset = artboard.px(LABEL_INSET)
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = BORDER_DP * density
+        // A hairline stays a hairline: at one unit it would round to nothing on
+        // a low-density screen, and a slot with no edge is a slot that has
+        // merged with the one beside it.
+        strokeWidth = artboard.px(BORDER).coerceAtLeast(1f)
     }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -127,7 +143,7 @@ class RailView @JvmOverloads constructor(
     }
     private val label = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        textSize = LABEL_DP * density
+        textSize = artboard.px(LABEL)
         // Inter Medium, the weight the design draws rail labels at. Falls back
         // to the system's own medium if the face cannot be loaded, so a missing
         // font costs the look and not the button.

@@ -37,12 +37,13 @@ class TouchSurfaceView @JvmOverloads constructor(
         /** rgba(138,144,153,0.16), from the design. */
         val DOT = Color.parseColor("#298A9099")
 
-        const val RADIUS_DP = 12f
-        const val BORDER_DP = 1f
+        // Artboard units, which are a physical length. See [Artboard].
+        const val RADIUS = 12f
+        const val BORDER = 1f
 
-        /** The grid is one dot every 18dp, offset half a cell. */
-        const val CELL_DP = 18f
-        const val DOT_RADIUS_DP = 1f
+        /** The grid is one dot every 18 units, offset half a cell. */
+        const val CELL = 18f
+        const val DOT_RADIUS = 1f
     }
 
     /** Receives every snapshot. Set by the activity. */
@@ -51,8 +52,11 @@ class TouchSurfaceView @JvmOverloads constructor(
     /** Called when the usable surface changes size, including at first layout. */
     var onSurfaceSize: ((SurfaceMetrics) -> Unit)? = null
 
-    private val density = resources.displayMetrics.density
-    private val radius = RADIUS_DP * density
+    private val artboard = Artboard.measure(
+        resources.displayMetrics,
+        resources.displayMetrics.widthPixels,
+    )
+    private val radius = artboard.px(RADIUS)
 
     private val panel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -60,7 +64,7 @@ class TouchSurfaceView @JvmOverloads constructor(
     }
     private val hairline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = BORDER_DP * density
+        strokeWidth = artboard.px(BORDER).coerceAtLeast(1f)
         color = HAIRLINE
     }
     private val dots = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -85,12 +89,12 @@ class TouchSurfaceView @JvmOverloads constructor(
      * background that never changes.
      */
     private fun dotGrid(): Shader {
-        val cell = (CELL_DP * density).toInt().coerceAtLeast(1)
+        val cell = artboard.size(CELL).coerceAtLeast(1)
         val tile = Bitmap.createBitmap(cell, cell, Bitmap.Config.ARGB_8888)
         Canvas(tile).drawCircle(
             cell / 2f,
             cell / 2f,
-            DOT_RADIUS_DP * density,
+            artboard.px(DOT_RADIUS),
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = DOT },
         )
         return BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
