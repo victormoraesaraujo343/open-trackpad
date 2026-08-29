@@ -6,3 +6,6 @@ target/
 .vscode/
 local.properties
 *.log
+
+# ShipStudio metadata
+.shipstudio/
