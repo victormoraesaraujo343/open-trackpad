@@ -443,10 +443,15 @@ mod tests {
         // The same rules: nothing repeated, nothing over the ceiling, nothing
         // this host has no name for.
         let mut shortcuts = empty();
-        assert_eq!(
-            shortcuts.record("Doubled", &[KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTCTRL]),
-            Err(RecordError::Chord(ChordError::Repeated("ctrl".into())))
-        );
+        // A key appearing twice in what was captured is the keyboard
+        // repeating, not somebody authoring a bad chord: it folds into one.
+        // Text is different — `ctrl+ctrl` off the socket is still refused,
+        // because there a repeat is a client bug rather than a hand.
+        assert!(shortcuts
+            .record("Doubled", &[KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTCTRL])
+            .is_ok());
+        assert_eq!(shortcuts.list()[0].chord.to_string(), "ctrl");
+        assert!(Chord::parse("ctrl+ctrl").is_err());
         assert_eq!(
             shortcuts.record("Nothing", &[]),
             Err(RecordError::Chord(ChordError::Empty))
@@ -471,7 +476,11 @@ mod tests {
             shortcuts.record("Unnamed", &[KeyCode::KEY_F24]),
             Err(RecordError::Chord(ChordError::Unknown(_)))
         ));
-        assert!(shortcuts.list().is_empty());
+        assert_eq!(
+            shortcuts.list().len(),
+            1,
+            "only the folded chord should be kept"
+        );
     }
 
     #[test]

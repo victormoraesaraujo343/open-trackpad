@@ -204,6 +204,33 @@ pub fn all_keys() -> impl Iterator<Item = KeyCode> {
     NAMED_KEYS.iter().map(|(_, code)| *code)
 }
 
+/// Folds a right-hand modifier onto its left-hand twin.
+///
+/// A hand reaches for whichever Shift is nearer, and a shortcut is about the
+/// symbol rather than which of two keys produced it. Refusing the right-hand
+/// one instead would mean somebody presses the Shift their hand naturally finds
+/// and the app tells them their keyboard is wrong — they would not conclude it
+/// was being careful.
+///
+/// Applied when recording, not when parsing: text arriving on the socket names
+/// `shift`, which is already the left-hand key, and there is nothing to fold.
+///
+/// One caveat worth knowing. Right Alt is AltGr on most layouts outside the
+/// United States, where it is a level-three shift for typing accented
+/// characters rather than a modifier — so folding it onto Alt is the least
+/// certain of the four. It is folded anyway, for consistency and because a
+/// shortcut built on AltGr would collide with typing on those layouts, which is
+/// its own reason not to have one.
+fn normalise(code: KeyCode) -> KeyCode {
+    match code {
+        KeyCode::KEY_RIGHTCTRL => KeyCode::KEY_LEFTCTRL,
+        KeyCode::KEY_RIGHTSHIFT => KeyCode::KEY_LEFTSHIFT,
+        KeyCode::KEY_RIGHTALT => KeyCode::KEY_LEFTALT,
+        KeyCode::KEY_RIGHTMETA => KeyCode::KEY_LEFTMETA,
+        other => other,
+    }
+}
+
 /// The one combination this host will not press, however it is asked.
 ///
 /// Alt with SysRq is not a shortcut; it is the kernel's escape hatch. On a
@@ -266,29 +293,40 @@ impl Chord {
         }
         Ok(Self(keys))
     }
+
     /// Builds a chord from keys the recorder actually saw pressed.
     ///
-    /// Not called yet: the recorder window is the only caller and it is the
-    /// next piece. Kept here because it is the validated way in, and the
-    /// window should find it waiting rather than invent its own.
-    #[allow(dead_code)]
-    ///
     /// Goes through the same checks a chord off the wire does — every key must
-    /// be one this host has a name for, nothing may repeat, and the ceiling
-    /// still applies. A recorded chord is not a privileged chord: it is written
-    /// down, read back and validated exactly like any other, so there is no
-    /// second way into the keyboard that skips the first way's rules.
+    /// be one this host has a name for and the ceiling still applies. A
+    /// recorded chord is not a privileged chord: it is written down, read back
+    /// and validated exactly like any other, so there is no second way into the
+    /// keyboard that skips the first way's rules.
+    ///
+    /// The one thing it does that parsing does not is `normalise`: a hand on a
+    /// keyboard reaches for whichever Shift is nearer, and a chord is about the
+    /// symbol rather than which key produced it.
+    ///
+    /// Not called yet: the recorder window is the only caller and it is the
+    /// next piece. Kept here because it is the validated way in, and the window
+    /// should find it waiting rather than invent its own.
+    #[allow(dead_code)]
     pub fn from_keys(keys: &[KeyCode]) -> Result<Self, ChordError> {
-        let mut chord = Vec::with_capacity(keys.len());
+        let mut chord: Vec<KeyCode> = Vec::with_capacity(keys.len());
         for key in keys {
+            let key = normalise(*key);
+            // Both Shifts held at once is a hand, not a mistake. Once they are
+            // the same key it is one key, and saying so out loud would be
+            // telling somebody their keyboard is wrong.
+            if chord.contains(&key) {
+                continue;
+            }
             if chord.len() >= MAX_CHORD_KEYS {
                 return Err(ChordError::TooManyKeys);
             }
-            let name = name_of(*key).ok_or_else(|| ChordError::Unknown(format!("{key:?}")))?;
-            if chord.contains(key) {
-                return Err(ChordError::Repeated(name.to_owned()));
+            if name_of(key).is_none() {
+                return Err(ChordError::Unknown(format!("{key:?}")));
             }
-            chord.push(*key);
+            chord.push(key);
         }
         if chord.is_empty() {
             return Err(ChordError::Empty);
@@ -498,10 +536,54 @@ mod tests {
             Chord::from_keys(&[KeyCode::KEY_F24]),
             Err(ChordError::Unknown(_))
         ));
-        assert!(matches!(
-            Chord::from_keys(&[KeyCode::KEY_RIGHTCTRL]),
-            Err(ChordError::Unknown(_))
-        ));
+    }
+
+    #[test]
+    fn the_shift_a_hand_reaches_for_is_the_shift_that_records() {
+        // Either one, and both at once. Telling somebody their keyboard is
+        // wrong is not the same as being careful.
+        assert_eq!(
+            Chord::from_keys(&[KeyCode::KEY_RIGHTSHIFT, KeyCode::KEY_T]),
+            Chord::parse("shift+t")
+        );
+        assert_eq!(
+            Chord::from_keys(&[
+                KeyCode::KEY_RIGHTCTRL,
+                KeyCode::KEY_RIGHTSHIFT,
+                KeyCode::KEY_T
+            ]),
+            Chord::parse("ctrl+shift+t")
+        );
+        assert_eq!(
+            Chord::from_keys(&[KeyCode::KEY_RIGHTALT, KeyCode::KEY_A]),
+            Chord::parse("alt+a")
+        );
+        assert_eq!(
+            Chord::from_keys(&[KeyCode::KEY_RIGHTMETA]),
+            Chord::parse("super")
+        );
+    }
+
+    #[test]
+    fn holding_both_shifts_is_a_hand_rather_than_a_mistake() {
+        assert_eq!(
+            Chord::from_keys(&[
+                KeyCode::KEY_LEFTSHIFT,
+                KeyCode::KEY_RIGHTSHIFT,
+                KeyCode::KEY_T
+            ]),
+            Chord::parse("shift+t")
+        );
+    }
+
+    #[test]
+    fn the_right_hand_key_cannot_slip_past_the_sysrq_rule() {
+        // Folding happens before the refusal is checked, so the pair is caught
+        // whichever Alt was pressed.
+        assert_eq!(
+            Chord::from_keys(&[KeyCode::KEY_RIGHTALT, KeyCode::KEY_SYSRQ]),
+            Err(ChordError::MagicSysRq)
+        );
     }
 
     #[test]
