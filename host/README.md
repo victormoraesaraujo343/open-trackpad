@@ -18,6 +18,15 @@ cargo run               # listen on 127.0.0.1:4242
 | `--dry-run` | Do not create a virtual device; print pad events instead. |
 | `--print-events` | Also print every pad event while a client is connected. |
 
+## Validating
+
+```bash
+sudo ../scripts/validate-touchpad.sh
+```
+
+Injects synthetic one-, two-, three- and four-finger strokes and reports what
+libinput made of them. See [testing and validation](../docs/TESTING.md).
+
 ## Permissions
 
 The daemon needs write access to `/dev/uinput`. It does not need root, and it

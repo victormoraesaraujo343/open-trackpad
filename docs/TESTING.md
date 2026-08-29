@@ -56,13 +56,29 @@ To watch the decisions without creating a device at all:
 cargo run -- --dry-run --self-test
 ```
 
-## Manual validation checklist
+## Validating on a new machine
 
-Install the libinput debug utilities first. On Arch and derivatives:
+OpenTrackpad targets any Linux running libinput, so "it works here" is not an
+answer. This script settles it on whatever machine you run it on:
 
 ```bash
-sudo pacman -S libinput-tools
+sudo ./scripts/validate-touchpad.sh
 ```
+
+It starts the daemon, watches its device with libinput, injects synthetic one-,
+two-, three- and four-finger strokes through the protocol socket, and reports
+whether each one survived — ending in PASS or FAIL with libinput's own reasoning
+when something is dropped. It needs the libinput debug utilities (Arch:
+`pacman -S libinput-tools`) and a built daemon (`cd host && cargo build`).
+
+Please add the result to the observed-results section below, along with your
+distribution, kernel and desktop. That table is the only evidence the project
+has that it is not accidentally KDE-specific.
+
+## Doing it by hand
+
+The script automates the checks below; run them individually when you need to
+see more than PASS or FAIL.
 
 > [!NOTE]
 > `libinput list-devices` needs root to open `/dev/input/*`. Without `sudo` it

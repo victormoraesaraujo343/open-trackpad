@@ -69,8 +69,20 @@ cd host
 cargo test
 ```
 
-See [testing and validation](docs/TESTING.md) for the manual libinput checks
-that decide whether the virtual device is genuinely a touchpad.
+## Validating on your machine
+
+OpenTrackpad aims to work on any Linux running libinput. To check whether it
+does on yours:
+
+```bash
+sudo ./scripts/validate-touchpad.sh
+```
+
+It injects synthetic one-, two-, three- and four-finger strokes and reports
+whether libinput turned them into motion, scrolling and gestures — ending in
+PASS or FAIL rather than asking you to watch the cursor. Results from new
+distributions and desktops are genuinely useful; see
+[testing and validation](docs/TESTING.md).
 
 ## Target platforms
 
