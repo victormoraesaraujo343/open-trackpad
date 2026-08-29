@@ -142,9 +142,41 @@ an afterthought.
 
 - [ ] Host-side shortcut recording overlay, opened locally or by client request
 - [ ] Persist custom chords on the host and extend the accepted vocabulary
+- [ ] Accept a single key as a recorded shortcut, not only a modified one
+      Decided 2026-08-29: `print` and `f11` are shortcuts on their own. A lone
+      modifier records too rather than being refused — it simply does nothing
+      when tapped, which is what the hold shape exists for.
 - [ ] Carry host state to the client, and requests back
 - [ ] Audio panel: devices in and out, with per-application streams
 - [ ] Panel as a rail slot kind, alongside action, continuous and hold
+- [ ] A panel takes the trackpad's area and turns the far rail into its pages
+      Decided 2026-08-29, designing the audio panel. A panel never covers the
+      rails, and the rail OPPOSITE the Quick Ring — the side the handedness
+      setting frees up — stops being shortcuts while the panel is open and
+      becomes its pages: close, then one per group. The Quick Ring never moves,
+      so the way out of the app is always in the same corner.
+
+      One group per page rather than all of them at once, with vertical faders
+      and sideways scrolling when the channels overrun. Cramming output, input
+      and applications into a single screen breaks the moment someone plugs in
+      a fourth device, and a fader that travels the height of the screen is
+      worth roughly four times the precision of a row-width bar. The gesture
+      also means what it does: up is louder.
+
+      This is the pattern for every panel, not just audio, so the navigation is
+      learned once.
+
+      A rail is ALWAYS five slots, in every screen and every panel. The first
+      four change with what is on screen; the fifth always means "everything
+      else about this" — the Quick Ring on the main screen, the panel's own
+      settings inside a panel. The audio panel is close, output, input, apps,
+      settings.
+
+      Slots one and five hold their meaning everywhere, so only the middle
+      three ever move. When a panel has fewer than four sections the leftover
+      slot stays empty rather than letting the others grow: a peripheral used
+      without looking cannot have its buttons shift position, and a stable grid
+      is worth more than a full one.
 
 ## Milestone 5 — recent applications rail
 
