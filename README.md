@@ -84,6 +84,32 @@ PASS or FAIL rather than asking you to watch the cursor. Results from new
 distributions and desktops are genuinely useful; see
 [testing and validation](docs/TESTING.md).
 
+## Tuning the feel
+
+OpenTrackpad presents itself as an ordinary touchpad, so the desktop's own
+touchpad settings apply. On KDE they are in System Settings, Mouse & Touchpad,
+under "OpenTrackpad Touchpad"; GNOME has the equivalent under Mouse & Touchpad.
+
+Adjust them with a finger on the phone: changes take effect immediately, and
+thirty seconds of nudging a slider beats guessing.
+
+A starting point that felt right on a 6.7-inch phone driving a 2560x1440
+display:
+
+| Setting | Value |
+| --- | --- |
+| Pointer speed | 0.5 of the way up the slider |
+| Natural scrolling | on, if you expect a two-finger swipe right to go back |
+| Tap to click | on |
+
+These are personal preferences, not project defaults, and the desktop stores
+them per device. The virtual touchpad keeps a fixed name and identity, so they
+survive reconnecting, rebooting, and plugging in a different phone.
+
+If the pointer feels like it is copying your finger exactly, with no difference
+between a slow and a fast swipe, the problem is not the speed setting — see the
+note on frame timing in [docs/TESTING.md](docs/TESTING.md).
+
 ## Target platforms
 
 - Host: any Linux with `uinput` and `libinput`. Nothing in the design is

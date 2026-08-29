@@ -49,15 +49,24 @@ class TouchSurfaceView @JvmOverloads constructor(
             MotionEvent.ACTION_POINTER_UP,
             -> emit(event, event.historySize, releasing = releasedPointer(event), critical = true)
 
-            MotionEvent.ACTION_MOVE -> {
-                // Android batches several samples into one event. Sending the
-                // history as well preserves the sampling rate of the digitiser
-                // rather than the refresh rate of the display.
-                for (position in 0 until event.historySize) {
-                    emit(event, position, releasing = -1, critical = false)
-                }
+            MotionEvent.ACTION_MOVE ->
+                // Only the newest sample, deliberately.
+                //
+                // Android batches several samples into one event, and sending
+                // the history too looks like better fidelity. It is not: those
+                // samples describe different moments but all reach the host in
+                // the same instant, and libinput derives pointer acceleration
+                // from velocity — distance over time. Delivered with no time
+                // between them the velocity estimate collapses, acceleration
+                // falls back to roughly one-to-one, and the pointer feels both
+                // sluggish and jittery.
+                //
+                // One sample per event gives the display refresh rate, evenly
+                // spaced, which is what a real touchpad reports anyway. Sending
+                // the history would only work if the host replayed it against
+                // the timestamps, which would add latency to buy back detail
+                // that libinput smooths out regardless.
                 emit(event, event.historySize, releasing = -1, critical = false)
-            }
 
             MotionEvent.ACTION_CANCEL -> {
                 // The gesture was taken over by the system. Whatever we think is

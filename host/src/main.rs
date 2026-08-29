@@ -9,6 +9,7 @@ mod protocol;
 mod selftest;
 mod sink;
 mod state;
+mod timing;
 mod uinput;
 
 use std::io::{self, BufRead, BufReader};
@@ -17,6 +18,7 @@ use std::net::{TcpListener, TcpStream};
 use protocol::{Accepted, Session};
 use sink::{DebugSink, PadSink};
 use state::ContactState;
+use timing::TimingTrace;
 use uinput::UinputTouchpad;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4242";
@@ -32,6 +34,9 @@ usage: opentrackpadd [OPTIONS] [ADDRESS]
                      stuck contacts and memory growth. Moves the pointer
                      continuously, so run it on an idle machine.
   --print-events     also print every pad event while a client is connected
+  --trace-timing     log how frames are spaced, on the phone and on arrival.
+                     Pointer acceleration is computed from velocity, so
+                     bunched-up frames make it misbehave.
   -h, --help         show this message
 ";
 
@@ -41,6 +46,7 @@ struct Options {
     self_test: bool,
     soak_minutes: Option<u64>,
     print_events: bool,
+    trace_timing: bool,
 }
 
 fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, String> {
@@ -50,6 +56,7 @@ fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, Str
         self_test: false,
         soak_minutes: None,
         print_events: false,
+        trace_timing: false,
     };
     let mut address_seen = false;
     let mut expecting_soak = false;
@@ -71,6 +78,7 @@ fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, Str
             "--self-test" => options.self_test = true,
             "--soak" => expecting_soak = true,
             "--print-events" => options.print_events = true,
+            "--trace-timing" => options.trace_timing = true,
             "-h" | "--help" => return Err(USAGE.to_owned()),
             other if other.starts_with('-') => {
                 return Err(format!("unknown option: {other}\n\n{USAGE}"))
@@ -119,10 +127,12 @@ fn handle_client(
     stream: TcpStream,
     state: &mut ContactState,
     sink: &mut dyn PadSink,
+    trace_timing: bool,
 ) -> io::Result<()> {
     let peer = stream.peer_addr()?;
     println!("client connected: {peer}");
     let mut session = Session::new();
+    let mut timing = TimingTrace::new();
 
     for line in BufReader::new(stream).lines() {
         let line = line?;
@@ -163,6 +173,11 @@ fn handle_client(
                 }
             }
             Accepted::Frame(frame) => {
+                if trace_timing {
+                    if let Some(line) = timing.observe(frame.event_time_ns, frame.contacts.len()) {
+                        println!("  {line}");
+                    }
+                }
                 let events = state.apply(&frame);
                 sink.emit(&events)?;
             }
@@ -170,6 +185,9 @@ fn handle_client(
     }
 
     println!("client disconnected: {peer}");
+    if trace_timing {
+        println!("  timing: {}", timing.summary());
+    }
     Ok(())
 }
 
@@ -261,7 +279,7 @@ fn run() -> io::Result<()> {
         match connection {
             Ok(stream) => {
                 let dropped_before = state.dropped_contacts();
-                if let Err(error) = handle_client(stream, &mut state, sink) {
+                if let Err(error) = handle_client(stream, &mut state, sink, options.trace_timing) {
                     eprintln!("client failed: {error}");
                 }
                 end_session(&mut state, sink, dropped_before);

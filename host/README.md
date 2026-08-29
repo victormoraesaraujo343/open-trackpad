@@ -18,6 +18,7 @@ cargo run               # listen on 127.0.0.1:4242
 | `--dry-run` | Do not create a virtual device; print pad events instead. |
 | `--soak MINUTES` | Replay them on a loop for that long, then report stuck contacts and memory growth. |
 | `--print-events` | Also print every pad event while a client is connected. |
+| `--trace-timing` | Log how frames are spaced, on the phone and on arrival. |
 
 ## Validating
 
@@ -92,6 +93,7 @@ run it when you are away from the machine.
 | `uinput` | The only module that knows about Linux input events. |
 | `sink` | Where pad events go: the real device, or the terminal. |
 | `selftest` | Synthetic contact sequences for validating without a phone. |
+| `timing` | Whether frames arrive spaced out enough for acceleration to work. |
 
 Everything except `uinput` is testable without a device, which is why the tests
 run anywhere.

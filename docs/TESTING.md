@@ -220,6 +220,33 @@ The lesson generalises: a device that udev, libinput and the compositor all
 accept can still discard every event. Only `debug-events --verbose` shows the
 decision, and it is worth reaching for early rather than last.
 
+### Why frame timing decides whether acceleration works
+
+Pointer acceleration is computed from velocity, which is distance over time. A
+host that receives correct positions with useless timing cannot accelerate, and
+the result feels linear and jittery while every event in the stream looks fine.
+
+The client first sent the batched historical samples inside each Android
+`MotionEvent`, which looks like better fidelity. Those samples describe
+different moments but reach the host in the same instant, so libinput saw
+several positions with no time between them, could not estimate speed, and fell
+back to roughly one-to-one movement.
+
+Sending one sample per event fixed it. `--trace-timing` shows the difference by
+comparing how far apart the phone says frames were with how far apart they
+actually arrived:
+
+```text
+phone  11.15 ms   arrived  11.15 ms   contacts 1
+phone  11.15 ms   arrived  11.13 ms   contacts 1
+phone  11.15 ms   arrived  11.19 ms   contacts 1
+```
+
+Healthy input has the two columns matching. Frames arriving within a
+millisecond of each other, while the phone claims several milliseconds passed,
+mean acceleration is being starved. Zero-contact frames are exempt: a lift has
+no velocity to estimate.
+
 ### First run against a real phone
 
 A Nothing Phone (2412x1080, Android 16) over `adb reverse`, on the same host.
