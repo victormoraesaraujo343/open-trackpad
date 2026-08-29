@@ -34,8 +34,9 @@
 
 ## Milestone 3 — dedicated appliance mode
 
-- [ ] Auto-connect after launch
-- [ ] Optional start-on-boot instructions
+- [x] Auto-connect after launch, with no terminal commands
+- [x] Re-establish the USB bridge when the cable comes back
+- [x] Start-on-boot through systemd user services
 - [ ] Burn-in protection and configurable brightness
 - [ ] Accidental-edge and palm filtering
 - [ ] Calibration UI: in-app sliders for pointer speed and sensitivity

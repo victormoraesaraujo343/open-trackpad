@@ -35,6 +35,10 @@ out of version control.
    cd host && cargo run
    ```
 
+   Or install the services described in [the host README](../host/README.md),
+   after which the daemon and the USB bridge come up on their own and plugging
+   the phone in is enough.
+
 4. Install and launch the app:
 
    ```bash

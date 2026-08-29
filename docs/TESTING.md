@@ -17,6 +17,7 @@ by a real machine.
 | Three- and four-finger swipe gestures reach the desktop | observed |
 | Pinch zoom is delivered continuously, not in steps | observed |
 | Runs as a systemd user service | observed |
+| Plugging the phone in and opening the app is enough, with no terminal | observed |
 | The Android client builds and its unit tests pass | proven by `./gradlew testDebugUnitTest` |
 | The Android client works against the host on real hardware | observed |
 | 30 minutes of use leaves no stuck contact | **not yet verified** |

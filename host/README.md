@@ -56,21 +56,33 @@ synthesise input, permanently.
 
 ## Running it as a service
 
+Two user services between them make plugging the phone in enough, with no
+terminal:
+
 ```bash
 cargo build --release
 install -Dm755 target/release/opentrackpadd ~/.local/bin/opentrackpadd
+install -Dm755 ../scripts/connect-usb.sh ~/.local/bin/opentrackpad-connect-usb
 install -Dm644 ../packaging/opentrackpad.service \
   ~/.config/systemd/user/opentrackpad.service
+install -Dm644 ../packaging/opentrackpad-usb.service \
+  ~/.config/systemd/user/opentrackpad-usb.service
 systemctl --user daemon-reload
-systemctl --user enable --now opentrackpad.service
+systemctl --user enable --now opentrackpad.service opentrackpad-usb.service
 ```
 
-A user service rather than a system one, deliberately: the daemon injects input
+`opentrackpad.service` keeps the daemon listening. `opentrackpad-usb.service`
+keeps the adb bridge in place: the forwarding lives on the adb connection and
+goes with the cable, so something has to re-establish it every time the phone
+comes back.
+
+User services rather than system ones, deliberately: the daemon injects input
 into one person's desktop session and should live and die with it. Logs go to
 the journal:
 
 ```bash
 journalctl --user -u opentrackpad.service -f
+journalctl --user -u opentrackpad-usb.service -f
 ```
 
 ## Checking stability

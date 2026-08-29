@@ -1,0 +1,41 @@
+# Keeps the USB bridge to the phone in place, so plugging the cable in is enough.
+#
+#   install -Dm644 packaging/opentrackpad-usb.service \
+#     ~/.config/systemd/user/opentrackpad-usb.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now opentrackpad-usb.service
+#
+# The forwarding lives on the adb connection and disappears with the cable, so
+# something has to re-establish it every time. This waits for a phone, sets it
+# up, waits for the phone to go away, and repeats.
+#
+# adb is a development transport and this service inherits that: it needs USB
+# debugging enabled on the phone. Replacing it with something that needs no
+# debugging mode is a later question, deliberately left open until the prototype
+# has been measured.
+
+[Unit]
+Description=OpenTrackpad USB bridge
+Documentation=https://github.com/victormoraesaraujo343/open-trackpad
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/opentrackpad-connect-usb --watch
+Restart=on-failure
+RestartSec=5
+
+# adb needs to reach USB devices and its own server; nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=graphical-session.target
