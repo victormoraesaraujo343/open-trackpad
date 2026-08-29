@@ -14,10 +14,6 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.sin
 
 /**
  * The Quick Ring: eight wedges around a hub, over the trackpad.
@@ -41,54 +37,39 @@ class QuickRingView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private companion object {
-        /** Eight of them, and the count is structural: the geometry assumes it. */
-        const val WEDGES = 8
-        const val SWEEP = 360f / WEDGES
-
-        /**
-         * Where the first wedge starts.
-         *
-         * Half a wedge back from straight up, so that one wedge is centred on
-         * twelve o'clock rather than a seam landing there. A seam at the top is
-         * the one place a finger cannot tell which side it is on.
-         */
-        const val FIRST_EDGE = -90f - SWEEP / 2f
-
         // Artboard units. The drawing is a 240-unit square.
-        const val SIZE = 240f
-        const val OUTER = 112f
-        const val INNER = 46f
-        const val HUB = 45.5f
-        const val ICON = 20f
-        const val LABEL = 10f
-        const val HUB_LABEL = 10f
-        const val BORDER = 1f
+        private const val SIZE = 240f
+        private const val OUTER = 112f
+        private const val INNER = 46f
+        private const val HUB = 45.5f
+        private const val ICON = 20f
+        private const val LABEL = 10f
+        private const val HUB_LABEL = 10f
+        private const val BORDER = 1f
 
         /** From the near edge of the pad, on the side the shortcut rail is. */
-        const val MARGIN = 22f
+        private const val MARGIN = 22f
 
         /** Where a wedge's glyph and word sit, measured from the wedge's middle. */
-        const val ICON_ABOVE = 16f
-        const val LABEL_BELOW = 15f
+        private const val ICON_ABOVE = 16f
+        private const val LABEL_BELOW = 15f
 
-        val GROUND = Color.parseColor("#0E0F10")
-        val INSET = Color.parseColor("#1B1D1F")
-        val HAIRLINE = Color.parseColor("#2A2D30")
-        val SECONDARY = Color.parseColor("#C6CBD1")
-        val FAINT = Color.parseColor("#4E545B")
-        val MUTED = Color.parseColor("#8A9099")
-        val LIME = Color.parseColor("#A3E635")
+        private val GROUND = Color.parseColor("#0E0F10")
+        private val INSET = Color.parseColor("#1B1D1F")
+        private val HAIRLINE = Color.parseColor("#2A2D30")
+        private val SECONDARY = Color.parseColor("#C6CBD1")
+        private val FAINT = Color.parseColor("#4E545B")
+        private val MUTED = Color.parseColor("#8A9099")
+        private val LIME = Color.parseColor("#A3E635")
 
         /** Lime at a fifteenth of its strength: a held wedge, not a lit one. */
-        val LIME_DIM = Color.parseColor("#1D2A10")
+        private val LIME_DIM = Color.parseColor("#1D2A10")
 
         /** What the pad is dimmed by while the ring is up: rgba(8,9,10,0.45). */
-        val SCRIM = Color.parseColor("#7308090A")
+        private val SCRIM = Color.parseColor("#7308090A")
 
-        /** [wedgeAt] returns these where there is no wedge. */
-        const val HUB_TOUCH = -1
-        const val OUTSIDE = -2
-        const val NOTHING_HELD = -1
+        /** Held nothing. Distinct from [RingGeometry.HUB], which is a place. */
+        private const val NOTHING_HELD = -1
     }
 
     /** Chosen a wedge. Not called for an empty one. */
@@ -121,7 +102,7 @@ class QuickRingView @JvmOverloads constructor(
      * positions and a wedge that moved because its neighbour was removed is a
      * wedge pressed by mistake.
      */
-    var wedges: List<RailSlot?> = List(WEDGES) { null }
+    var wedges: List<RailSlot?> = List(RingGeometry.WEDGES) { null }
         set(value) {
             if (field == value) return
             field = value
@@ -202,21 +183,9 @@ class QuickRingView @JvmOverloads constructor(
 
     // -- touch ---------------------------------------------------------------
 
-    /**
-     * Which wedge a point is on: -1 for the hub, -2 for outside the ring.
-     */
-    private fun wedgeAt(x: Float, y: Float): Int {
-        val dx = x - centreX
-        val dy = y - centreY
-        val distance = hypot(dx, dy)
-        if (distance < px(INNER)) return HUB_TOUCH
-        if (distance > px(OUTER)) return OUTSIDE
-        // atan2 gives -180..180 from the positive x axis; the drawing starts
-        // half a wedge before straight up, so shift and wrap into 0..360.
-        val degrees = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-        val fromFirst = ((degrees - FIRST_EDGE) % 360f + 360f) % 360f
-        return (fromFirst / SWEEP).toInt().coerceIn(0, WEDGES - 1)
-    }
+    /** Which wedge a point in this view is on. See [RingGeometry]. */
+    private fun wedgeAt(x: Float, y: Float): Int =
+        RingGeometry.at(x - centreX, y - centreY, px(INNER), px(OUTER))
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
@@ -246,7 +215,7 @@ class QuickRingView @JvmOverloads constructor(
                     // can enter and not obviously leave is the worst version of
                     // this, so the hub and the whole surface around it are both
                     // ways out, on top of the slot that opened it.
-                    chosen == HUB_TOUCH || chosen == OUTSIDE -> onDismiss?.invoke()
+                    chosen == RingGeometry.HUB || chosen == RingGeometry.OUTSIDE -> onDismiss?.invoke()
 
                     else -> {
                         val slot = wedges.getOrNull(chosen)
@@ -305,7 +274,7 @@ class QuickRingView @JvmOverloads constructor(
             centreX + px(INNER), centreY + px(INNER),
         )
 
-        for (index in 0 until WEDGES) drawWedge(canvas, index)
+        for (index in 0 until RingGeometry.WEDGES) drawWedge(canvas, index)
         drawHub(canvas)
     }
 
@@ -313,10 +282,10 @@ class QuickRingView @JvmOverloads constructor(
         val slot = wedges.getOrNull(index)
         val on = index == held && slot != null
 
-        val start = FIRST_EDGE + index * SWEEP
+        val start = RingGeometry.startOf(index)
         wedge.reset()
-        wedge.arcTo(ovalOuter, start, SWEEP)
-        wedge.arcTo(ovalInner, start + SWEEP, -SWEEP)
+        wedge.arcTo(ovalOuter, start, RingGeometry.SWEEP)
+        wedge.arcTo(ovalInner, start + RingGeometry.SWEEP, -RingGeometry.SWEEP)
         wedge.close()
 
         fill.color = when {
@@ -335,11 +304,11 @@ class QuickRingView @JvmOverloads constructor(
             else -> SECONDARY
         }
 
-        // The middle of the wedge, halfway between its two radii.
-        val middle = Math.toRadians((start + SWEEP / 2f).toDouble())
-        val radius = px((OUTER + INNER) / 2f)
-        val x = centreX + radius * cos(middle).toFloat()
-        val y = centreY + radius * sin(middle).toFloat()
+        // The middle of the wedge, halfway between its two radii — from the
+        // same place the hit test reads, so the two cannot drift apart.
+        val (offsetX, offsetY) = RingGeometry.centreOf(index, px((OUTER + INNER) / 2f))
+        val x = centreX + offsetX
+        val y = centreY + offsetY
 
         stroke.color = ink
         stroke.strokeWidth = 1.4f

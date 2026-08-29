@@ -10,6 +10,14 @@
     <string name="pad_hint">Swipe with two fingers to scroll</string>
     <string name="pad_description">Trackpad surface</string>
 
+    <!--
+      The hub of the Quick Ring. Two short lines, because the drawing gives it
+      two: it names the menu and doubles as the way out, so it is never blank.
+    -->
+    <string name="ring_hub_top">Quick</string>
+    <string name="ring_hub_bottom">actions</string>
+    <string name="ring_description">Quick actions</string>
+
     <!-- The rails, for a screen reader. -->
     <string name="rail_shortcuts">Shortcuts</string>
     <string name="rail_overflow">More shortcuts</string>

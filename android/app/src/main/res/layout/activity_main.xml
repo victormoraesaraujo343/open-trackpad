@@ -76,6 +76,19 @@
                 android:textSize="10dp"
                 tools:ignore="SpUsage" />
 
+            <!--
+              Over the pad and nothing else. It covers exactly the surface it
+              dims, so the rails stay reachable behind it — the slot that opened
+              the ring is also the slot that closes it, and it would be a poor
+              trick to put it out of reach.
+            -->
+            <org.opentrackpad.client.QuickRingView
+                android:id="@+id/quick_ring"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/ring_description"
+                android:visibility="gone" />
+
         </FrameLayout>
 
         <org.opentrackpad.client.RailView

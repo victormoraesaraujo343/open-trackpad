@@ -41,6 +41,9 @@ class MainActivity : AppCompatActivity() {
         /** The line on the pad, and how far it sits above the bottom edge. */
         const val HINT_UNITS = 10f
         const val HINT_GAP_UNITS = 13f
+
+        /** What the rails fade to while the ring is over them, from the drawing. */
+        const val DIMMED_BEHIND_RING = 0.55f
     }
 
     private lateinit var surface: TouchSurfaceView
@@ -49,6 +52,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var railStart: RailView
     private lateinit var railEnd: RailView
+    private lateinit var ring: QuickRingView
+    private lateinit var padHint: TextView
 
     private lateinit var trouble: View
     private lateinit var troubleIcon: ImageView
@@ -84,6 +89,17 @@ class MainActivity : AppCompatActivity() {
         surface = findViewById(R.id.touch_surface)
         railStart = findViewById(R.id.rail_start)
         railEnd = findViewById(R.id.rail_end)
+        ring = findViewById(R.id.quick_ring)
+        padHint = findViewById(R.id.pad_hint)
+
+        ring.onChoose = { press ->
+            // The ring closes behind a choice. It is a way in to somewhere, not
+            // a panel that stays open, and leaving it up over the pad after it
+            // has been used would be the same trap as having no way out.
+            showRing(false)
+            onPress(press)
+        }
+        ring.onDismiss = { showRing(false) }
 
         trouble = findViewById(R.id.trouble)
         troubleIcon = findViewById(R.id.trouble_icon)
@@ -120,7 +136,7 @@ class MainActivity : AppCompatActivity() {
         // the pad. The rails redraw as they are pressed and the pad may not be
         // shifted at all — sliding it would push its edge off the screen.
         screen = ScreenCare(window)
-        screen.protect(findViewById(R.id.pad_hint))
+        screen.protect(padHint)
 
         // A trackpad that goes to sleep under your fingers is useless. It does
         // not have to stay bright, though; ScreenCare handles that.
@@ -163,7 +179,7 @@ class MainActivity : AppCompatActivity() {
             marginStart = edge
             marginEnd = edge
         }
-        findViewById<TextView>(R.id.pad_hint).apply {
+        padHint.apply {
             setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.px(HINT_UNITS))
             updateLayoutParams<MarginLayoutParams> { bottomMargin = artboard.size(HINT_GAP_UNITS) }
         }
@@ -221,10 +237,55 @@ class MainActivity : AppCompatActivity() {
     private fun onPress(press: SlotPress) {
         when (press) {
             is SlotPress.Send -> connection.send(press.action)
-            // Nothing yet. The ring is the next screen, not this one, and a
-            // button that silently does nothing is better than one that guesses.
-            SlotPress.QuickRing -> Unit
+            SlotPress.QuickRing -> showRing(!ring.isVisible())
             SlotPress.None -> Unit
+        }
+    }
+
+    /**
+     * Opens or closes the Quick Ring.
+     *
+     * The same slot does both. A ring you can get into and not obviously out of
+     * is the worst version of this, so the way in is also a way out, alongside
+     * the hub and the whole surface around the wedges.
+     *
+     * The rails stay live behind it and only dim, for that reason: the slot
+     * that opened the ring has to still be there to close it.
+     */
+    private fun showRing(open: Boolean) {
+        if (ring.isVisible() == open) return
+        ring.wedges = ringWedges()
+        ring.side = stored.settings.shortcutSide
+        ring.hapticsEnabled = stored.settings.haptics
+        ring.visibility = if (open) View.VISIBLE else View.GONE
+
+        val behind = if (open) DIMMED_BEHIND_RING else 1f
+        railStart.alpha = behind
+        railEnd.alpha = behind
+        padHint.alpha = behind
+    }
+
+    /**
+     * What the ring holds: the shortcuts that fit on neither rail.
+     *
+     * Eight positions, empty ones left empty. With the profiles that ship there
+     * is nothing here — nine shortcuts fill both rails exactly — so the ring
+     * opens onto eight holes, which is honest rather than useful and is a
+     * question outstanding with the orchestrator. The roadmap says the ring is
+     * the way in to settings, profiles and modes rather than a shortcut menu;
+     * the artboard draws shortcuts in it. Those cannot both be right, and the
+     * mechanism is the same either way.
+     */
+    private fun ringWedges(): List<RailSlot?> {
+        val beyond = activeProfile.ring.drop(Rails.SLOTS)
+        return List(RingGeometry.WEDGES) { index ->
+            beyond.getOrNull(index)?.let { slot ->
+                RailSlot(
+                    label = slot.label,
+                    icon = RailIcons.path(RailIcons.forAction(slot.action)),
+                    press = SlotPress.Send(slot.action),
+                )
+            }
         }
     }
 
