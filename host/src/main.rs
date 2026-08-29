@@ -9,6 +9,7 @@ mod protocol;
 mod selftest;
 mod sink;
 mod state;
+mod status;
 mod timing;
 mod uinput;
 
@@ -18,6 +19,7 @@ use std::net::{TcpListener, TcpStream};
 use protocol::{Accepted, Session};
 use sink::{DebugSink, LazyTouchpad, PadSink};
 use state::ContactState;
+use status::{State, StatusFile};
 use timing::TimingTrace;
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4242";
@@ -127,6 +129,7 @@ fn handle_client(
     state: &mut ContactState,
     sink: &mut dyn PadSink,
     trace_timing: bool,
+    status: &StatusFile,
 ) -> io::Result<()> {
     let peer = stream.peer_addr()?;
     println!("client connected: {peer}");
@@ -165,6 +168,10 @@ fn handle_client(
                 // so this is what makes pointer speed and gesture thresholds
                 // consistent across devices.
                 millimetres_per_pixel = hello.millimetres_per_pixel();
+                status.set(&State::Connected {
+                    width: hello.width,
+                    height: hello.height,
+                });
                 if sink.configure(hello.geometry())? {
                     state.device_replaced();
                     println!("  {}", sink.describe());
@@ -278,14 +285,22 @@ fn run() -> io::Result<()> {
     let listener = TcpListener::bind(&options.address)?;
     println!("  listening on {}", options.address);
 
+    // Published for anything that wants to show whether a phone is connected;
+    // removed when this process exits, so its absence means "not running".
+    let status = StatusFile::open();
+    status.set(&State::Waiting);
+
     for connection in listener.incoming() {
         match connection {
             Ok(stream) => {
                 let dropped_before = state.dropped_contacts();
-                if let Err(error) = handle_client(stream, &mut state, sink, options.trace_timing) {
+                if let Err(error) =
+                    handle_client(stream, &mut state, sink, options.trace_timing, &status)
+                {
                     eprintln!("client failed: {error}");
                 }
                 end_session(&mut state, sink, dropped_before);
+                status.set(&State::Waiting);
             }
             Err(error) => eprintln!("connection failed: {error}"),
         }

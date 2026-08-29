@@ -36,6 +36,10 @@ Linux input subsystem -> libinput -> GNOME/KDE gestures
 
 See [Architecture](docs/ARCHITECTURE.md), [wire protocol](docs/PROTOCOL.md), and [roadmap](docs/ROADMAP.md).
 
+The repository holds the [host daemon](host/), the [Android client](android/),
+an optional [tray indicator](tray/), and [service files](packaging/) that make
+plugging the phone in enough.
+
 ## Try the host daemon
 
 Until the Android client exists, the daemon can prove itself against a scripted

@@ -1,0 +1,38 @@
+# The system tray indicator: shows whether a phone is connected, and offers to
+# stop and start OpenTrackpad without a terminal.
+#
+#   install -Dm755 tray/target/release/opentrackpad-tray ~/.local/bin/opentrackpad-tray
+#   install -Dm644 packaging/opentrackpad-tray.service \
+#     ~/.config/systemd/user/opentrackpad-tray.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now opentrackpad-tray.service
+#
+# Entirely optional. The trackpad works whether or not this is running, and
+# nothing in it can affect input: it reads the daemon's status file and calls
+# systemctl, and that is all.
+
+[Unit]
+Description=OpenTrackpad tray indicator
+Documentation=https://github.com/victormoraesaraujo343/open-trackpad
+# Needs a desktop with a system tray to appear in.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/opentrackpad-tray
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=graphical-session.target

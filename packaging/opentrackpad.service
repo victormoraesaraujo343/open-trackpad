@@ -23,6 +23,12 @@ ExecStart=%h/.local/bin/opentrackpadd
 Restart=on-failure
 RestartSec=2
 
+# Somewhere to publish what the daemon is doing, for the tray to read.
+# ProtectSystem=strict makes /run read-only, so the directory has to be declared
+# rather than created; systemd also removes it when the service stops, which is
+# exactly the lifetime the status file should have.
+RuntimeDirectory=opentrackpad
+
 # The daemon needs a loopback socket and /dev/uinput. Nothing else.
 NoNewPrivileges=true
 PrivateTmp=true

@@ -37,6 +37,7 @@
 - [x] Auto-connect after launch, with no terminal commands
 - [x] Re-establish the USB bridge when the cable comes back
 - [x] Start-on-boot through systemd user services
+- [x] A tray indicator showing connection state, with stop and start
 - [ ] Burn-in protection and configurable brightness
 - [ ] Accidental-edge and palm filtering
 - [ ] Calibration UI: in-app sliders for pointer speed and sensitivity

@@ -1,0 +1,15 @@
+[package]
+name = "opentrackpad-tray"
+version = "0.1.0"
+edition = "2021"
+description = "System tray indicator for OpenTrackpad"
+license = "MIT"
+
+[dependencies]
+# Speaks StatusNotifierItem over D-Bus directly, so the tray needs neither Qt
+# nor GTK. A separate crate from the daemon on purpose: nothing that injects
+# input should have to carry a D-Bus stack.
+ksni = { version = "0.3.6", default-features = false, features = [
+    "blocking",
+    "async-io",
+] }
