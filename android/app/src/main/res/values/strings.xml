@@ -1,10 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OpenTrackpad</string>
-    <string name="status_disconnected">Disconnected</string>
-    <string name="status_connecting">Connecting…</string>
-    <string name="status_connected">Connected via USB</string>
-    <string name="status_reconnecting">Reconnecting…</string>
-    <string name="status_error">Host unreachable</string>
+    <!--
+      The label says v0.2 because the light version stays installed beside this
+      one. On the launcher they are two icons with the same picture, and this is
+      the only thing that tells them apart.
+    -->
+    <string name="app_name">OpenTrackpad v0.2</string>
+
+    <string name="pad_hint">Swipe with two fingers to scroll</string>
+    <string name="pad_description">Trackpad surface</string>
+
+    <!-- The rails, for a screen reader. -->
+    <string name="rail_shortcuts">Shortcuts</string>
+    <string name="rail_overflow">More shortcuts</string>
+
+    <!--
+      A problem takes over the middle of the screen: there is no status bar to
+      put it in, and a peripheral that has quietly stopped working is worse than
+      one that says so.
+    -->
+    <string name="trouble_seeking">Looking for your computer</string>
+
+    <string name="unplugged_title">The cable came out</string>
+    <string name="unplugged_body">Plug it back in. It reconnects on its own — nothing to press.</string>
+    <string name="unplugged_note">Every key that was being held was let go, so nothing is stuck on the other side.</string>
+
+    <string name="busy_title">Something else is the trackpad</string>
+    <string name="busy_body">Your computer already has a phone connected — most likely the older OpenTrackpad on this one. Close that app and this one takes over.</string>
+    <string name="busy_note">Only one app can hold the connection, so this one waits rather than interrupting a session mid-gesture.</string>
+
+    <string name="mismatch_title">The two halves do not match</string>
+    <string name="mismatch_body">This app speaks a newer language than the OpenTrackpad on your computer. Update the computer side and it will connect again.</string>
+    <string name="mismatch_note">Until then the trackpad still works, without the rails. Tap to carry on that way.</string>
+    <string name="mismatch_phone_label">This phone</string>
+    <string name="mismatch_host_label">Your computer</string>
+    <string name="mismatch_speaks">speaks %1$s</string>
+
+    <string name="incompatible_title">That is not OpenTrackpad</string>
+    <string name="incompatible_body">Something is listening on the port but it is not the OpenTrackpad host. Check what else is using it on the computer.</string>
+
     <string name="setup_hint">Run adb reverse tcp:4242 tcp:4242 on the computer</string>
 </resources>
