@@ -42,13 +42,17 @@ use evdev::KeyCode;
 use crate::keys::{Chord, ChordError};
 use crate::text::{escape_text, unescape_text};
 
-/// The format this host writes. Read on load so a later change can tell what it
-/// is looking at rather than misreading it.
+/// The format this host writes.
+///
+/// Version 2 added where a shortcut came from and what it is about. A version 1
+/// record has neither, and is read as one recorded here with no group — the
+/// only kind that could exist in a file written before this, and the permissive
+/// reading, so the migration is one nobody notices.
 #[allow(
     dead_code,
     reason = "written by save(), which the recorder window calls"
 )]
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 /// How many custom shortcuts may be kept.
 ///
@@ -111,6 +115,115 @@ const CONVENTIONS: &[(&str, &str)] = &[
     ("Brightness down", "brightnessdown"),
 ];
 
+/// Where a shortcut came from.
+///
+/// The profile editor groups by this, and only one kind can be renamed or
+/// deleted: a convention this host ships and a shortcut read out of somebody's
+/// desktop configuration are not ours to edit, and pretending otherwise would
+/// mean a rename that quietly reappears the next time the file is read.
+///
+/// It has to be stored rather than worked out. Nothing about a shortcut's shape
+/// says where it came from — "Copy" could equally be shipped, imported or typed
+/// — and a client guessing from the shape of a name is exactly what putting it
+/// on the wire avoids.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// Shipped with this host: the universal application conventions.
+    Convention,
+    /// Read out of this computer's own desktop configuration.
+    Imported,
+    /// Pressed on this keyboard, into the recorder.
+    Recorded,
+}
+
+impl Origin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Origin::Convention => "convention",
+            Origin::Imported => "imported",
+            Origin::Recorded => "recorded",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "convention" => Some(Origin::Convention),
+            "imported" => Some(Origin::Imported),
+            "recorded" => Some(Origin::Recorded),
+            _ => None,
+        }
+    }
+
+    /// Whether the person may rename or delete this.
+    pub fn is_editable(self) -> bool {
+        matches!(self, Origin::Recorded)
+    }
+}
+
+/// What a shortcut is *about*, in one vocabulary across every desktop.
+///
+/// KDE calls a bucket "Session Management" and GNOME calls the same bucket
+/// "System"; a screen showing whichever word the local desktop happened to
+/// store looks arbitrary, and the screen is where this is judged. So both are
+/// mapped into these on the host, and the raw `kwin` and `org.gnome.shell`
+/// never leave it.
+///
+/// `Other` is a real answer rather than a failure. Anything that cannot be
+/// mapped with confidence goes there instead of to whichever bucket looks
+/// closest, because somebody hunting for a shortcut in "Windows" will not think
+/// to open "Other" — but they will open "Other" when it is nowhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Group {
+    Windows,
+    Desktop,
+    Screenshot,
+    Sound,
+    Media,
+    Session,
+    Power,
+    Keyboard,
+    Accessibility,
+    Other,
+}
+
+impl Group {
+    /// In the order the screen shows them.
+    pub const ALL: &'static [Group] = &[
+        Group::Windows,
+        Group::Desktop,
+        Group::Screenshot,
+        Group::Sound,
+        Group::Media,
+        Group::Session,
+        Group::Power,
+        Group::Keyboard,
+        Group::Accessibility,
+        Group::Other,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Group::Windows => "windows",
+            Group::Desktop => "desktop",
+            Group::Screenshot => "screenshot",
+            Group::Sound => "sound",
+            Group::Media => "media",
+            Group::Session => "session",
+            Group::Power => "power",
+            Group::Keyboard => "keyboard",
+            Group::Accessibility => "accessibility",
+            Group::Other => "other",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|group| group.as_str() == text)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shortcut {
     /// Stable for the life of the shortcut, and never reused once it is gone.
@@ -121,6 +234,17 @@ pub struct Shortcut {
     pub id: u32,
     pub name: String,
     pub chord: Chord,
+    pub origin: Origin,
+    /// Carried for imported shortcuts, which are the ones a screen has to sort
+    /// into buckets. A convention or a recorded chord has no desktop bucket it
+    /// came from, and inventing one would be worse than saying nothing.
+    pub group: Option<Group>,
+    /// Whether this is one to offer first.
+    ///
+    /// Only meaningful for imported shortcuts, and deliberately conservative:
+    /// seventy-five arrive on a KDE machine and about a dozen are things anyone
+    /// would want on a phone rail. See `crate::import`.
+    pub recommended: bool,
 }
 
 /// Recording, renaming and removing are the recorder window's to call, and
@@ -207,13 +331,13 @@ impl Shortcuts {
     fn seed(&mut self) {
         for (name, chord) in CONVENTIONS {
             let keys = match Chord::parse(chord) {
-                Ok(chord) => chord.keys().to_vec(),
+                Ok(parsed) => parsed,
                 Err(error) => {
                     eprintln!("not starting with {name} ({chord}): {error}");
                     continue;
                 }
             };
-            if let Err(error) = self.record(name, &keys) {
+            if let Err(error) = self.adopt(name, keys, Origin::Convention, None, false) {
                 eprintln!("not starting with {name} ({chord}): {error}");
             }
         }
@@ -289,9 +413,12 @@ impl Shortcuts {
         let mut text = format!("version {VERSION}\nnext {}\n", self.next_id);
         for entry in &self.entries {
             text.push_str(&format!(
-                "shortcut {} {} {}\n",
+                "shortcut {} {} {} {} {} {}\n",
                 entry.id,
                 entry.chord,
+                entry.origin.as_str(),
+                entry.group.map_or("-", Group::as_str),
+                u8::from(entry.recommended),
                 escape_text(&entry.name)
             ));
         }
@@ -331,14 +458,37 @@ impl Shortcuts {
     /// a chord on the way in. They go through the same validation a chord off
     /// the socket does.
     pub fn record(&mut self, name: &str, keys: &[KeyCode]) -> Result<u32, RecordError> {
+        let chord = Chord::from_keys(keys).map_err(RecordError::Chord)?;
+        self.adopt(name, chord, Origin::Recorded, None, false)
+    }
+
+    /// Adds a shortcut that came from somewhere other than the recorder.
+    ///
+    /// The seeded conventions and everything import offers arrive here, through
+    /// the same checks a recorded one meets. There is no trusted path for our
+    /// own list: a convention refused by a rule is dropped, not forced in.
+    pub fn adopt(
+        &mut self,
+        name: &str,
+        chord: Chord,
+        origin: Origin,
+        group: Option<Group>,
+        recommended: bool,
+    ) -> Result<u32, RecordError> {
         let name = clean_name(name)?;
         if self.entries.len() >= MAX_SHORTCUTS {
             return Err(RecordError::TooMany);
         }
-        let chord = Chord::from_keys(keys).map_err(RecordError::Chord)?;
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
-        self.entries.push(Shortcut { id, name, chord });
+        self.entries.push(Shortcut {
+            id,
+            name,
+            chord,
+            origin,
+            group,
+            recommended,
+        });
         self.save();
         Ok(id)
     }
@@ -406,17 +556,48 @@ fn config_path() -> Option<PathBuf> {
     Some(path)
 }
 
+/// Reads one record, in either the version 1 or the version 2 shape.
+///
+/// Told apart by counting fields rather than by trusting the file's own version
+/// line: a version 1 record is three fields and a version 2 record is six,
+/// names hold no spaces because they are escaped, and a header edited by hand
+/// should not be able to make the records be read wrongly.
 fn read_shortcut(parts: &mut std::str::SplitWhitespace<'_>) -> Option<Shortcut> {
-    let id = parts.next()?.parse().ok()?;
+    let fields: Vec<&str> = parts.collect();
+    let (id, chord, origin, group, recommended, name) = match fields.as_slice() {
+        // Version 1: no origin and no group. Read as recorded here, which is
+        // the only kind that could be in such a file and the permissive answer.
+        [id, chord, name] => (*id, *chord, Origin::Recorded, None, false, *name),
+        [id, chord, origin, group, recommended, name] => (
+            *id,
+            *chord,
+            Origin::parse(origin)?,
+            match *group {
+                "-" => None,
+                other => Some(Group::parse(other)?),
+            },
+            match *recommended {
+                "0" => false,
+                "1" => true,
+                _ => return None,
+            },
+            *name,
+        ),
+        _ => return None,
+    };
+
     // The same parse a chord off the socket goes through. A file naming a key
     // this host does not know is refused exactly as a client naming one is.
-    let chord = Chord::parse(parts.next()?).ok()?;
-    let name = unescape_text(parts.next()?)?;
-    if parts.next().is_some() {
-        return None;
-    }
-    let name = clean_name(&name).ok()?;
-    Some(Shortcut { id, name, chord })
+    let chord = Chord::parse(chord).ok()?;
+    let name = clean_name(&unescape_text(name)?).ok()?;
+    Some(Shortcut {
+        id: id.parse().ok()?,
+        name,
+        chord,
+        origin,
+        group,
+        recommended,
+    })
 }
 
 fn clean_name(name: &str) -> Result<String, RecordError> {
@@ -682,7 +863,7 @@ mod tests {
         let shortcuts = Shortcuts::parse("");
         assert!(shortcuts.list().is_empty());
         assert!(shortcuts.damaged().is_empty());
-        assert_eq!(shortcuts.render(), "version 1\nnext 1\n");
+        assert_eq!(shortcuts.render(), "version 2\nnext 1\n");
     }
 
     #[test]

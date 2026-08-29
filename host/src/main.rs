@@ -180,15 +180,21 @@ fn report_shortcuts(shortcuts: &Shortcuts) {
     }
 
     println!("Found on {source}, not recorded yet ({}):", fresh.len());
-    let mut groups: Vec<&str> = fresh.iter().map(|found| found.group.as_str()).collect();
-    groups.sort_unstable();
-    groups.dedup();
-    for group in groups {
-        println!("  {group}");
-        for found in fresh.iter().filter(|found| found.group == group) {
-            println!("    {:<26} {}", found.chord.to_string(), found.name);
+    // In the vocabulary's own order rather than alphabetically, so the screen
+    // and this agree about what comes first.
+    for group in shortcuts::Group::ALL {
+        let members: Vec<_> = fresh.iter().filter(|found| found.group == *group).collect();
+        if members.is_empty() {
+            continue;
+        }
+        println!("  {}", group.as_str());
+        for found in members {
+            let mark = if found.recommended { "*" } else { " " };
+            println!("  {mark} {:<26} {}", found.chord.to_string(), found.name);
         }
     }
+    println!();
+    println!("(* is offered first on the review screen.)");
     if already > 0 {
         println!();
         println!("({already} more match something already recorded.)");

@@ -34,13 +34,18 @@
 use std::fmt;
 
 use crate::keys::Chord;
+use crate::shortcuts::Group;
 
 /// One shortcut found on this computer, waiting to be offered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
-    /// What the desktop calls the group it belongs to — "Audio Volume",
-    /// "Window Management". The review screen groups by it.
-    pub group: String,
+    /// Which of the one vocabulary this belongs to, worked out here from the
+    /// desktop's own untranslated action key. The raw `kwin` and
+    /// `org.gnome.shell` never leave the host.
+    pub group: Group,
+    /// Whether to offer this one first. Seventy-five arrive on a KDE machine
+    /// and about a dozen are things anyone would want on a phone rail.
+    pub recommended: bool,
     pub name: String,
     pub chord: Chord,
 }
@@ -136,7 +141,7 @@ pub fn read() -> (Source, Vec<Candidate>) {
 /// goes.
 pub fn from_kde(text: &str) -> Vec<Candidate> {
     let mut groups: Vec<(String, String)> = Vec::new();
-    let mut found: Vec<(String, String, Chord)> = Vec::new();
+    let mut found: Vec<(String, String, String, Chord)> = Vec::new();
     let mut section = String::new();
 
     for line in text.lines() {
@@ -176,19 +181,25 @@ pub fn from_kde(text: &str) -> Vec<Candidate> {
         } else {
             unescape(name)
         };
-        found.push((section.clone(), name, chord));
+        found.push((section.clone(), key.to_owned(), name, chord));
     }
 
     let mut candidates: Vec<Candidate> = found
         .into_iter()
-        .map(|(section, name, chord)| Candidate {
-            group: groups
+        .map(|(section, key, name, chord)| {
+            // The friendly name is only used to help classify; what travels is
+            // the normalised group, never the desktop's own word for it.
+            let friendly = groups
                 .iter()
                 .find(|(raw, _)| *raw == section)
-                .map(|(_, friendly)| friendly.clone())
-                .unwrap_or(section),
-            name,
-            chord,
+                .map(|(_, friendly)| friendly.as_str())
+                .unwrap_or(section.as_str());
+            Candidate {
+                group: classify(&format!("{section} {friendly}"), &key),
+                recommended: is_recommended(&key),
+                name,
+                chord,
+            }
         })
         .collect();
     // A desktop can name the same action twice under different config keys —
@@ -421,6 +432,146 @@ fn gnome_name(key: &str) -> String {
         .unwrap_or_else(|| readable(key))
 }
 
+/// Sorts a shortcut into the one vocabulary, from its desktop's own words.
+///
+/// # Why this reads the action key and not the name
+///
+/// The key is a stable identifier — KDE's `Window Close`, GNOME's
+/// `switch-to-workspace-left` — and it is the same on a machine in any
+/// language. The *name* beside it is translated, so a rule that read names
+/// would work until somebody installed a language pack. That is exactly why
+/// this belongs on the host: the client only ever sees the translated name.
+///
+/// Unrecognised goes to `Other`, deliberately, rather than to whichever bucket
+/// looks closest. Somebody hunting in "Windows" for something we filed there
+/// wrongly will not find it and will not think to look in "Other"; somebody
+/// hunting for a thing that is nowhere else will open "Other".
+fn classify(source_group: &str, key: &str) -> Group {
+    let text = format!("{source_group} {key}").to_ascii_lowercase();
+    let has = |needle: &str| text.contains(needle);
+
+    // Order matters: the first confident answer wins, and the narrower tests
+    // come before the broader ones. "Screenshot window" is a screenshot, not a
+    // window.
+    if has("screenshot") || has("screencast") || has("screenrecord") {
+        return Group::Screenshot;
+    }
+    if has("accessib") || has("screen reader") || has("magnif") || has("kaccess") {
+        return Group::Accessibility;
+    }
+    if has("keyboard layout") || has("switch keyboard") || has("input method") {
+        return Group::Keyboard;
+    }
+    // Phrases rather than a bare "lock": Caps Lock and Scroll Lock are keys,
+    // not session actions, and filing them under Session would put them
+    // somewhere nobody would ever look.
+    if has("lock session")
+        || has("lock screen")
+        || has("screen lock")
+        || has("screensaver")
+        || has("log out")
+        || has("logout")
+        || has("session")
+        || has("switch user")
+        || has("shut down")
+        || has("reboot")
+    {
+        return Group::Session;
+    }
+    if has("suspend") || has("hibernate") || has("sleep") || has("power") || has("brightness") {
+        return Group::Power;
+    }
+    if has("volume") || has("microphone") || has("mic") || has("mute") || has("audio") {
+        return Group::Sound;
+    }
+    if has("play") || has("pause") || has("track") || has("media") || has("song") {
+        return Group::Media;
+    }
+    if has("desktop")
+        || has("workspace")
+        || has("overview")
+        || has("activity")
+        || has("panel")
+        || has("launcher")
+        || has("dashboard")
+        || has("krunner")
+        || has("plasmashell")
+    {
+        return Group::Desktop;
+    }
+    if has("window")
+        || has("maximize")
+        || has("minimize")
+        || has("maximise")
+        || has("minimise")
+        || has("tile")
+        || has("resize")
+        || has("kwin")
+        || has("mutter")
+    {
+        return Group::Windows;
+    }
+    Group::Other
+}
+
+/// The shortcuts worth offering first, out of the seventy-five a desktop has.
+///
+/// Deliberately a short list of exact things rather than a rule with judgement
+/// in it. Everything here is something a person would plausibly reach for
+/// without looking, from a phone, while doing something else.
+///
+/// Two hard exclusions do the heavy lifting: anything **numbered** — "Switch to
+/// Desktop 7", "Activate Task Manager Entry 3" — is never offered however
+/// useful it is to whoever bound it, and anything that only makes sense with a
+/// window already chosen is not a rail button.
+fn is_recommended(key: &str) -> bool {
+    // A digit anywhere means it is one of a numbered series. Twenty of those on
+    // a review screen is what makes the screen useless.
+    if key.chars().any(|character| character.is_ascii_digit()) {
+        return false;
+    }
+    let key = key.to_ascii_lowercase();
+    const WORTH_OFFERING: &[&str] = &[
+        // Session and screen.
+        "lock session",
+        "screensaver",
+        "show-screenshot-ui",
+        "screenshot",
+        // The desktop as a whole.
+        "overview",
+        "toggle-overview",
+        "show desktop",
+        "show-desktop",
+        "expose",
+        // Windows, the two anybody uses.
+        "window close",
+        "close",
+        "window maximize",
+        "maximize",
+        // Moving between workspaces, but only left and right.
+        "switch to next desktop",
+        "switch to previous desktop",
+        "switch-to-workspace-left",
+        "switch-to-workspace-right",
+        "switch one desktop to the left",
+        "switch one desktop to the right",
+        // Sound and media, which are the reason anybody wants a rail.
+        "increase_volume",
+        "decrease_volume",
+        "mute",
+        "mic_mute",
+        "volume-up",
+        "volume-down",
+        "volume-mute",
+        "mic-mute",
+        "play",
+        "playpause",
+        "next",
+        "previous",
+    ];
+    WORTH_OFFERING.iter().any(|worth| key == *worth)
+}
+
 /// Reads one schema's worth of `gsettings list-recursively`.
 ///
 /// The shape:
@@ -460,7 +611,8 @@ pub fn from_gnome(listing: &str, group: &str) -> Vec<Candidate> {
             continue;
         };
         candidates.push(Candidate {
-            group: group.to_owned(),
+            group: classify(group, key),
+            recommended: is_recommended(key),
             name: gnome_name(key),
             chord,
         });
@@ -497,7 +649,13 @@ pub fn from_gnome_custom(listing: &str) -> Option<Candidate> {
     let chord = read_accelerator(&binding?)?;
     let name = name.filter(|name| !name.trim().is_empty())?;
     Some(Candidate {
-        group: "Custom".to_owned(),
+        // Somebody bound this themselves, so it is theirs rather than the
+        // desktop's, and nothing about it says what it is about. `Other` is
+        // the honest answer and it is where they will look for it.
+        group: Group::Other,
+        // Never offered first: a person's own shortcut is the one thing we
+        // have no basis at all for recommending.
+        recommended: false,
         name,
         chord,
     })
@@ -705,7 +863,7 @@ push_to_talk=none,none,Push to talk
         assert_eq!(found.len(), 7);
         let maximize = find(&found, "Maximize Window").expect("found");
         assert_eq!(maximize.chord.to_string(), "super+pageup");
-        assert_eq!(maximize.group, "KWin");
+        assert_eq!(maximize.group, Group::Windows);
     }
 
     #[test]
@@ -720,11 +878,8 @@ push_to_talk=none,none,Push to talk
         // `_k_friendly_name` comes first in one section here and last in
         // another, which is exactly what the real file does.
         let found = from_kde(SAMPLE);
-        assert_eq!(
-            find(&found, "Lock Session").unwrap().group,
-            "Session Management"
-        );
-        assert_eq!(find(&found, "Mute").unwrap().group, "Audio Volume");
+        assert_eq!(find(&found, "Lock Session").unwrap().group, Group::Session);
+        assert_eq!(find(&found, "Mute").unwrap().group, Group::Sound);
     }
 
     #[test]
@@ -885,7 +1040,10 @@ org.gnome.desktop.wm.keybindings switch-to-workspace-left ['<Super><Alt>Left', '
             find(&found, "Maximise window").unwrap().chord.to_string(),
             "super+up"
         );
-        assert_eq!(find(&found, "Minimise window").unwrap().group, "Windows");
+        assert_eq!(
+            find(&found, "Minimise window").unwrap().group,
+            Group::Windows
+        );
     }
 
     #[test]
@@ -1006,7 +1164,7 @@ org.gnome.desktop.wm.keybindings switch-to-workspace-left ['<Super><Alt>Left', '
         .expect("a custom shortcut");
         assert_eq!(entry.name, "Open a terminal");
         assert_eq!(entry.chord.to_string(), "super+t");
-        assert_eq!(entry.group, "Custom");
+        assert_eq!(entry.group, Group::Other);
     }
 
     #[test]
@@ -1105,5 +1263,123 @@ org.gnome.desktop.wm.keybindings switch-to-workspace-left ['<Super><Alt>Left', '
             from_gnome_custom("s binding '<Super>l'\ns command 'x'\ns name 'screensaver'\n")
                 .expect("a custom shortcut");
         assert_eq!(entry.name, "screensaver");
+    }
+
+    #[test]
+    fn both_desktops_sort_the_same_kind_of_thing_into_the_same_bucket() {
+        // The whole point of normalising: KDE stores "Session Management" and
+        // GNOME stores "System" for the same idea, and a screen showing
+        // whichever word the local machine happened to keep looks arbitrary.
+        assert_eq!(
+            classify("ksmserver Session Management", "Lock Session"),
+            Group::Session
+        );
+        assert_eq!(classify("System", "screensaver"), Group::Session);
+
+        assert_eq!(classify("kwin KWin", "Window Close"), Group::Windows);
+        assert_eq!(classify("Windows", "close"), Group::Windows);
+
+        assert_eq!(
+            classify("kmix Audio Volume", "increase_volume"),
+            Group::Sound
+        );
+        assert_eq!(classify("Sound and Media", "volume-up"), Group::Sound);
+    }
+
+    #[test]
+    fn the_narrower_answer_wins_over_the_broader_one() {
+        // "Screenshot a window" is a screenshot, not a window, and it is filed
+        // where somebody would go looking for it.
+        assert_eq!(
+            classify("kwin KWin", "screenshot-window"),
+            Group::Screenshot
+        );
+        assert_eq!(classify("Windows", "show-screenshot-ui"), Group::Screenshot);
+        // A workspace lives in the window manager's config and is not a window.
+        assert_eq!(
+            classify("kwin KWin", "Switch to Next Desktop"),
+            Group::Desktop
+        );
+        assert_eq!(
+            classify("Windows", "switch-to-workspace-left"),
+            Group::Desktop
+        );
+    }
+
+    #[test]
+    fn what_cannot_be_placed_goes_to_other_rather_than_somewhere_close() {
+        // A wrong bucket is worse than an honest one: nobody hunting in
+        // "Windows" for something filed there wrongly will find it, but they
+        // will open "Other" when a thing is nowhere else.
+        assert_eq!(
+            classify("ActivityManager", "switch-to-activity-2e9c"),
+            Group::Desktop
+        );
+        assert_eq!(classify("SomeApp", "do-a-thing"), Group::Other);
+        assert_eq!(classify("", ""), Group::Other);
+    }
+
+    #[test]
+    fn classification_reads_the_action_key_and_never_the_translated_name() {
+        // The key is stable in any language; the name beside it is translated.
+        // A rule that read names would work until a language pack was
+        // installed, which is exactly why this is on the host at all.
+        let found =
+            from_kde("[kmix]\n_k_friendly_name=Lautstärke\nincrease_volume=Volume Up,x,Lauter\n");
+        assert_eq!(found[0].group, Group::Sound);
+        assert_eq!(found[0].name, "Lauter");
+    }
+
+    #[test]
+    fn nothing_numbered_is_ever_offered_first() {
+        // Forty-five window shortcuts arrive on a KDE machine and a third of
+        // them are one of a numbered series. Twenty of those pre-ticked is what
+        // makes a review screen useless.
+        for numbered in [
+            "Switch to Desktop 7",
+            "Activate Task Manager Entry 3",
+            "switch-to-workspace-5",
+            "Window to Screen 2",
+        ] {
+            assert!(!is_recommended(numbered), "{numbered} was offered");
+        }
+    }
+
+    #[test]
+    fn the_things_anybody_would_want_are_offered() {
+        for worth in [
+            "Lock Session",
+            "screensaver",
+            "increase_volume",
+            "volume-up",
+            "mute",
+            "play",
+            "Window Close",
+            "close",
+            "switch-to-workspace-left",
+            "show-screenshot-ui",
+        ] {
+            assert!(is_recommended(worth), "{worth} was not offered");
+        }
+    }
+
+    #[test]
+    fn a_persons_own_shortcut_is_never_offered_first() {
+        // We have no basis at all for recommending one: it is theirs, and its
+        // name tells us nothing about what it does.
+        let entry =
+            from_gnome_custom("s binding '<Super>t'\ns command 'kgx'\ns name 'Open a terminal'\n")
+                .expect("a custom shortcut");
+        assert!(!entry.recommended);
+        assert_eq!(entry.group, Group::Other);
+    }
+
+    #[test]
+    fn a_lock_key_is_not_a_session_action() {
+        // Caps Lock and Scroll Lock are keys. A bare "lock" test would have
+        // filed them under Session, which is nowhere anybody would look.
+        assert_ne!(classify("kwin", "Toggle Caps Lock"), Group::Session);
+        assert_ne!(classify("kwin", "Scroll Lock"), Group::Session);
+        assert_eq!(classify("ksmserver", "Lock Session"), Group::Session);
     }
 }
