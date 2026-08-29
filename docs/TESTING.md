@@ -15,6 +15,7 @@ by a real machine.
 | Injected contacts move the desktop pointer | observed |
 | Two-finger scrolling reaches the desktop | observed |
 | Three- and four-finger swipe gestures reach the desktop | observed |
+| Pinch zoom is delivered continuously, not in steps | observed |
 | Runs as a systemd user service | observed |
 | The Android client builds and its unit tests pass | proven by `./gradlew testDebugUnitTest` |
 | The Android client works against the host on real hardware | observed |
@@ -262,6 +263,26 @@ Two things came out of that first run:
   size, which is the only way this can work across devices.
 - Two-finger horizontal scrolling felt backwards. That is the desktop's natural
   scrolling preference, not a bug: KDE defaults it off, macOS defaults it on.
+
+### Gesture output, measured
+
+`sudo ./scripts/validate-touchpad.sh`:
+
+```text
+evdev events the kernel saw        1807
+pointer motion (one finger)          62
+scroll (two fingers)                 39
+swipe gestures (three, four)         78
+pinch updates (zoom)                 86
+contacts discarded as palms           0
+PASS: pointer motion works.
+```
+
+The pinch test spans 90 frames and libinput produced 86 updates from it, which
+is about one per frame. Zoom that feels stepped in an application is therefore
+the application converting a continuous gesture into discrete steps, not
+anything this project can fix: browsers commonly zoom a page in fixed
+increments regardless of how far the fingers travelled.
 
 ### Synthetic validation
 
