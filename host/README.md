@@ -1,7 +1,8 @@
 # Linux host daemon
 
-`opentrackpadd` receives OTP/2 contact snapshots on a loopback socket and
-replays them on a virtual multi-touch touchpad created through `/dev/uinput`.
+`opentrackpadd` receives OTP/3 contact snapshots and shortcut actions on a
+loopback socket, and replays them on virtual devices created through
+`/dev/uinput`: a multi-touch touchpad, and a keyboard for shortcuts.
 
 ```bash
 cargo test              # parser, session rules, contact state, event encoding
@@ -99,7 +100,9 @@ run it when you are away from the machine.
 
 | Module | Responsibility |
 | --- | --- |
-| `protocol` | Parsing OTP/2 lines and per-connection validation. |
+| `protocol` | Parsing OTP/3 lines and per-connection validation. |
+| `keys` | The closed vocabulary of key names, and the chords built from them. |
+| `keyboard` | The virtual keyboard, held-key tracking, and the action rate limit. |
 | `state` | Pointer IDs to multi-touch slots, and what changed since the last frame. |
 | `pad` | Touchpad geometry and the device-agnostic event vocabulary. |
 | `uinput` | The only module that knows about Linux input events. |

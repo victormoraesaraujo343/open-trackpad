@@ -20,6 +20,7 @@ by a real machine.
 | Plugging the phone in and opening the app is enough, with no terminal | observed |
 | The tray indicator registers with the desktop and tracks state | observed |
 | The screen dims when idle and returns on touch | observed |
+| Key chords reach the desktop through a separate virtual keyboard | observed |
 | The Android client builds and its unit tests pass | proven by `./gradlew testDebugUnitTest` |
 | The Android client works against the host on real hardware | observed |
 | 30 minutes of use leaves no stuck contact | **not yet verified** |
@@ -266,6 +267,24 @@ Two things came out of that first run:
   size, which is the only way this can work across devices.
 - Two-finger horizontal scrolling felt backwards. That is the desktop's natural
   scrolling preference, not a bug: KDE defaults it off, macOS defaults it on.
+
+### A device must exist before it can be typed on
+
+Shortcuts silently did nothing at first. The keyboard was created when the first
+shortcut arrived, and a desktop discards anything from a device it has not
+finished opening — so the keystroke that created the device was always the one
+lost. Of three volume keys sent as the device appeared, the first vanished and
+the rest landed. The keyboard is now built when the session starts.
+
+The same trap caught the touchpad self-test earlier. It is worth stating plainly:
+
+> A virtual input device is not usable the instant it exists. Anything sent
+> before the desktop finishes its udev hotplug is discarded, with no error
+> anywhere.
+
+Separately, identical chords sent microseconds apart collapse into one somewhere
+downstream. At a fifty-millisecond gap all of them land, and a finger on a button
+cannot go faster than that, so this is left alone rather than worked around.
 
 ### Gesture output, measured
 

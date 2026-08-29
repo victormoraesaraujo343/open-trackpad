@@ -4,6 +4,8 @@
 //! loopback TCP socket and replays them on a virtual multi-touch touchpad, so
 //! libinput and the desktop interpret gestures natively.
 
+mod keyboard;
+mod keys;
 mod pad;
 mod protocol;
 mod selftest;
@@ -16,7 +18,8 @@ mod uinput;
 use std::io::{self, BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
 
-use protocol::{Accepted, Session};
+use keyboard::{ActionRate, Controls};
+use protocol::{Accepted, Action, Session};
 use sink::{DebugSink, LazyTouchpad, PadSink};
 use state::ContactState;
 use status::{State, StatusFile};
@@ -128,6 +131,7 @@ fn handle_client(
     stream: TcpStream,
     state: &mut ContactState,
     sink: &mut dyn PadSink,
+    controls: &mut Controls,
     trace_timing: bool,
     status: &StatusFile,
 ) -> io::Result<()> {
@@ -135,6 +139,7 @@ fn handle_client(
     println!("client connected: {peer}");
     let mut session = Session::new();
     let mut timing = TimingTrace::new();
+    let mut action_rate = ActionRate::new(std::time::Instant::now());
     let mut millimetres_per_pixel = 0.0;
 
     for line in BufReader::new(stream).lines() {
@@ -172,6 +177,16 @@ fn handle_client(
                     width: hello.width,
                     height: hello.height,
                 });
+                // Built now rather than on the first shortcut: a desktop discards
+                // anything typed before it has finished opening the device, so
+                // a keyboard created on demand loses the keystroke that
+                // created it.
+                if let Err(error) = controls.prepare() {
+                    eprintln!("could not create the virtual keyboard: {error}");
+                } else if let Some(description) = controls.describe() {
+                    println!("  {description}");
+                }
+
                 if sink.configure(hello.geometry())? {
                     state.device_replaced();
                     println!("  {}", sink.describe());
@@ -179,6 +194,16 @@ fn handle_client(
                     // host can answer it. Point at the check rather than
                     // claiming success.
                     println!("  verify with: libinput list-devices | grep -A9 OpenTrackpad");
+                }
+            }
+            Accepted::Action(Action::Key(chord)) => {
+                // Deliberately not fatal. A shortcut that cannot be typed is worth
+                // reporting, but it must not take the trackpad down with it:
+                // the two are separate paths for exactly this reason.
+                if !action_rate.allow(std::time::Instant::now()) {
+                    eprintln!("dropped a shortcut: they are arriving too fast to be real");
+                } else if let Err(error) = controls.press_chord(&chord) {
+                    eprintln!("could not send shortcut: {error}");
                 }
             }
             Accepted::Frame(frame) => {
@@ -290,16 +315,34 @@ fn run() -> io::Result<()> {
     let status = StatusFile::open();
     status.set(&State::Waiting);
 
+    // The keyboard is built on the first shortcut, not now: most sessions never
+    // send one, and an unused keyboard device would show up in every desktop's
+    // input settings for no reason.
+    let mut controls = Controls::new(options.dry_run);
+
     for connection in listener.incoming() {
         match connection {
             Ok(stream) => {
                 let dropped_before = state.dropped_contacts();
-                if let Err(error) =
-                    handle_client(stream, &mut state, sink, options.trace_timing, &status)
-                {
+                if let Err(error) = handle_client(
+                    stream,
+                    &mut state,
+                    sink,
+                    &mut controls,
+                    options.trace_timing,
+                    &status,
+                ) {
                     eprintln!("client failed: {error}");
                 }
                 end_session(&mut state, sink, dropped_before);
+
+                // A stuck modifier makes the desktop unusable and gives no
+                // clue why, so this happens however the session ended.
+                match controls.release_all() {
+                    Ok(0) => {}
+                    Ok(count) => println!("released {count} key(s) still held by the client"),
+                    Err(error) => eprintln!("failed to release held keys: {error}"),
+                }
                 status.set(&State::Waiting);
             }
             Err(error) => eprintln!("connection failed: {error}"),

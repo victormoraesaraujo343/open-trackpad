@@ -45,6 +45,20 @@
       setting is per-device and buried in system settings, and a dedicated
       trackpad wants its feel adjustable from the surface itself.
 
+## v0.2 — control surface
+
+The visual design is being produced separately. These are the parts underneath
+it, which do not depend on how the screens look.
+
+- [x] A separate virtual keyboard, so shortcuts cannot corrupt touch state
+- [x] A closed vocabulary of key names, with no way to run a command
+- [x] `ACTION` messages alongside touch frames
+- [x] Release every held key when a session ends, however it ended
+- [x] Drop actions arriving faster than a hand could produce them
+- [ ] Send actions from the Android client
+- [ ] Profiles: which shortcuts appear where
+- [ ] Mouse buttons as actions
+
 ## Milestone 4 — wireless fallback
 
 - [ ] Evaluate authenticated Bluetooth Classic and BLE transports
