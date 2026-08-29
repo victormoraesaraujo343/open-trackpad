@@ -178,6 +178,61 @@ an afterthought.
       without looking cannot have its buttons shift position, and a stable grid
       is worth more than a full one.
 
+### Screens still to draw
+
+Counted on 2026-08-29, after the audio panel. Eleven remain before the client
+can be built without inventing anything. Drawn ones live in the screens
+artifact linked from `docs/DESIGN.md`.
+
+**The audio panel is one short.**
+
+- [ ] Audio · input. Same shape as output, microphones instead of speakers.
+
+**Shortcuts have the largest hole.** The recorder that appears on the computer
+is drawn; nothing on the phone yet asks for it, and the profile editor holds
+rails and buttons but no shortcuts to put in them.
+
+- [ ] The shortcut picker — the list you drag from. Fifty ready-made plus
+      unlimited custom ones is a real list needing grouping and search, not the
+      short menu the editor implies today.
+- [ ] `+ New shortcut` inside that picker, which is what asks the computer to
+      open its recorder. The moment is right there: you are building a rail,
+      you notice one is missing, you make it.
+- [ ] Renaming and deleting a custom shortcut. Anything that can be created has
+      to be undoable or the list only ever grows.
+- [ ] The profile editor reworked around the picker above.
+
+**Two of the three control shapes were named and never drawn.** Both were
+described in this file months before anything could show them; the panel work
+has now overtaken them.
+
+- [ ] The dial. What a continuous slot looks like while a thumb is on it —
+      volume, brightness, seeking. The iPod click wheel is the reference, and
+      the value is deliberately absent: the desktop shows its own overlay.
+- [ ] A held key. The rail slot stays lit while the other hand works the
+      trackpad, and everything releases when the session ends.
+
+**Removing the status bar left states with nowhere to go.** The v0.1 screens
+carry a compact bar; v0.2 deliberately has none, so the states it used to hold
+need a home.
+
+- [ ] Cable pulled while in use, and coming back.
+- [ ] The host refusing the version — the phone must say so in a way that names
+      the fix, since the answer is always "update the other side".
+
+**The computer has surfaces too**, and they should not be invented ad hoc in
+code the way the recorder nearly was.
+
+- [ ] The tray menu. It exists and works, and nobody has ever drawn it.
+
+**The recent-applications rail**, whose blocker is gone.
+
+- [ ] Four recent windows on the far rail, and the fifth slot listing the rest.
+
+The return channel that shipped today is what the rail was waiting for, so the
+screens can be drawn now. Building it still means one path per desktop —
+KDE, wlroots, GNOME, X11 — which is why it stays behind the v0.2 client.
+
 ## Milestone 5 — recent applications rail
 
 Four recently used desktop windows on a rail, a fifth slot listing the rest, and
