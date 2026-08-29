@@ -5,15 +5,19 @@
 - [x] Define the USB-first architecture
 - [x] Draft a debuggable touch-frame protocol
 - [x] Add a host protocol receiver and parser tests
-- [ ] Record the target Android model and OS version
+- [x] Target any Linux with libinput, and any Android 9 or newer
 
 ## Milestone 1 — host virtual touchpad
 
-- [ ] Implement the Linux `uinput` backend
-- [ ] Add safe release-all behavior on disconnect
+- [x] Implement the Linux `uinput` backend
+- [x] Add safe release-all behavior on disconnect
+- [x] Add a synthetic contact self-test for the `uinput` path
+- [x] Confirm udev tags the device `ID_INPUT_TOUCHPAD`
+- [x] Verify libinput classifies the device as a touchpad
+- [x] Verify injected contacts move the desktop pointer
+- [ ] Verify two-, three-, and four-finger gestures reach the desktop
+- [ ] Verify on a second distribution and desktop (GNOME as well as KDE)
 - [ ] Add a minimal udev rule and systemd user service
-- [ ] Verify classification with `libinput list-devices`
-- [ ] Verify two-, three-, and four-finger events on Zorin OS 18
 
 ## Milestone 2 — Android sender
 

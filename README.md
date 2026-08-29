@@ -5,7 +5,7 @@ Turn an old Android device into a dedicated, native multi-touch trackpad for Lin
 OpenTrackpad is an early-stage open-source project. Unlike remote-mouse apps, its goal is to send raw touch contacts from Android to a Linux host and expose them through `uinput`, so `libinput` and the desktop environment can handle gestures natively.
 
 > [!IMPORTANT]
-> The repository currently contains the architecture, protocol draft, and a tested host-side protocol receiver. It does **not yet create a virtual trackpad** and the Android client is not implemented yet.
+> The host daemon creates a virtual multi-touch touchpad through `uinput`. udev and libinput both classify it as a touchpad, and injected contacts move the desktop pointer. Multi-finger gestures and long-run stability are not verified yet, and the Android client is not implemented. See [docs/TESTING.md](docs/TESTING.md) for exactly what has and has not been proven.
 
 ## Why
 
@@ -36,9 +36,20 @@ Linux input subsystem -> libinput -> GNOME/KDE gestures
 
 See [Architecture](docs/ARCHITECTURE.md), [wire protocol](docs/PROTOCOL.md), and [roadmap](docs/ROADMAP.md).
 
-## Try the protocol receiver
+## Try the host daemon
 
-The current receiver validates and prints frames; it is useful for developing the Android sender before `uinput` lands.
+Until the Android client exists, the daemon can prove itself against a scripted
+sequence of one, two, three and four contacts. The pointer will move on its own
+for a few seconds:
+
+```bash
+cd host
+cargo run -- --self-test
+```
+
+Add `--dry-run` to watch what it decides without creating a device at all.
+
+To run it as a daemon and drive it by hand:
 
 ```bash
 cd host
@@ -48,7 +59,7 @@ cargo run
 In another terminal:
 
 ```bash
-printf 'HELLO OTP/1 1080 2400 10\nFRAME 1 1000000 1 0 500 800 700 12\n' | nc 127.0.0.1 4242
+printf 'HELLO OTP/1 1080 2400 10\nFRAME 1 1000000 1 0 500 800 700 12\n' | socat - TCP:127.0.0.1:4242
 ```
 
 Run the tests with:
@@ -58,10 +69,15 @@ cd host
 cargo test
 ```
 
+See [testing and validation](docs/TESTING.md) for the manual libinput checks
+that decide whether the virtual device is genuinely a touchpad.
+
 ## Target platforms
 
-- Host: Linux with `uinput` and `libinput`; initial validation target is Zorin OS 18
-- Client: Android 9 or newer initially; the exact minimum may change after hardware testing
+- Host: any Linux with `uinput` and `libinput`. Nothing in the design is
+  distribution-specific; the desktop only has to run libinput, which every
+  mainstream GNOME, KDE, X11 and Wayland session does.
+- Client: any Android 9 or newer.
 
 ## Contributing
 

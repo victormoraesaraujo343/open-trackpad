@@ -1,0 +1,180 @@
+//! Synthetic contact sequences, so the `uinput` path can be exercised and
+//! validated with `libinput debug-events` before the Android client exists.
+
+use std::io;
+use std::thread::sleep;
+use std::time::Duration;
+
+use crate::pad::PadEvent;
+use crate::protocol::{Contact, Frame, Hello};
+use crate::sink::PadSink;
+use crate::state::ContactState;
+
+/// The touch surface the synthetic client pretends to have: a landscape
+/// 2400x1080 phone.
+const SURFACE: Hello = Hello {
+    width: 2400,
+    height: 1080,
+    max_contacts: 10,
+};
+
+/// Time the desktop gets to notice the new device before contacts start.
+///
+/// libinput opens input devices on udev hotplug, and a compositor that has not
+/// finished doing that simply drops the events. Without this pause the
+/// self-test silently proves nothing.
+const HOTPLUG_GRACE: Duration = Duration::from_secs(2);
+
+/// Gap between synthetic frames. Roughly 100 Hz, close enough to a real touch
+/// stream that libinput's timing-based logic (tap detection, gesture onset)
+/// behaves the way it will in production.
+const FRAME_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Horizontal gap between synthetic fingers, in phone pixels.
+const FINGER_SPACING: u32 = 260;
+
+struct Step {
+    name: &'static str,
+    /// Contacts as `(pointer_id, x, y)`.
+    contacts: Vec<(u8, u32, u32)>,
+}
+
+fn step(name: &'static str, contacts: &[(u8, u32, u32)]) -> Step {
+    Step {
+        name,
+        contacts: contacts.to_vec(),
+    }
+}
+
+/// Replays the synthetic sequence through `state` into `sink`.
+/// Moves `count` contacts smoothly from `from` to `to`, spaced apart
+/// horizontally so they read as separate fingers.
+fn glide(
+    name: &'static str,
+    count: u8,
+    from: (u32, u32),
+    to: (u32, u32),
+    frames: u32,
+) -> Vec<Step> {
+    (0..=frames)
+        .map(|tick| {
+            let interpolate = |start: u32, end: u32| {
+                let start = i64::from(start);
+                let span = i64::from(end) - start;
+                (start + span * i64::from(tick) / i64::from(frames)) as u32
+            };
+            let x = interpolate(from.0, to.0);
+            let y = interpolate(from.1, to.1);
+            let contacts: Vec<_> = (0..count)
+                .map(|index| (index, x + FINGER_SPACING * u32::from(index), y))
+                .collect();
+            step(name, &contacts)
+        })
+        .collect()
+}
+
+fn sequence() -> Vec<Step> {
+    let mut steps = Vec::new();
+
+    // A long, smooth stroke. libinput builds up a short motion history before
+    // it emits any pointer motion at all, and a touch lasting a few frames
+    // reads as a tap rather than a drag — so a short sequence here proves
+    // nothing even when the device is perfect.
+    steps.extend(glide(
+        "one contact drags right",
+        1,
+        (300, 540),
+        (2100, 540),
+        45,
+    ));
+    steps.extend(glide(
+        "one contact drags up",
+        1,
+        (2100, 540),
+        (2100, 150),
+        25,
+    ));
+    steps.push(step("one contact up", &[]));
+
+    steps.extend(glide("two contacts scroll", 2, (900, 250), (900, 850), 35));
+    steps.push(step("two contacts up", &[]));
+
+    steps.extend(glide(
+        "three contacts swipe",
+        3,
+        (500, 540),
+        (1500, 540),
+        30,
+    ));
+    steps.push(step("three contacts up", &[]));
+
+    steps.extend(glide("four contacts swipe", 4, (400, 250), (400, 800), 30));
+    steps.push(step("four contacts up", &[]));
+
+    // A pointer ID released and immediately reused: the kernel must see two
+    // separate contacts, not one that teleported.
+    steps.push(step("id 0 down", &[(0, 400, 300)]));
+    steps.push(step("id 0 up", &[]));
+    steps.push(step("id 0 reused", &[(0, 2000, 800)]));
+    steps.push(step("id 0 up again", &[]));
+
+    // Extremes of the surface, to confirm the mapping reaches every edge.
+    steps.push(step("top-left corner", &[(0, 0, 0)]));
+    steps.push(step("bottom-right corner", &[(0, 2399, 1079)]));
+    steps.push(step("corner released", &[]));
+
+    // Ends with contacts still down, so the caller's release-all path is what
+    // cleans up — exactly what happens when a phone is unplugged mid-gesture.
+    steps.push(step(
+        "left down for the disconnect test",
+        &[(0, 800, 500), (1, 1600, 500)],
+    ));
+    steps
+}
+
+pub fn run(state: &mut ContactState, sink: &mut dyn PadSink) -> io::Result<()> {
+    println!(
+        "self-test: waiting {}s for the desktop to open the new device",
+        HOTPLUG_GRACE.as_secs()
+    );
+    sleep(HOTPLUG_GRACE);
+    println!("self-test: replaying synthetic contacts through the state machine");
+    sink.emit(&state.begin_session(&SURFACE))?;
+
+    let mut last_name = "";
+    for (index, step) in sequence().into_iter().enumerate() {
+        if step.name != last_name {
+            println!("  {}", step.name);
+            last_name = step.name;
+        }
+        let frame = Frame {
+            sequence: index as u64 + 1,
+            event_time_ns: (index as u64 + 1) * 10_000_000,
+            contacts: step
+                .contacts
+                .iter()
+                .map(|&(id, x, y)| Contact {
+                    id,
+                    x,
+                    y,
+                    pressure: 600,
+                    major: 12,
+                })
+                .collect(),
+        };
+        sink.emit(&state.apply(&frame))?;
+        sleep(FRAME_INTERVAL);
+    }
+
+    println!(
+        "  releasing {} contact(s) left down, as a disconnect would",
+        state.active_contacts()
+    );
+    let release: Vec<PadEvent> = state.release_all();
+    sink.emit(&release)?;
+    println!(
+        "self-test: done; {} contacts remain",
+        state.active_contacts()
+    );
+    Ok(())
+}

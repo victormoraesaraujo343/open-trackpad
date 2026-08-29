@@ -1,217 +1,216 @@
-use std::fmt;
+//! OpenTrackpad Linux host daemon.
+//!
+//! Receives multi-touch contact snapshots from the Android client over a
+//! loopback TCP socket and replays them on a virtual multi-touch touchpad, so
+//! libinput and the desktop interpret gestures natively.
+
+mod pad;
+mod protocol;
+mod selftest;
+mod sink;
+mod state;
+mod uinput;
+
 use std::io::{self, BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
 
+use protocol::{Accepted, Session};
+use sink::{DebugSink, PadSink};
+use state::ContactState;
+use uinput::UinputTouchpad;
+
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4242";
-const MAX_CONTACTS: u8 = 32;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Hello {
-    width: u32,
-    height: u32,
-    max_contacts: u8,
+const USAGE: &str = "\
+usage: opentrackpadd [OPTIONS] [ADDRESS]
+
+  ADDRESS            loopback address to listen on (default 127.0.0.1:4242)
+
+  --dry-run          do not create a virtual device; print pad events instead
+  --self-test        replay synthetic contacts and exit, without listening
+  --print-events     also print every pad event while a client is connected
+  -h, --help         show this message
+";
+
+struct Options {
+    address: String,
+    dry_run: bool,
+    self_test: bool,
+    print_events: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Contact {
-    id: u8,
-    x: u32,
-    y: u32,
-    pressure: u16,
-    major: u16,
-}
+fn parse_options(arguments: impl Iterator<Item = String>) -> Result<Options, String> {
+    let mut options = Options {
+        address: DEFAULT_ADDRESS.to_owned(),
+        dry_run: false,
+        self_test: false,
+        print_events: false,
+    };
+    let mut address_seen = false;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Frame {
-    sequence: u64,
-    event_time_ns: u64,
-    contacts: Vec<Contact>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Message {
-    Hello(Hello),
-    Frame(Frame),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ProtocolError(String);
-
-impl fmt::Display for ProtocolError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ProtocolError {}
-
-fn parse_number<T>(value: Option<&str>, field: &str) -> Result<T, ProtocolError>
-where
-    T: std::str::FromStr,
-{
-    value
-        .ok_or_else(|| ProtocolError(format!("missing {field}")))?
-        .parse::<T>()
-        .map_err(|_| ProtocolError(format!("invalid {field}")))
-}
-
-fn ensure_finished(parts: &mut std::str::SplitWhitespace<'_>) -> Result<(), ProtocolError> {
-    if parts.next().is_some() {
-        return Err(ProtocolError("unexpected trailing fields".into()));
-    }
-    Ok(())
-}
-
-fn parse_message(line: &str) -> Result<Message, ProtocolError> {
-    let mut parts = line.split_whitespace();
-    match parts.next() {
-        Some("HELLO") => {
-            if parts.next() != Some("OTP/1") {
-                return Err(ProtocolError("unsupported protocol version".into()));
+    for argument in arguments {
+        match argument.as_str() {
+            "--dry-run" => options.dry_run = true,
+            "--self-test" => options.self_test = true,
+            "--print-events" => options.print_events = true,
+            "-h" | "--help" => return Err(USAGE.to_owned()),
+            other if other.starts_with('-') => {
+                return Err(format!("unknown option: {other}\n\n{USAGE}"))
             }
-            let hello = Hello {
-                width: parse_number(parts.next(), "width")?,
-                height: parse_number(parts.next(), "height")?,
-                max_contacts: parse_number(parts.next(), "max_contacts")?,
-            };
-            ensure_finished(&mut parts)?;
-            if hello.width == 0 || hello.height == 0 {
-                return Err(ProtocolError("touch dimensions must be positive".into()));
+            other if address_seen => {
+                return Err(format!("unexpected argument: {other}\n\n{USAGE}"))
             }
-            if hello.max_contacts == 0 || hello.max_contacts > MAX_CONTACTS {
-                return Err(ProtocolError(format!(
-                    "max_contacts must be between 1 and {MAX_CONTACTS}"
-                )));
+            other => {
+                options.address = other.to_owned();
+                address_seen = true;
             }
-            Ok(Message::Hello(hello))
         }
-        Some("FRAME") => {
-            let sequence = parse_number(parts.next(), "sequence")?;
-            let event_time_ns = parse_number(parts.next(), "event_time_ns")?;
-            let count: u8 = parse_number(parts.next(), "contact count")?;
-            if count > MAX_CONTACTS {
-                return Err(ProtocolError(format!(
-                    "contact count exceeds {MAX_CONTACTS}"
-                )));
-            }
+    }
+    Ok(options)
+}
 
-            let mut contacts = Vec::with_capacity(count as usize);
-            for _ in 0..count {
-                let contact = Contact {
-                    id: parse_number(parts.next(), "contact id")?,
-                    x: parse_number(parts.next(), "contact x")?,
-                    y: parse_number(parts.next(), "contact y")?,
-                    pressure: parse_number(parts.next(), "contact pressure")?,
-                    major: parse_number(parts.next(), "contact major")?,
-                };
-                if contact.pressure > 1024 {
-                    return Err(ProtocolError("contact pressure exceeds 1024".into()));
-                }
-                if contacts
-                    .iter()
-                    .any(|existing: &Contact| existing.id == contact.id)
-                {
-                    return Err(ProtocolError("duplicate contact id".into()));
-                }
-                contacts.push(contact);
-            }
-            ensure_finished(&mut parts)?;
-            Ok(Message::Frame(Frame {
-                sequence,
-                event_time_ns,
-                contacts,
-            }))
-        }
-        Some(other) => Err(ProtocolError(format!("unknown message type: {other}"))),
-        None => Err(ProtocolError("empty message".into())),
+/// Wraps a sink so every batch is also printed.
+struct Tee<'a> {
+    inner: &'a mut dyn PadSink,
+    debug: DebugSink,
+}
+
+impl PadSink for Tee<'_> {
+    fn emit(&mut self, events: &[pad::PadEvent]) -> io::Result<()> {
+        self.debug.emit(events)?;
+        self.inner.emit(events)
+    }
+
+    fn describe(&mut self) -> String {
+        self.inner.describe()
     }
 }
 
-fn handle_client(stream: TcpStream) -> io::Result<()> {
+/// Serves one client until it disconnects or breaks the protocol.
+///
+/// Returns `Ok` for a clean disconnect and `Err` for a protocol violation; the
+/// caller releases contacts either way, so neither path can strand a finger.
+fn handle_client(
+    stream: TcpStream,
+    state: &mut ContactState,
+    sink: &mut dyn PadSink,
+) -> io::Result<()> {
     let peer = stream.peer_addr()?;
     println!("client connected: {peer}");
-    let mut hello: Option<Hello> = None;
-    let mut last_sequence: Option<u64> = None;
+    let mut session = Session::new();
 
     for line in BufReader::new(stream).lines() {
         let line = line?;
-        let message = parse_message(&line).map_err(|error| {
+        let accepted = session.accept(&line).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("protocol error: {error}"),
             )
         })?;
 
-        match message {
-            Message::Hello(value) => {
-                if hello.is_some() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "protocol error: duplicate HELLO",
-                    ));
-                }
+        match accepted {
+            Accepted::Hello(hello) => {
                 println!(
                     "touch surface: {}x{}, up to {} contacts",
-                    value.width, value.height, value.max_contacts
+                    hello.width, hello.height, hello.max_contacts
                 );
-                hello = Some(value);
+                let events = state.begin_session(&hello);
+                sink.emit(&events)?;
             }
-            Message::Frame(frame) => {
-                let capabilities = hello.as_ref().ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "protocol error: FRAME before HELLO",
-                    )
-                })?;
-                if frame.contacts.len() > capabilities.max_contacts as usize {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "protocol error: frame exceeds declared max_contacts",
-                    ));
-                }
-                if frame.contacts.iter().any(|contact| {
-                    contact.x >= capabilities.width || contact.y >= capabilities.height
-                }) {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "protocol error: contact outside touch bounds",
-                    ));
-                }
-                if last_sequence.is_some_and(|previous| frame.sequence <= previous) {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "protocol error: sequence did not increase",
-                    ));
-                }
-                last_sequence = Some(frame.sequence);
-                println!(
-                    "frame={} time_ns={} contacts={}",
-                    frame.sequence,
-                    frame.event_time_ns,
-                    frame.contacts.len()
-                );
+            Accepted::Frame(frame) => {
+                let events = state.apply(&frame);
+                sink.emit(&events)?;
             }
         }
     }
 
-    println!("client disconnected: {peer}; releasing all contacts (uinput TODO)");
+    println!("client disconnected: {peer}");
     Ok(())
 }
 
-fn main() -> io::Result<()> {
-    let address = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| DEFAULT_ADDRESS.to_owned());
-    let listener = TcpListener::bind(&address)?;
-    println!("OpenTrackpad protocol receiver listening on {address}");
-    println!("uinput output is not implemented yet; frames are validation-only");
+/// Releases every contact and reports anything the session got wrong.
+fn end_session(state: &mut ContactState, sink: &mut dyn PadSink, dropped_before: u64) {
+    let active = state.active_contacts();
+    let events = state.release_all();
+    if let Err(error) = sink.emit(&events) {
+        eprintln!("failed to release {active} contact(s): {error}");
+    } else if active > 0 {
+        println!("released {active} contact(s) left down by the client");
+    }
+
+    let dropped = state.dropped_contacts() - dropped_before;
+    if dropped > 0 {
+        eprintln!(
+            "warning: {dropped} contact(s) were discarded because all {} slots were in use",
+            pad::MAX_SLOTS
+        );
+    }
+}
+
+fn run() -> io::Result<()> {
+    let options = match parse_options(std::env::args().skip(1)) {
+        Ok(options) => options,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
+
+    let mut device;
+    let mut debug = DebugSink;
+    let sink: &mut dyn PadSink = if options.dry_run {
+        &mut debug
+    } else {
+        device = UinputTouchpad::create().map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "could not create the virtual touchpad via /dev/uinput: {error}\n\
+                     Check that /dev/uinput exists and is writable by this user, \
+                     or re-run with --dry-run to test the protocol only."
+                ),
+            )
+        })?;
+        &mut device
+    };
+
+    println!("OpenTrackpad host daemon");
+    println!("  output: {}", sink.describe());
+    if !options.dry_run {
+        // Classification is what actually matters, and only the real host can
+        // answer it. Point at the check rather than claiming success.
+        println!("  verify classification with: libinput list-devices | grep -A6 OpenTrackpad");
+    }
+
+    let mut state = ContactState::new();
+    let mut teed;
+    let sink: &mut dyn PadSink = if options.print_events && !options.dry_run {
+        teed = Tee {
+            inner: sink,
+            debug: DebugSink,
+        };
+        &mut teed
+    } else {
+        sink
+    };
+
+    if options.self_test {
+        let result = selftest::run(&mut state, sink);
+        end_session(&mut state, sink, 0);
+        return result;
+    }
+
+    let listener = TcpListener::bind(&options.address)?;
+    println!("  listening on {}", options.address);
 
     for connection in listener.incoming() {
         match connection {
             Ok(stream) => {
-                if let Err(error) = handle_client(stream) {
+                let dropped_before = state.dropped_contacts();
+                if let Err(error) = handle_client(stream, &mut state, sink) {
                     eprintln!("client failed: {error}");
                 }
+                end_session(&mut state, sink, dropped_before);
             }
             Err(error) => eprintln!("connection failed: {error}"),
         }
@@ -219,60 +218,40 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("opentrackpadd: {error}");
+        std::process::exit(1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn parses_hello() {
-        assert_eq!(
-            parse_message("HELLO OTP/1 1080 2400 10"),
-            Ok(Message::Hello(Hello {
-                width: 1080,
-                height: 2400,
-                max_contacts: 10,
-            }))
-        );
+    fn defaults_to_the_loopback_address() {
+        let options = parse_options(std::iter::empty()).unwrap();
+        assert_eq!(options.address, DEFAULT_ADDRESS);
+        assert!(!options.dry_run);
     }
 
     #[test]
-    fn parses_contact_frame() {
-        assert_eq!(
-            parse_message("FRAME 42 9912345678 2 0 210 780 650 11 1 810 782 620 10"),
-            Ok(Message::Frame(Frame {
-                sequence: 42,
-                event_time_ns: 9_912_345_678,
-                contacts: vec![
-                    Contact {
-                        id: 0,
-                        x: 210,
-                        y: 780,
-                        pressure: 650,
-                        major: 11,
-                    },
-                    Contact {
-                        id: 1,
-                        x: 810,
-                        y: 782,
-                        pressure: 620,
-                        major: 10,
-                    },
-                ],
-            }))
-        );
+    fn a_positional_argument_overrides_the_address() {
+        let options = parse_options(["127.0.0.1:9999".to_owned()].into_iter()).unwrap();
+        assert_eq!(options.address, "127.0.0.1:9999");
     }
 
     #[test]
-    fn rejects_duplicate_contacts() {
-        let error = parse_message("FRAME 1 1000 2 0 1 2 3 4 0 5 6 7 8")
-            .expect_err("duplicate pointer IDs must fail");
-        assert_eq!(error, ProtocolError("duplicate contact id".into()));
+    fn flags_and_an_address_can_be_combined() {
+        let options =
+            parse_options(["--dry-run".to_owned(), "127.0.0.1:1".to_owned()].into_iter()).unwrap();
+        assert!(options.dry_run);
+        assert_eq!(options.address, "127.0.0.1:1");
     }
 
     #[test]
-    fn rejects_trailing_fields() {
-        let error =
-            parse_message("HELLO OTP/1 1080 2400 10 extra").expect_err("trailing input must fail");
-        assert_eq!(error, ProtocolError("unexpected trailing fields".into()));
+    fn unknown_options_are_rejected_rather_than_treated_as_an_address() {
+        assert!(parse_options(["--nope".to_owned()].into_iter()).is_err());
     }
 }

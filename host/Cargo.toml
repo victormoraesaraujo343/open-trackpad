@@ -6,3 +6,4 @@ description = "Linux host daemon for OpenTrackpad"
 license = "MIT"
 
 [dependencies]
+evdev = "0.13"
