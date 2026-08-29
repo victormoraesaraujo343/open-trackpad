@@ -4,6 +4,8 @@
 //! loopback TCP socket and replays them on a virtual multi-touch touchpad, so
 //! libinput and the desktop interpret gestures natively.
 
+mod audio;
+mod json;
 mod keyboard;
 mod keys;
 mod pad;
