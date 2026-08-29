@@ -37,6 +37,17 @@ impl Hello {
     pub fn geometry(&self) -> crate::pad::PadGeometry {
         crate::pad::PadGeometry::from_micrometres(self.width_um, self.height_um)
     }
+
+    /// Millimetres per pixel on the touch surface.
+    ///
+    /// Phone pixels are square to well under a percent, so one figure covers
+    /// both axes.
+    pub fn millimetres_per_pixel(&self) -> f64 {
+        if self.width == 0 {
+            return 0.0;
+        }
+        f64::from(self.width_um) / 1000.0 / f64::from(self.width)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +64,22 @@ pub struct Frame {
     pub sequence: u64,
     pub event_time_ns: u64,
     pub contacts: Vec<Contact>,
+}
+
+impl Frame {
+    /// How far apart the contacts are, when there are exactly two.
+    ///
+    /// Pinch zoom is a ratio of this distance, so it is what decides whether a
+    /// weak zoom is the gesture running out of surface or the application
+    /// converting it timidly.
+    pub fn separation_mm(&self, millimetres_per_pixel: f64) -> Option<f64> {
+        let [first, second] = self.contacts.as_slice() else {
+            return None;
+        };
+        let dx = f64::from(first.x) - f64::from(second.x);
+        let dy = f64::from(first.y) - f64::from(second.y);
+        Some(dx.hypot(dy) * millimetres_per_pixel)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

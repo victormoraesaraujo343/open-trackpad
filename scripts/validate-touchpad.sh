@@ -131,6 +131,23 @@ glide() {
   sleep 0.2
 }
 
+# Spreads two contacts apart from a common centre, to exercise pinch zoom.
+# Distances are pixels on the synthetic 2400-wide surface, which is 15.5 px per
+# millimetre, so 400 to 1600 is roughly 26 mm to 103 mm: the span a real hand
+# was measured making.
+pinch() {
+  local from=$1 to=$2 frames=$3
+  local tick gap centre=1200 row=540
+
+  for tick in $(seq 0 "$frames"); do
+    gap=$((from + (to - from) * tick / frames))
+    send_frame 0 $((centre - gap / 2)) "$row" 1 $((centre + gap / 2)) "$row"
+    sleep 0.012
+  done
+  send_frame
+  sleep 0.2
+}
+
 echo "== injecting synthetic strokes =="
 echo "   one finger, sideways"
 glide 1 300 540 2100 540 60
@@ -140,6 +157,10 @@ echo "   three fingers, sideways"
 glide 3 500 540 1400 540 40
 echo "   four fingers, downwards"
 glide 4 400 250 400 800 40
+echo "   two fingers, spreading apart (pinch)"
+pinch 400 1600 45
+echo "   two fingers, closing together (pinch)"
+pinch 1600 400 45
 
 exec 3>&-
 exec 3<&-
@@ -157,6 +178,7 @@ kernel_events=$(grep -c '^\s*- \[' "$RECORD" 2>/dev/null || echo 0)
 motion=$(count POINTER_MOTION)
 scroll=$(count POINTER_SCROLL_FINGER)
 swipe=$(count GESTURE_SWIPE)
+pinch_events=$(count GESTURE_PINCH)
 palm=$(count 'palm detected')
 
 echo
@@ -165,6 +187,7 @@ printf '  %-34s %s\n' "evdev events the kernel saw" "$kernel_events"
 printf '  %-34s %s\n' "pointer motion (one finger)" "$motion"
 printf '  %-34s %s\n' "scroll (two fingers)" "$scroll"
 printf '  %-34s %s\n' "swipe gestures (three, four)" "$swipe"
+printf '  %-34s %s\n' "pinch updates (zoom)" "$pinch_events"
 printf '  %-34s %s\n' "contacts discarded as palms" "$palm"
 
 echo
@@ -182,6 +205,7 @@ else
   echo "PASS: pointer motion works."
   [ "$scroll" -eq 0 ] && echo "note: no two-finger scrolling was produced."
   [ "$swipe" -eq 0 ] && echo "note: no three- or four-finger swipe gestures were produced."
+  [ "$pinch_events" -eq 0 ] && echo "note: no pinch gestures were produced."
 fi
 
 echo

@@ -32,7 +32,17 @@ impl TimingTrace {
     }
 
     /// Records one frame and returns a line to log, if there is one.
-    pub fn observe(&mut self, event_time_ns: u64, contacts: usize) -> Option<String> {
+    ///
+    /// `separation_mm` is how far apart two contacts are, when there are exactly
+    /// two. Pinch zoom is a ratio of that distance, so it is the figure that
+    /// says whether a weak zoom is the gesture running out of room or the
+    /// application converting it timidly.
+    pub fn observe(
+        &mut self,
+        event_time_ns: u64,
+        contacts: usize,
+        separation_mm: Option<f64>,
+    ) -> Option<String> {
         let now = Instant::now();
         let line = self.previous.map(|(previous_ns, previous_at)| {
             let phone_ms = event_time_ns.saturating_sub(previous_ns) as f64 / 1_000_000.0;
@@ -40,7 +50,13 @@ impl TimingTrace {
             if host_ms < BUNCHED_MS {
                 self.bunched += 1;
             }
-            format!("phone {phone_ms:6.2} ms   arrived {host_ms:6.2} ms   contacts {contacts}")
+            let span = match separation_mm {
+                Some(millimetres) => format!("   apart {millimetres:5.1} mm"),
+                None => String::new(),
+            };
+            format!(
+                "phone {phone_ms:6.2} ms   arrived {host_ms:6.2} ms   contacts {contacts}{span}"
+            )
         });
         self.previous = Some((event_time_ns, now));
         self.frames += 1;

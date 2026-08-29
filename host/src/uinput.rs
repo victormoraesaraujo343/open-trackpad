@@ -69,7 +69,9 @@ impl UinputTouchpad {
         // Clickpad semantics: no separate physical buttons under the surface.
         properties.insert(PropType::BUTTONPAD);
 
-        let position = |maximum: i32| AbsInfo::new(0, 0, maximum, 0, 0, PAD_RESOLUTION);
+        // The fuzz is what enables jitter filtering, in the kernel and in
+        // libinput both; see PAD_FUZZ.
+        let position = |maximum: i32| AbsInfo::new(0, 0, maximum, PAD_FUZZ, 0, PAD_RESOLUTION);
 
         let device = VirtualDevice::builder()?
             .name(DEVICE_NAME)

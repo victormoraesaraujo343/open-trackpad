@@ -7,6 +7,21 @@
 /// Device units per millimetre. Higher means finer motion quantisation.
 pub const PAD_RESOLUTION: i32 = 40;
 
+/// How much a contact may wander before the movement is believed, in device
+/// units — a quarter of a millimetre here.
+///
+/// A finger is never perfectly still and a touchscreen is never perfectly
+/// precise, so raw positions jitter. Real touchpads declare a fuzz value and
+/// the jitter is filtered out; declaring zero means every tremor reaches the
+/// pointer, which is invisible during fast movement and ruins fine positioning.
+///
+/// Zero is worse than it looks: libinput turns its own hysteresis off entirely
+/// when a device reports no fuzz, on the assumption that the hardware already
+/// filters. So the effect is not a weaker filter but no filter at all, in either
+/// the kernel or libinput. A quarter of a millimetre is what libinput would
+/// otherwise pick for a device of this resolution.
+pub const PAD_FUZZ: i32 = PAD_RESOLUTION / 4;
+
 /// Multi-touch slots the virtual device exposes. The protocol allows up to 32
 /// contacts, but no realistic touchpad gesture needs more than this.
 pub const MAX_SLOTS: usize = 10;

@@ -132,6 +132,7 @@ fn handle_client(
     println!("client connected: {peer}");
     let mut session = Session::new();
     let mut timing = TimingTrace::new();
+    let mut millimetres_per_pixel = 0.0;
 
     for line in BufReader::new(stream).lines() {
         let line = line?;
@@ -163,6 +164,7 @@ fn handle_client(
                 // the size the client reports. libinput works in millimetres,
                 // so this is what makes pointer speed and gesture thresholds
                 // consistent across devices.
+                millimetres_per_pixel = hello.millimetres_per_pixel();
                 if sink.configure(hello.geometry())? {
                     state.device_replaced();
                     println!("  {}", sink.describe());
@@ -174,7 +176,10 @@ fn handle_client(
             }
             Accepted::Frame(frame) => {
                 if trace_timing {
-                    if let Some(line) = timing.observe(frame.event_time_ns, frame.contacts.len()) {
+                    let separation = frame.separation_mm(millimetres_per_pixel);
+                    if let Some(line) =
+                        timing.observe(frame.event_time_ns, frame.contacts.len(), separation)
+                    {
                         println!("  {line}");
                     }
                 }
