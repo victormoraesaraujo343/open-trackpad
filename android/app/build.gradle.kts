@@ -18,7 +18,15 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // The app draws a touch surface and a few buttons; almost all of
+            // what the libraries bring is unused. Stripping it takes the
+            // package from megabytes to a fraction of one.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 

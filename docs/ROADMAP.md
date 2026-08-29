@@ -47,8 +47,9 @@
 
 ## v0.2 — control surface
 
-The visual design is being produced separately. These are the parts underneath
-it, which do not depend on how the screens look.
+The visual design and its screens live in `docs/DESIGN.md`, which carries the
+design system and links to the artifacts the screens are drawn in. What follows
+is the parts underneath, which do not depend on how the screens look.
 
 The active screen holds two things: the trackpad, and a rail down each side.
 There is no header, no status bar and no settings button — every pixel that is
@@ -64,6 +65,35 @@ it.
 That constraint is the point rather than an omission. A dedicated peripheral
 should not spend its surface on chrome.
 
+### Three shapes, not one
+
+Treating every control as a button was a mistake worth naming, because it shows
+up again wherever a value has a range:
+
+- **Actions** happen once when tapped. Play, next track, escape, copy.
+- **Continuous values** are travelled through, not stepped. Volume, brightness,
+  seeking, zoom. A pair of plus and minus buttons is the wrong shape: reaching
+  30% from 70% becomes eight taps.
+- **Holds** keep a key down while the other hand uses the trackpad. Ctrl to
+  multi-select, Shift to extend a selection, Space to pan in a design tool.
+  These are impossible with a trackpad alone, which makes them the strongest
+  argument for a separate surface.
+
+Only the first exists today. The other two need the protocol and the host to
+grow before they can be drawn.
+
+### On feeling considered
+
+Simple and fast, but thought through. A continuous control should feel like the
+iPod click wheel rather than a slider bolted on, and haptics should confirm that
+a movement was understood — the phone is being looked at with peripheral vision
+at best, so touch has to carry what sight will not.
+
+A continuous control does not need to know the value it is changing. The desktop
+already shows its own volume and brightness overlays, and the person is looking
+at that screen. Sending "a little more" and letting the computer display the
+result keeps the phone simple and works the same on every desktop.
+
 The other rail holds recently used desktop applications, and is deferred: see
 Milestone 5.
 
@@ -75,6 +105,46 @@ Milestone 5.
 - [x] Send actions from the Android client
 - [ ] Profiles: which shortcuts appear where
 - [ ] Mouse buttons as actions
+
+### Decided on 2026-08-29, reviewing the control list
+
+Four decisions came out of reading through every control worth having. They are
+recorded here because the reasoning matters more than the list.
+
+**Custom shortcuts, recorded on the host.** The closed vocabulary is what stops
+a control surface from becoming a remote shell, so it stays closed — it just
+becomes editable by the person sitting at the machine. Recording is a host-side
+overlay that captures a real key press and adds that chord to the list. The
+client may *ask* for the overlay to open, since that is only another action, but
+it never authors a chord itself. The phone stores nothing: shortcuts live on the
+host and the client receives the finished list.
+
+Keeping the client thin is deliberate. It has to run well on a wide range of
+Android devices, not just a good one.
+
+**Panels are a fourth shape.** Alongside actions, continuous values and holds, a
+rail slot may open a panel instead of firing a key. Audio is the first one.
+
+**The audio panel needs state to travel back.** Continuous controls were
+designed not to know their own value, and that still holds. A mixer cannot work
+that way: it has to name the sinks and sources, their levels, and the streams
+playing through them. Per-application volume comes from the same place as device
+volume on PipeWire, so it is built alongside rather than deferred.
+
+**One return channel serves both.** The mixer and the recent-applications rail
+(Milestone 5) need the same thing: host state carried to the client, and
+requests carried back. It is built once.
+
+Every control on the reviewed list is kept. With the ready-made set plus
+unlimited custom ones, the picker inside the Quick Ring is a real list needing
+grouping and search, not a short menu — that is a constraint on the design, not
+an afterthought.
+
+- [ ] Host-side shortcut recording overlay, opened locally or by client request
+- [ ] Persist custom chords on the host and extend the accepted vocabulary
+- [ ] Carry host state to the client, and requests back
+- [ ] Audio panel: devices in and out, with per-application streams
+- [ ] Panel as a rail slot kind, alongside action, continuous and hold
 
 ## Milestone 5 — recent applications rail
 
