@@ -79,22 +79,19 @@ object Rails {
     )
 
     /**
-     * The rail opposite the Quick Ring.
+     * The rail opposite the Quick Ring: five more shortcuts.
      *
-     * It belongs to the recently-used applications, which cannot be built until
-     * the host can list windows — one path per desktop, and the reason that work
-     * sits behind this client. Until then it carries the next four shortcuts, so
-     * the profile's eight are all reachable without the ring that does not exist
-     * yet.
+     * All five, with nothing held back. When the recently-used applications
+     * arrive they replace this rail whole — four windows and an "All" in slot
+     * five — rather than moving into a space kept for them, so there is nothing
+     * to reserve and no reason to leave a hole in the meantime.
      *
-     * The fifth slot stays empty either way. It is where "the rest of the
-     * windows" will go, and slot five means the same thing on every rail, so
-     * nothing else may sit in it.
+     * It has no fifth-slot button of its own because it has no "everything
+     * else" to lead to yet. The Quick Ring on the other rail is the way in to
+     * anything the interface has no room for, and there is only one of those.
      */
-    fun overflow(profile: Profile): List<RailSlot?> = rail(
-        first = profile.ring.take(Profile.RAIL_SLOTS).map(::slotFor),
-        last = null,
-    )
+    fun overflow(profile: Profile): List<RailSlot?> =
+        List(SLOTS) { index -> profile.ring.getOrNull(index)?.let(::slotFor) }
 
     private fun slotFor(slot: Slot) = RailSlot(
         label = slot.label,

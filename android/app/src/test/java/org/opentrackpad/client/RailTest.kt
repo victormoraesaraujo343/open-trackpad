@@ -61,10 +61,38 @@ class RailTest {
     }
 
     @Test
-    fun `the opposite rail keeps its fifth slot open`() {
-        // It belongs to the rest of the windows, which needs a host that can
-        // list them. Nothing else may sit there in the meantime.
-        assertNull(Rails.overflow(profile)[4])
+    fun `the opposite rail fills all five slots`() {
+        // Nothing is held back for the recently used applications: when they
+        // arrive they replace this rail whole rather than moving into a space
+        // kept for them.
+        val rail = Rails.overflow(profile)
+        assertEquals(Rails.SLOTS, rail.size)
+        assertTrue(rail.all { it != null })
+        for (index in 0 until Rails.SLOTS) {
+            assertEquals(profile.ring[index].label, rail[index]?.label)
+        }
+    }
+
+    @Test
+    fun `both rails together show nine shortcuts and repeat none`() {
+        for (profile in DefaultProfiles.all) {
+            val shown = (Rails.shortcuts(profile) + Rails.overflow(profile))
+                .filterNotNull()
+                .filter { it.press is SlotPress.Send }
+            assertEquals("${profile.name} does not fill both rails", 9, shown.size)
+            assertEquals("${profile.name} repeats a slot", 9, shown.map { it.label }.toSet().size)
+        }
+    }
+
+    @Test
+    fun `no default shortcut closes anything`() {
+        // Shortcuts fire the moment a finger lands, so nothing that destroys
+        // work may ship on a rail somebody has not chosen.
+        val destructive = setOf("alt+f4", "ctrl+w", "ctrl+q", "ctrl+shift+q")
+        for (slot in DefaultProfiles.desktop.shortcuts) {
+            val chord = (slot.action as Action.KeyChord).chord
+            assertTrue("$chord ships on the Desktop rail", chord !in destructive)
+        }
     }
 
     @Test

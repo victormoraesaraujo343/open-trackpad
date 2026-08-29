@@ -19,7 +19,13 @@ data class Profile(val name: String, val shortcuts: List<Slot>) {
     /** The shortcuts shown directly on the rail. */
     val rail: List<Slot> get() = shortcuts.take(RAIL_SLOTS)
 
-    /** Everything else, reachable through the Quick Ring. */
+    /**
+     * Everything after the shortcut rail.
+     *
+     * The first five fill the rail opposite; anything past those is reachable
+     * only through the Quick Ring. One list rather than three, so the views can
+     * never disagree about what exists.
+     */
     val ring: List<Slot> get() = shortcuts.drop(RAIL_SLOTS)
 
     /**
@@ -74,9 +80,16 @@ data class Settings(
 /**
  * What ships before anyone has chosen anything.
  *
- * Placeholders, and the only place to change them. Which shortcuts belong on
- * which profile has not been decided — it is a product question, not a
- * technical one, and nothing else in the code assumes these particular ones.
+ * Nine each: four on the shortcut rail beside the Quick Ring, and five on the
+ * rail opposite. Which shortcuts belong on which profile is a product question
+ * rather than a technical one, and nothing else in the code assumes these
+ * particular ones.
+ *
+ * **Nothing destructive ships on a rail.** `alt+f4` was here and is not any
+ * more. Shortcuts fire the moment a finger lands, so a default that closes the
+ * window under an accidental press is the wrong thing to hand somebody who has
+ * not chosen it yet. It is a perfectly good shortcut for a person who
+ * deliberately puts it there, which is a different thing.
  */
 object DefaultProfiles {
     private fun key(label: String, chord: String) = Slot(label, Action.KeyChord(chord))
@@ -90,8 +103,9 @@ object DefaultProfiles {
             key("Paste", "ctrl+v"),
             key("Cut", "ctrl+x"),
             key("Undo", "ctrl+z"),
-            key("Close", "alt+f4"),
+            key("Redo", "ctrl+shift+z"),
             key("Escape", "escape"),
+            key("Screenshot", "print"),
         ),
     )
 
@@ -106,6 +120,7 @@ object DefaultProfiles {
             key("Copy", "ctrl+c"),
             key("Paste", "ctrl+v"),
             key("Full screen", "f11"),
+            key("Back", "alt+left"),
         ),
     )
 
@@ -120,6 +135,7 @@ object DefaultProfiles {
             key("Previous", "previoustrack"),
             key("Full screen", "f11"),
             key("Escape", "escape"),
+            key("Mic mute", "micmute"),
         ),
     )
 

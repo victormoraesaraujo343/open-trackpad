@@ -56,6 +56,9 @@ object RailIcons {
         "mute" to "M4.2 8.2h2.6L10.4 5v10L6.8 11.8H4.2zM13.2 8.2l3.6 3.6M16.8 8.2l-3.6 3.6",
         "newTab" to "M3.4 5h13.2v10H3.4zM3.4 8.2h13.2M7.6 5v3.2M12.6 11.6h3.2M14.2 10v3.2",
         "previous" to "M14.6 4.6 8 10l6.6 5.4zM5.4 4.6v10.8",
+        // The undo arrow mirrored about the centre line, so the pair reads as
+        // one shape facing two ways rather than two drawings of an arrow.
+        "redo" to "M13 6.4 16 9.4l-3 3M15.6 9.4h-8a3.6 3.6 0 0 0 0 7.2h2",
         "reload" to "M16.2 10a6.2 6.2 0 1 1-1.9-4.4M16.6 3.4v3.4h-3.4",
         "volumeDown" to "M4.2 8.2h2.6L10.4 5v10L6.8 11.8H4.2zM13.2 10h3.6",
         "volumeUp" to "M4.2 8.2h2.6L10.4 5v10L6.8 11.8H4.2zM13.2 10h3.6M15 8.2v3.6",
@@ -76,7 +79,9 @@ object RailIcons {
         "ctrl+v" to "paste",
         "ctrl+x" to "cut",
         "ctrl+z" to "undo",
+        "ctrl+shift+z" to "redo",
         "alt+f4" to "close",
+        "alt+left" to "back",
         "escape" to "esc",
         "ctrl+t" to "newTab",
         "ctrl+w" to "close",
@@ -91,6 +96,7 @@ object RailIcons {
         "volumeup" to "volumeUp",
         "volumedown" to "volumeDown",
         "mute" to "mute",
+        "micmute" to "mic",
     )
 
     /** The path data for [name], or the blank key if there is no such glyph. */
