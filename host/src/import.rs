@@ -50,6 +50,10 @@ pub struct Candidate {
 pub enum Source {
     /// `~/.config/kglobalshortcutsrc`, a plain text file.
     Kde,
+    /// GNOME's settings store, asked through `gsettings`. Not a file: the
+    /// shortcuts are spread over several schemas, and a person's own ones sit
+    /// one relocatable schema apiece.
+    Gnome,
     /// A desktop this host has not been taught to read.
     Unknown,
 }
@@ -58,6 +62,7 @@ impl fmt::Display for Source {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Source::Kde => formatter.write_str("KDE"),
+            Source::Gnome => formatter.write_str("GNOME"),
             Source::Unknown => formatter.write_str("an unrecognised desktop"),
         }
     }
@@ -75,6 +80,12 @@ pub fn detect(current_desktop: Option<&str>) -> Source {
     for name in names.split(':') {
         if name.eq_ignore_ascii_case("KDE") || name.eq_ignore_ascii_case("plasma") {
             return Source::Kde;
+        }
+        // GNOME calls itself several things — plain, Classic, and prefixed by
+        // whoever packaged it — so this matches the family rather than a name.
+        let upper = name.to_ascii_uppercase();
+        if upper == "GNOME" || upper.starts_with("GNOME-") {
+            return Source::Gnome;
         }
     }
     Source::Unknown
@@ -96,6 +107,7 @@ pub fn read() -> (Source, Vec<Candidate>) {
             .and_then(|path| std::fs::read_to_string(path).ok())
             .map(|text| from_kde(&text))
             .unwrap_or_default(),
+        Source::Gnome => read_gnome(),
         Source::Unknown => Vec::new(),
     };
     (source, candidates)
@@ -315,6 +327,275 @@ fn unescape(text: &str) -> String {
     out.trim().to_owned()
 }
 
+/// The GNOME schemas worth reading, and what to call each group.
+///
+/// GNOME keeps shortcuts in its settings store rather than a file, so this is a
+/// list of places to ask rather than a path to read. Schemas that are not
+/// installed simply answer nothing, which is what makes it safe to ask for all
+/// of them on a machine that has only some.
+const GNOME_SCHEMAS: &[(&str, &str)] = &[
+    ("org.gnome.desktop.wm.keybindings", "Windows"),
+    ("org.gnome.mutter.keybindings", "Windows"),
+    ("org.gnome.mutter.wayland.keybindings", "Windows"),
+    ("org.gnome.shell.keybindings", "System"),
+    (
+        "org.gnome.settings-daemon.plugins.media-keys",
+        "Sound and Media",
+    ),
+];
+
+/// Where a person's own shortcuts live, one relocatable schema per entry.
+const GNOME_CUSTOM_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding";
+
+/// Reads one schema's worth of `gsettings list-recursively`.
+///
+/// The shape:
+///
+/// ```text
+/// org.gnome.desktop.wm.keybindings close ['<Alt>F4']
+/// org.gnome.desktop.wm.keybindings cycle-group ['<Alt>F6', '<Super>x']
+/// org.gnome.desktop.wm.keybindings lower @as []
+/// ```
+///
+/// The value is a list of accelerators, and `@as []` is how an empty list
+/// prints. Older versions store a bare string for some media keys instead of a
+/// list, so every quoted run is taken and each is tried in turn — which covers
+/// both shapes without having to know which version is answering.
+///
+/// GNOME has no readable name for these anywhere a program can reach: the words
+/// a person sees in Settings live in that application's translations, not in
+/// the settings store. So the key itself is made readable — `switch-to-workspace-left`
+/// becomes "Switch to workspace left". Plainer than KDE's, and honest about
+/// where it came from.
+pub fn from_gnome(listing: &str, group: &str) -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+    for line in listing.lines() {
+        let mut parts = line.split_whitespace();
+        let (Some(_schema), Some(key)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let value = line
+            .splitn(3, char::is_whitespace)
+            .nth(2)
+            .unwrap_or_default();
+        let Some(chord) = quoted_runs(value)
+            .into_iter()
+            .find_map(|accelerator| read_accelerator(&accelerator))
+        else {
+            continue;
+        };
+        candidates.push(Candidate {
+            group: group.to_owned(),
+            name: readable(key),
+            chord,
+        });
+    }
+    candidates.dedup_by(|left, right| left == right);
+    candidates
+}
+
+/// Reads one of a person's own shortcuts.
+///
+/// These carry a name somebody typed, which is better than anything that can be
+/// derived, so it is used as-is. The command they run is deliberately ignored:
+/// this takes the chord and the label, and firing the chord makes GNOME run the
+/// command exactly as pressing the keys would. Nothing here runs anything.
+pub fn from_gnome_custom(listing: &str) -> Option<Candidate> {
+    let mut name = None;
+    let mut binding = None;
+    for line in listing.lines() {
+        let mut parts = line.split_whitespace();
+        let (Some(_schema), Some(key)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let value = line
+            .splitn(3, char::is_whitespace)
+            .nth(2)
+            .unwrap_or_default();
+        let first = quoted_runs(value).into_iter().next();
+        match key {
+            "name" => name = first,
+            "binding" => binding = first,
+            _ => {}
+        }
+    }
+    let chord = read_accelerator(&binding?)?;
+    let name = name.filter(|name| !name.trim().is_empty())?;
+    Some(Candidate {
+        group: "Custom".to_owned(),
+        name,
+        chord,
+    })
+}
+
+/// Every single-quoted run in a settings value.
+///
+/// Covers a bare string and a list with one call, so neither shape needs
+/// detecting. `@as []` holds no quotes and yields nothing.
+fn quoted_runs(value: &str) -> Vec<String> {
+    let mut runs = Vec::new();
+    let mut rest = value;
+    while let Some(start) = rest.find('\'') {
+        rest = &rest[start + 1..];
+        let Some(end) = rest.find('\'') else {
+            break;
+        };
+        runs.push(rest[..end].to_owned());
+        rest = &rest[end + 1..];
+    }
+    runs
+}
+
+/// Turns a settings key into something a person can read on a button.
+fn readable(key: &str) -> String {
+    let spaced = key.replace(['-', '_'], " ");
+    let mut characters = spaced.chars();
+    match characters.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + characters.as_str(),
+        None => spaced,
+    }
+}
+
+/// Reads a GTK accelerator: `<Shift><Control><Alt>Escape`.
+fn read_accelerator(accelerator: &str) -> Option<Chord> {
+    let mut rest = accelerator.trim();
+    // Both of these are how GNOME writes "no shortcut".
+    if rest.is_empty() || rest == "disabled" {
+        return None;
+    }
+    let mut names: Vec<&'static str> = Vec::new();
+    while rest.starts_with('<') {
+        let close = rest.find('>')?;
+        names.push(match &rest[1..close] {
+            // `Primary` is Control written portably; GNOME uses both.
+            "Control" | "Primary" | "Ctrl" => "ctrl",
+            "Shift" => "shift",
+            "Alt" => "alt",
+            "Super" | "Meta" | "Mod4" => "super",
+            _ => return None,
+        });
+        rest = &rest[close + 1..];
+    }
+    names.push(gnome_key_name(rest)?);
+    // Through the same parse as everything else. An imported chord is not a
+    // trusted chord.
+    Chord::parse(&names.join("+")).ok()
+}
+
+/// Translates one key from what GNOME calls it to what this host calls it.
+fn gnome_key_name(gnome: &str) -> Option<&'static str> {
+    if gnome.len() == 1 {
+        let character = gnome.chars().next()?;
+        if character.is_ascii_alphanumeric() {
+            return crate::keys::canonical_name(&character.to_ascii_lowercase().to_string());
+        }
+    }
+    let name = match gnome {
+        "space" => "space",
+        "Return" | "KP_Enter" => "enter",
+        "Tab" => "tab",
+        "Escape" => "escape",
+        "BackSpace" => "backspace",
+        "Delete" | "KP_Delete" => "delete",
+        "Insert" | "KP_Insert" => "insert",
+        "Home" => "home",
+        "End" => "end",
+        "Page_Up" | "Prior" => "pageup",
+        "Page_Down" | "Next" => "pagedown",
+        "Left" => "left",
+        "Right" => "right",
+        "Up" => "up",
+        "Down" => "down",
+        "Menu" => "menu",
+        "Print" | "Sys_Req" => "print",
+        "Pause" => "pause",
+        "Scroll_Lock" => "scrolllock",
+        "Caps_Lock" => "capslock",
+        "Num_Lock" => "numlock",
+        "minus" => "minus",
+        "equal" => "equal",
+        "bracketleft" => "leftbracket",
+        "bracketright" => "rightbracket",
+        "backslash" => "backslash",
+        "semicolon" => "semicolon",
+        "apostrophe" => "apostrophe",
+        "grave" => "grave",
+        "comma" => "comma",
+        "period" => "period",
+        "slash" => "slash",
+        // The keys a laptop has above the number row. X11 names them XF86.
+        "XF86AudioRaiseVolume" => "volumeup",
+        "XF86AudioLowerVolume" => "volumedown",
+        "XF86AudioMute" => "mute",
+        "XF86AudioMicMute" => "micmute",
+        "XF86AudioPlay" | "XF86AudioPause" => "playpause",
+        "XF86AudioNext" => "nexttrack",
+        "XF86AudioPrev" => "previoustrack",
+        "XF86AudioStop" => "stop",
+        "XF86MonBrightnessUp" => "brightnessup",
+        "XF86MonBrightnessDown" => "brightnessdown",
+        other if other.len() > 1 && other.starts_with('F') => {
+            return other[1..]
+                .parse::<u8>()
+                .ok()
+                .filter(|number| (1..=12).contains(number))
+                .and_then(|number| crate::keys::canonical_name(&format!("f{number}")));
+        }
+        other if other.starts_with("KP_") => {
+            return other[3..]
+                .parse::<u8>()
+                .ok()
+                .filter(|number| *number <= 9)
+                .and_then(|number| crate::keys::canonical_name(&format!("kp{number}")));
+        }
+        _ => return None,
+    };
+    Some(name)
+}
+
+/// Asks `gsettings` for one schema.
+fn gsettings(arguments: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("gsettings")
+        .args(arguments)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    // A schema this machine does not have is not an error worth reporting: it
+    // is a version of GNOME that never had it, or a component not installed.
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()
+}
+
+fn read_gnome() -> Vec<Candidate> {
+    let mut candidates = Vec::new();
+    for (schema, group) in GNOME_SCHEMAS {
+        if let Some(listing) = gsettings(&["list-recursively", schema]) {
+            candidates.extend(from_gnome(&listing, group));
+        }
+    }
+    // A person's own shortcuts live one relocatable schema per entry, listed by
+    // path, so each one is a second question.
+    if let Some(listing) = gsettings(&[
+        "get",
+        "org.gnome.settings-daemon.plugins.media-keys",
+        "custom-keybindings",
+    ]) {
+        for path in quoted_runs(&listing) {
+            let target = format!("{GNOME_CUSTOM_SCHEMA}:{path}");
+            if let Some(entry) = gsettings(&["list-recursively", &target])
+                .as_deref()
+                .and_then(from_gnome_custom)
+            {
+                candidates.push(entry);
+            }
+        }
+    }
+    candidates
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,7 +754,12 @@ push_to_talk=none,none,Push to talk
         assert_eq!(detect(Some("plasma")), Source::Kde);
         assert_eq!(detect(Some("KDE:plasmawayland")), Source::Kde);
         assert_eq!(detect(Some("X-Cinnamon:KDE")), Source::Kde);
-        assert_eq!(detect(Some("GNOME")), Source::Unknown);
+        assert_eq!(detect(Some("GNOME")), Source::Gnome);
+        assert_eq!(detect(Some("gnome")), Source::Gnome);
+        assert_eq!(detect(Some("ubuntu:GNOME")), Source::Gnome);
+        assert_eq!(detect(Some("GNOME-Classic:GNOME")), Source::Gnome);
+        assert_eq!(detect(Some("sway")), Source::Unknown);
+        assert_eq!(detect(Some("XFCE")), Source::Unknown);
         assert_eq!(detect(Some("")), Source::Unknown);
         assert_eq!(detect(None), Source::Unknown);
     }
@@ -494,5 +780,174 @@ push_to_talk=none,none,Push to talk
         // that is a clash the person should see, not one to hide.
         let found = from_kde("[x]\nA=Meta+K,none,First thing\nB=Meta+K,none,Second thing\n");
         assert_eq!(found.len(), 2);
+    }
+
+    // Real `gsettings list-recursively org.gnome.desktop.wm.keybindings` output,
+    // captured from an installed GNOME schema. The empty-list spelling and the
+    // multi-accelerator line are the two shapes that matter.
+    const GNOME_WM: &str = "\
+org.gnome.desktop.wm.keybindings activate-window-menu ['<Alt>space']
+org.gnome.desktop.wm.keybindings always-on-top @as []
+org.gnome.desktop.wm.keybindings begin-move ['<Alt>F7']
+org.gnome.desktop.wm.keybindings close ['<Alt>F4']
+org.gnome.desktop.wm.keybindings cycle-panels-backward ['<Shift><Control><Alt>Escape']
+org.gnome.desktop.wm.keybindings lower @as []
+org.gnome.desktop.wm.keybindings maximize ['<Super>Up']
+org.gnome.desktop.wm.keybindings minimize ['<Super>h']
+org.gnome.desktop.wm.keybindings switch-to-workspace-left ['<Super><Alt>Left', '<Control><Alt>Left']
+";
+
+    #[test]
+    fn reads_what_gsettings_prints() {
+        let found = from_gnome(GNOME_WM, "Windows");
+        assert_eq!(found.len(), 7);
+        assert_eq!(find(&found, "Close").unwrap().chord.to_string(), "alt+f4");
+        assert_eq!(
+            find(&found, "Maximize").unwrap().chord.to_string(),
+            "super+up"
+        );
+        assert_eq!(find(&found, "Minimize").unwrap().group, "Windows");
+    }
+
+    #[test]
+    fn an_empty_list_is_not_a_shortcut() {
+        // `@as []` is how GNOME prints "nothing bound". It holds no quotes, so
+        // it yields nothing rather than an empty chord.
+        let found = from_gnome(GNOME_WM, "Windows");
+        assert!(find(&found, "Always on top").is_none());
+        assert!(find(&found, "Lower").is_none());
+    }
+
+    #[test]
+    fn the_first_accelerator_that_can_be_said_is_the_one_taken() {
+        let found = from_gnome(GNOME_WM, "Windows");
+        assert_eq!(
+            find(&found, "Switch to workspace left")
+                .unwrap()
+                .chord
+                .to_string(),
+            "super+alt+left"
+        );
+    }
+
+    #[test]
+    fn modifiers_stack_in_the_order_they_are_written() {
+        let found = from_gnome(GNOME_WM, "Windows");
+        assert_eq!(
+            find(&found, "Cycle panels backward")
+                .unwrap()
+                .chord
+                .to_string(),
+            "shift+ctrl+alt+escape"
+        );
+    }
+
+    #[test]
+    fn a_settings_key_is_made_readable_because_gnome_has_no_name_for_it() {
+        // The words a person sees live in the Settings application's
+        // translations, not anywhere a program can reach.
+        assert_eq!(
+            readable("switch-to-workspace-left"),
+            "Switch to workspace left"
+        );
+        assert_eq!(readable("close"), "Close");
+        assert_eq!(readable("screenshot-window"), "Screenshot window");
+        assert_eq!(readable(""), "");
+    }
+
+    #[test]
+    fn primary_is_control_written_portably() {
+        let found = from_gnome("s k ['<Primary>c']\n", "x");
+        assert_eq!(found[0].chord.to_string(), "ctrl+c");
+    }
+
+    #[test]
+    fn an_older_gnome_storing_a_bare_string_is_read_the_same_way() {
+        // Some media keys were a plain string before they became a list, and
+        // taking every quoted run covers both without detecting the version.
+        let found = from_gnome(
+            "org.gnome.settings-daemon.plugins.media-keys volume-up 'XF86AudioRaiseVolume'\n",
+            "Sound and Media",
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].chord.to_string(), "volumeup");
+        assert_eq!(found[0].name, "Volume up");
+    }
+
+    #[test]
+    fn the_keys_above_the_number_row_are_understood() {
+        for (gnome, ours) in [
+            ("XF86AudioMute", "mute"),
+            ("XF86AudioPlay", "playpause"),
+            ("XF86AudioNext", "nexttrack"),
+            ("XF86MonBrightnessDown", "brightnessdown"),
+        ] {
+            let found = from_gnome(&format!("s k ['{gnome}']\n"), "x");
+            assert_eq!(found[0].chord.to_string(), ours, "{gnome}");
+        }
+    }
+
+    #[test]
+    fn a_key_gnome_names_and_this_host_does_not_drops_that_entry_alone() {
+        let found = from_gnome(
+            "s above-tab ['<Super>Above_Tab']\ns fine ['<Super>m']\n",
+            "x",
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].name, "Fine");
+    }
+
+    #[test]
+    fn disabled_and_empty_are_both_nothing() {
+        assert!(from_gnome("s k ['']\n", "x").is_empty());
+        assert!(from_gnome("s k ['disabled']\n", "x").is_empty());
+        assert!(from_gnome("s k @as []\n", "x").is_empty());
+        assert!(from_gnome("", "x").is_empty());
+    }
+
+    #[test]
+    fn an_imported_gnome_chord_gets_no_more_trust_than_a_recorded_one() {
+        // Same rule as KDE's: refused here means never offered.
+        assert!(from_gnome("s k ['<Alt>Print']\n", "x").is_empty());
+        assert!(
+            from_gnome("s k ['<Super><Control><Alt><Shift>a']\n", "x")[0]
+                .chord
+                .to_string()
+                .contains("super")
+        );
+    }
+
+    #[test]
+    fn a_persons_own_shortcut_keeps_the_name_they_typed() {
+        // Better than anything derivable, so it is used as written. The command
+        // is deliberately ignored: this takes the chord and the label, and
+        // nothing here runs anything.
+        let entry = from_gnome_custom(
+            "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding binding '<Super>t'\n\
+             org.gnome.settings-daemon.plugins.media-keys.custom-keybinding command 'kgx'\n\
+             org.gnome.settings-daemon.plugins.media-keys.custom-keybinding name 'Open a terminal'\n",
+        )
+        .expect("a custom shortcut");
+        assert_eq!(entry.name, "Open a terminal");
+        assert_eq!(entry.chord.to_string(), "super+t");
+        assert_eq!(entry.group, "Custom");
+    }
+
+    #[test]
+    fn a_custom_shortcut_missing_a_half_is_not_offered() {
+        assert!(from_gnome_custom("s binding '<Super>t'\ns command 'kgx'\n").is_none());
+        assert!(from_gnome_custom("s name 'Thing'\ns command 'kgx'\n").is_none());
+        assert!(from_gnome_custom("s binding ''\ns name 'Thing'\n").is_none());
+        assert!(from_gnome_custom("s binding '<Super>t'\ns name '  '\n").is_none());
+        assert!(from_gnome_custom("").is_none());
+    }
+
+    #[test]
+    fn every_quoted_run_is_found_and_nothing_else_is() {
+        assert_eq!(quoted_runs("['a', 'b']"), vec!["a", "b"]);
+        assert_eq!(quoted_runs("'solo'"), vec!["solo"]);
+        assert!(quoted_runs("@as []").is_empty());
+        assert!(quoted_runs("").is_empty());
+        assert!(quoted_runs("uint32 400").is_empty());
     }
 }
