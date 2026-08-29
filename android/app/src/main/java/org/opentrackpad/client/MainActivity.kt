@@ -20,6 +20,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var surface: TouchSurfaceView
     private lateinit var status: TextView
     private lateinit var connection: HostConnection
+    private lateinit var screen: ScreenCare
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,10 +30,16 @@ class MainActivity : AppCompatActivity() {
         status = findViewById(R.id.status)
 
         connection = HostConnection(onState = ::showState)
-        surface.onFrame = connection::send
+        surface.onFrame = ::onFrame
         surface.onSurfaceSize = ::onSurfaceSize
 
-        // A trackpad that goes to sleep under your fingers is useless.
+        // The status line is the only thing here that stays put. When the
+        // interface grows, whatever else sits still goes in this call too.
+        screen = ScreenCare(window)
+        screen.protect(status)
+
+        // A trackpad that goes to sleep under your fingers is useless. It does
+        // not have to stay bright, though; ScreenCare handles that.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         goImmersive()
     }
@@ -46,6 +53,21 @@ class MainActivity : AppCompatActivity() {
             started = true
             connection.start(metrics)
         }
+    }
+
+    private fun onFrame(frame: TouchFrame) {
+        screen.onActivity()
+        connection.send(frame)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        screen.resume()
+    }
+
+    override fun onPause() {
+        screen.pause()
+        super.onPause()
     }
 
     override fun onDestroy() {

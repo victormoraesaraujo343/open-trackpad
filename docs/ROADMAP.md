@@ -38,7 +38,7 @@
 - [x] Re-establish the USB bridge when the cable comes back
 - [x] Start-on-boot through systemd user services
 - [x] A tray indicator showing connection state, with stop and start
-- [ ] Burn-in protection and configurable brightness
+- [x] Dim the screen when idle, and shift static elements so nothing burns in
 - [ ] Accidental-edge and palm filtering
 - [ ] Calibration UI: in-app sliders for pointer speed and sensitivity
       Asked for after the first hardware test: the desktop's own pointer speed

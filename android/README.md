@@ -69,6 +69,7 @@ against a shared literal rather than against each other's assumptions.
 | `FrameQueue.kt` | What to discard when frames outpace the socket. |
 | `HostConnection.kt` | The socket, the sender thread, reconnection. |
 | `MainActivity.kt` | Immersive landscape surface and connection status. |
+| `ScreenCare.kt` | Dimming while idle, and nudging static views. |
 
 Three decisions worth knowing about:
 
@@ -84,6 +85,19 @@ Three decisions worth knowing about:
 every frame is a complete snapshot and a newer one supersedes an older one
 entirely. Frames that change *which fingers exist* never are — dropping one
 would leave the host believing a finger is still down. See its tests.
+
+## Looking after the screen
+
+A phone being a trackpad sits on a desk for hours, plugged in and showing the
+same thing. `ScreenCare` dims the screen after half a minute without a touch —
+not off, because a screen that is off cannot feel a finger — and brings it back
+on the next contact. It also nudges registered views a couple of pixels on a
+slow cycle, so nothing static can leave a ghost on an OLED panel.
+
+It is told which views stay put rather than working it out, and it knows nothing
+about the layout. The interface will change; this should not have to. The touch
+surface is deliberately never registered: shifting it would slide part of it off
+the screen and the edge of the pad would stop responding.
 
 ## Not in v0.1
 

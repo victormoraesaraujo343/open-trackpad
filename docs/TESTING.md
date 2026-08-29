@@ -19,6 +19,7 @@ by a real machine.
 | Runs as a systemd user service | observed |
 | Plugging the phone in and opening the app is enough, with no terminal | observed |
 | The tray indicator registers with the desktop and tracks state | observed |
+| The screen dims when idle and returns on touch | observed |
 | The Android client builds and its unit tests pass | proven by `./gradlew testDebugUnitTest` |
 | The Android client works against the host on real hardware | observed |
 | 30 minutes of use leaves no stuck contact | **not yet verified** |
