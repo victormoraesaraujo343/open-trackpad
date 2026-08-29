@@ -130,19 +130,37 @@ impl PadSink for Tee<'_> {
     }
 }
 
+/// Everything one client session acts on, gathered so the signature says "a
+/// session" rather than listing seven unrelated things.
+///
+/// Borrowed for the length of one connection and handed back, because the
+/// caller has to release contacts and held keys afterwards whatever went wrong.
+struct Serving<'a> {
+    state: &'a mut ContactState,
+    sink: &'a mut dyn PadSink,
+    controls: &'a mut Controls,
+    /// What the phone is allowed to fire. Read-only here: this list is changed
+    /// by somebody at the keyboard, never by anything arriving on the socket.
+    shortcuts: &'a Shortcuts,
+    status: &'a StatusFile,
+    trace_timing: bool,
+    dry_run: bool,
+}
+
 /// Serves one client until it disconnects or breaks the protocol.
 ///
 /// Returns `Ok` for a clean disconnect and `Err` for a protocol violation; the
 /// caller releases contacts either way, so neither path can strand a finger.
-fn handle_client(
-    stream: TcpStream,
-    state: &mut ContactState,
-    sink: &mut dyn PadSink,
-    controls: &mut Controls,
-    trace_timing: bool,
-    dry_run: bool,
-    status: &StatusFile,
-) -> io::Result<()> {
+fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
+    let Serving {
+        state,
+        sink,
+        controls,
+        shortcuts,
+        status,
+        trace_timing,
+        dry_run,
+    } = serving;
     let peer = stream.peer_addr()?;
     println!("client connected: {peer}");
 
@@ -271,6 +289,14 @@ fn handle_client(
                 // the two are separate paths for exactly this reason.
                 if !action_rate.allow(std::time::Instant::now()) {
                     eprintln!("dropped a shortcut: they are arriving too fast to be real");
+                } else if !shortcuts.allows(&chord) {
+                    // The gate. A chord the phone may fire is one somebody
+                    // recorded, imported or was started with on this machine —
+                    // the vocabulary says how a chord is spelled, this says
+                    // which ones exist. Not fatal, because the ordinary way to
+                    // get here is a button the phone still has on screen for a
+                    // shortcut that was deleted a moment ago.
+                    eprintln!("ignored a shortcut that is not in the list: {chord}");
                 } else if let Err(error) = controls.press_chord(&chord) {
                     eprintln!("could not send shortcut: {error}");
                 }
@@ -395,6 +421,12 @@ fn run() -> io::Result<()> {
 
     // Read once at start rather than per session: they belong to the machine,
     // not to whichever phone happens to be plugged in.
+    //
+    // Once at start is not enough for much longer. The recorder is a separate
+    // program that writes this file, and it is opened while a phone is
+    // connected — so the shortcut somebody has just recorded would not be
+    // fireable until this daemon restarted. Re-reading on change belongs with
+    // the recorder, which is the first thing that makes it matter.
     let shortcuts = Shortcuts::open();
     for line in shortcuts.damaged() {
         // Said rather than swallowed. A shortcut that quietly stopped existing
@@ -425,15 +457,16 @@ fn run() -> io::Result<()> {
         match connection {
             Ok(stream) => {
                 let dropped_before = state.dropped_contacts();
-                if let Err(error) = handle_client(
-                    stream,
-                    &mut state,
-                    sink,
-                    &mut controls,
-                    options.trace_timing,
-                    options.dry_run,
-                    &status,
-                ) {
+                let serving = Serving {
+                    state: &mut state,
+                    sink: &mut *sink,
+                    controls: &mut controls,
+                    shortcuts: &shortcuts,
+                    status: &status,
+                    trace_timing: options.trace_timing,
+                    dry_run: options.dry_run,
+                };
+                if let Err(error) = handle_client(stream, serving) {
                     eprintln!("client failed: {error}");
                 }
                 end_session(&mut state, sink, dropped_before);

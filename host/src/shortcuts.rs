@@ -65,6 +65,52 @@ pub const MAX_SHORTCUTS: usize = 200;
 /// rude.
 pub const MAX_NAME_CHARS: usize = 64;
 
+/// The shortcuts a fresh install starts with.
+///
+/// These are application conventions, not desktop settings: they are the same
+/// inside every editor and every browser on every desktop, so there is nothing
+/// to detect and nothing to ask. What differs per desktop and per person —
+/// locking the screen, showing all windows, taking a screenshot — is read from
+/// that person's own configuration instead, and is not in this table.
+///
+/// A fresh install cannot start empty, now that the list is what decides what
+/// the phone may fire: an empty list means a phone with no working buttons and
+/// no way to find out why. It cannot start with a list invented either, which
+/// is why this holds only the part that genuinely is universal.
+///
+/// These are not privileged. Every one goes through the same parse and the same
+/// refusals a chord recorded by hand does — `every_convention_is_a_chord_this_host_would_accept`
+/// pins that, and if a rule ever refuses one of these, the rule wins and this
+/// table is what changes.
+const CONVENTIONS: &[(&str, &str)] = &[
+    // Editing. The same keys since before any of these desktops existed.
+    ("Copy", "ctrl+c"),
+    ("Paste", "ctrl+v"),
+    ("Cut", "ctrl+x"),
+    ("Undo", "ctrl+z"),
+    // Applications disagree between this and ctrl+y; this one is the more
+    // common of the two and the only one that is not also a shortcut for
+    // something else.
+    ("Redo", "ctrl+shift+z"),
+    ("Select all", "ctrl+a"),
+    ("Save", "ctrl+s"),
+    ("Find", "ctrl+f"),
+    // Windows and tabs.
+    ("New tab", "ctrl+t"),
+    ("Close tab", "ctrl+w"),
+    ("Reopen closed tab", "ctrl+shift+t"),
+    ("Full screen", "f11"),
+    // Media. Single keys, which is the shape the roadmap decided to allow.
+    ("Play or pause", "playpause"),
+    ("Next track", "nexttrack"),
+    ("Previous track", "previoustrack"),
+    ("Volume up", "volumeup"),
+    ("Volume down", "volumedown"),
+    ("Mute", "mute"),
+    ("Brightness up", "brightnessup"),
+    ("Brightness down", "brightnessdown"),
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shortcut {
     /// Stable for the life of the shortcut, and never reused once it is gone.
@@ -134,16 +180,43 @@ pub struct Shortcuts {
 
 #[allow(dead_code)]
 impl Shortcuts {
-    /// Reads what is on disk, or starts empty.
+    /// Reads what is on disk, seeding the conventions if there is no file yet.
+    ///
+    /// Seeding happens only when the file is *absent*, never when it is present
+    /// and empty. Somebody who has deleted every shortcut has said what they
+    /// want, and handing them back on the next start would be arguing.
     pub fn open() -> Self {
         let path = config_path();
-        let text = path
-            .as_ref()
-            .and_then(|path| fs::read_to_string(path).ok())
-            .unwrap_or_default();
-        let mut shortcuts = Self::parse(&text);
+        let existing = path.as_ref().and_then(|path| fs::read_to_string(path).ok());
+        let fresh = existing.is_none();
+        let mut shortcuts = Self::parse(existing.as_deref().unwrap_or_default());
         shortcuts.path = path;
+        if fresh {
+            shortcuts.seed();
+        }
         shortcuts
+    }
+
+    /// Records the conventions, as though somebody had pressed each of them.
+    ///
+    /// Deliberately through `record`, not around it. A seeded chord gets no
+    /// trusted path: it is parsed, checked and refused by exactly the rules a
+    /// hand-recorded one meets. If one of them is ever refused, the rule wins
+    /// and the table is what changes — so this drops it and says so rather than
+    /// finding a way to force it in.
+    fn seed(&mut self) {
+        for (name, chord) in CONVENTIONS {
+            let keys = match Chord::parse(chord) {
+                Ok(chord) => chord.keys().to_vec(),
+                Err(error) => {
+                    eprintln!("not starting with {name} ({chord}): {error}");
+                    continue;
+                }
+            };
+            if let Err(error) = self.record(name, &keys) {
+                eprintln!("not starting with {name} ({chord}): {error}");
+            }
+        }
     }
 
     /// Reads the file's contents. Free of I/O, so every shape it can arrive in
@@ -226,12 +299,17 @@ impl Shortcuts {
         &self.damaged
     }
 
-    /// Whether this chord is one somebody recorded here.
+    /// Whether the phone may fire this chord.
     ///
-    /// The question the phone's requests will be answered against once it is
-    /// decided whether the recorded set gates what may be fired. Kept now so
-    /// that decision does not need this file reorganised to make it.
-    pub fn contains(&self, chord: &Chord) -> bool {
+    /// The gate. The key vocabulary says how a chord can be *spelled*; this
+    /// says which chords *exist*. Together they mean the phone can only fire
+    /// something a person at this keyboard recorded, imported, or was started
+    /// with — so a combination nobody chose is not reachable, whatever the
+    /// client sends.
+    ///
+    /// It is what makes the vocabulary table safe to widen: that table is a
+    /// spelling dictionary, not a list of permissions.
+    pub fn allows(&self, chord: &Chord) -> bool {
         self.entries.iter().any(|entry| &entry.chord == chord)
     }
 
@@ -588,13 +666,13 @@ mod tests {
     }
 
     #[test]
-    fn a_recorded_chord_can_be_recognised_again() {
-        // What the phone's requests would be checked against, if the recorded
-        // set is what gates them.
+    fn only_a_recorded_chord_may_be_fired() {
+        // The gate, stated plainly: the phone can press what somebody chose
+        // here, and nothing else.
         let mut shortcuts = empty();
         shortcuts.record("Reopen", CTRL_SHIFT_T).unwrap();
-        assert!(shortcuts.contains(&Chord::parse("ctrl+shift+t").unwrap()));
-        assert!(!shortcuts.contains(&Chord::parse("ctrl+shift+n").unwrap()));
+        assert!(shortcuts.allows(&Chord::parse("ctrl+shift+t").unwrap()));
+        assert!(!shortcuts.allows(&Chord::parse("ctrl+shift+n").unwrap()));
     }
 
     #[test]
@@ -606,5 +684,104 @@ mod tests {
         let second = shortcuts.record("Undo close", CTRL_SHIFT_T).unwrap();
         assert_ne!(first, second);
         assert_eq!(shortcuts.list().len(), 2);
+    }
+
+    #[test]
+    fn every_convention_is_a_chord_this_host_would_accept() {
+        // The seeded list gets no trusted path. If a rule ever refuses one of
+        // these — the SysRq pair, the chord ceiling, a key nobody named — this
+        // fails here rather than silently shipping a shortcut that does not
+        // work, and the table is what changes.
+        for (name, chord) in CONVENTIONS {
+            let parsed = Chord::parse(chord)
+                .unwrap_or_else(|error| panic!("{name} ({chord}) is not a chord: {error}"));
+            assert_eq!(&parsed.to_string(), chord, "{name} does not round-trip");
+            assert!(clean_name(name).is_ok(), "{name} is not a usable name");
+        }
+    }
+
+    #[test]
+    fn the_conventions_are_distinct() {
+        // Two rows with the same name are two buttons nobody can tell apart.
+        let mut names = std::collections::HashSet::new();
+        let mut chords = std::collections::HashSet::new();
+        for (name, chord) in CONVENTIONS {
+            assert!(names.insert(*name), "{name} appears twice");
+            assert!(chords.insert(*chord), "{chord} appears twice");
+        }
+    }
+
+    #[test]
+    fn a_fresh_install_can_fire_the_things_everybody_expects() {
+        // A list that gates, seeded from nothing, would mean a phone whose
+        // buttons all silently do nothing.
+        let mut shortcuts = empty();
+        shortcuts.seed();
+        assert_eq!(shortcuts.list().len(), CONVENTIONS.len());
+        for text in [
+            "ctrl+c",
+            "ctrl+v",
+            "ctrl+shift+t",
+            "f11",
+            "playpause",
+            "mute",
+        ] {
+            let chord = Chord::parse(text).unwrap();
+            assert!(
+                shortcuts.allows(&chord),
+                "{text} should work out of the box"
+            );
+        }
+    }
+
+    #[test]
+    fn what_nobody_chose_is_not_reachable() {
+        // The point of the gate. These are all spellable — the vocabulary
+        // knows every key in them — and none of them is in the list.
+        let mut shortcuts = empty();
+        shortcuts.seed();
+        for text in [
+            "ctrl+alt+f3",
+            "super+l",
+            "ctrl+alt+delete",
+            "print",
+            "super",
+        ] {
+            let chord = Chord::parse(text).expect("spellable");
+            assert!(
+                !shortcuts.allows(&chord),
+                "{text} was reachable without being chosen"
+            );
+        }
+    }
+
+    #[test]
+    fn seeding_survives_being_written_down_and_read_back() {
+        let mut shortcuts = empty();
+        shortcuts.seed();
+        let reloaded = Shortcuts::parse(&shortcuts.render());
+        assert!(reloaded.damaged().is_empty());
+        assert_eq!(reloaded.list().len(), CONVENTIONS.len());
+        assert!(reloaded.allows(&Chord::parse("ctrl+shift+t").unwrap()));
+    }
+
+    #[test]
+    fn a_deleted_convention_stays_deleted() {
+        // Somebody who removed Copy has said what they want. Seeding happens
+        // only when there is no file at all, so a list that exists is never
+        // argued with — this pins the half of that which does not need a disk.
+        let mut shortcuts = empty();
+        shortcuts.seed();
+        let copy = shortcuts
+            .list()
+            .iter()
+            .find(|entry| entry.name == "Copy")
+            .expect("Copy is seeded")
+            .id;
+        shortcuts.remove(copy).unwrap();
+
+        let reloaded = Shortcuts::parse(&shortcuts.render());
+        assert!(!reloaded.allows(&Chord::parse("ctrl+c").unwrap()));
+        assert_eq!(reloaded.list().len(), CONVENTIONS.len() - 1);
     }
 }
