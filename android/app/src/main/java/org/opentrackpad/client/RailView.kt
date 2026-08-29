@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.TextPaint
@@ -15,7 +14,6 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
-import androidx.core.graphics.PathParser
 
 /**
  * One rail of five slots, drawn and hit-tested as a single view.
@@ -83,18 +81,6 @@ class RailView @JvmOverloads constructor(
         val FAINT = Color.parseColor("#4E545B")
         val LIME = Color.parseColor("#A3E635")
         val LIME_BRIGHT = Color.parseColor("#BBEF6B")
-
-        /**
-         * Parsed glyphs, kept for the life of the process.
-         *
-         * A rail redraws whenever a finger goes down on it and there are a few
-         * dozen glyphs in all, so parsing them once and holding them costs a
-         * few kilobytes and saves the work every time.
-         */
-        val GLYPHS = HashMap<String, Path>()
-
-        fun glyph(pathData: String): Path =
-            GLYPHS.getOrPut(pathData) { PathParser.createPathFromPathData(pathData) }
     }
 
     /** What a press asks for. Set by the activity; never called for a dead slot. */
@@ -312,7 +298,7 @@ class RailView @JvmOverloads constructor(
         canvas.save()
         canvas.translate(bounds.centerX() - iconSize / 2f, top)
         canvas.scale(iconSize / ICON_GRID, iconSize / ICON_GRID)
-        canvas.drawPath(glyph(slot.icon), stroke)
+        canvas.drawPath(RailIcons.parsed(slot.icon), stroke)
         canvas.restore()
 
         label.color = ink

@@ -1,5 +1,8 @@
 package org.opentrackpad.client
 
+import android.graphics.Path
+import androidx.core.graphics.PathParser
+
 /**
  * The glyphs the rails draw, as SVG path data on a 20-by-20 grid.
  *
@@ -101,6 +104,19 @@ object RailIcons {
 
     /** The path data for [name], or the blank key if there is no such glyph. */
     fun path(name: String): String = PATHS[name] ?: PATHS.getValue(FALLBACK)
+
+    /**
+     * The same glyph as a drawable path, parsed once and kept.
+     *
+     * Shared by everything that draws one — the rails and the Quick Ring show
+     * the same shortcut in two places, and parsing it twice would be both
+     * wasted and a way for them to drift. There are a few dozen glyphs in all,
+     * so holding them costs a few kilobytes for the life of the process.
+     */
+    fun parsed(pathData: String): Path =
+        GLYPHS.getOrPut(pathData) { PathParser.createPathFromPathData(pathData) }
+
+    private val GLYPHS = HashMap<String, Path>()
 
     /** The glyph name for an action, which today is always a chord. */
     fun forAction(action: Action): String = when (action) {

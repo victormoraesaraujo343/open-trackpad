@@ -12,15 +12,31 @@ import kotlin.math.roundToInt
  * landscape, so one unit is a fixed fraction of a millimetre and this class is
  * the only place that conversion happens.
  *
- * ## Why not dp
+ * ## Which things are measured this way, and which are not
  *
- * dp is a good unit for an app and the wrong one for a peripheral. It is
- * relative to a display density the person can change: Android's display-size
- * slider alters `densityDpi` and every dp on the screen with it. That is
- * correct for text you read and wrong for a button you hit without looking,
- * because a trackpad's buttons are a fixed size in the hand and do not move
- * because somebody changed a setting. That distinction is what separates an
- * object from an app, and this design leans on being an object.
+ * **Millimetres are for what a hand aims at without looking. System sizing is
+ * for what eyes read at reading distance.** That is the whole rule, and it
+ * decides every case in this app:
+ *
+ * | measured in millimetres | left to the system |
+ * | --- | --- |
+ * | the rails and their slots | the card that explains a broken session |
+ * | the glyphs and labels on them | anything with a paragraph in it |
+ * | the pad, and the margins around it | |
+ * | the Quick Ring's wedges | |
+ *
+ * A rail label is not reading; it is the word under a key, recognised at a
+ * glance in a slot that cannot grow to hold it. The card is read, from wherever
+ * the person happens to be sitting, and there the system's own sizing — which
+ * the person may well have turned up because they need it — is the right
+ * answer. Following it there costs nothing, because a card can grow.
+ *
+ * dp is relative to a display density the person can change: Android's
+ * display-size slider alters `densityDpi` and every dp on the screen with it.
+ * That is correct for text you read and wrong for a button you hit without
+ * looking, because a trackpad's buttons are a fixed size in the hand and do not
+ * move because somebody changed a setting. That distinction is what separates
+ * an object from an app, and this design leans on being an object.
  *
  * It also failed in practice, which is how it was found. The artboards are 780
  * units wide; the phone they were drawn for reports **1029 dp**. Reading units
