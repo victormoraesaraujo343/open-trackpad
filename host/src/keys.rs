@@ -7,6 +7,31 @@
 //! The set is deliberately closed. Anything outside it is rejected, which is
 //! what stops a control surface from turning into a way to press arbitrary keys
 //! on someone's desktop.
+//!
+//! # Why it covers a whole keyboard now
+//!
+//! It used to hold the handful of keys the built-in profiles reach for. The
+//! recorder captures whatever key was actually pressed on the host, so a
+//! vocabulary with gaps in it fails at the moment somebody presses one — and it
+//! fails by telling them their keyboard is wrong.
+//!
+//! Widening the names does not widen who may add a shortcut. What the phone is
+//! allowed to *fire* is a separate question, kept in `crate::shortcuts`; a name
+//! existing here only means the host can say what a key is called.
+//!
+//! # `print` is `KEY_SYSRQ`, and that is worth knowing
+//!
+//! Print Screen and SysRq are one key. On a kernel with `kernel.sysrq` enabled,
+//! Alt held with it is the magic SysRq sequence — `alt+print+b` reboots the
+//! machine without unmounting anything, and a virtual keyboard can produce it
+//! as readily as a real one.
+//!
+//! It is in the list because the person at the machine may reasonably want Print
+//! Screen on a rail button, which is the decision recorded in the roadmap. The
+//! protection is not this list: it is that a chord has to be recorded by
+//! somebody physically pressing it here before the phone can fire it. That
+//! protection only holds if `crate::shortcuts` is what decides what may be
+//! fired, which is the open question in the notes for the orchestrator.
 
 use evdev::KeyCode;
 
@@ -16,14 +41,18 @@ use evdev::KeyCode;
 /// pin every modifier on the keyboard down at once.
 pub const MAX_CHORD_KEYS: usize = 5;
 
-/// Every key the control surface is allowed to press, by the name the client
-/// uses for it.
+/// Every key this host knows a name for.
 ///
-/// Grouped the way the v0.2 profiles are: modifiers, navigation, editing, and
-/// media. Adding to this list is how the vocabulary grows; nothing else needs
-/// to change.
+/// Grouped as a keyboard is laid out rather than as the profiles use it, since
+/// the recorder has to name whatever gets pressed. Adding to this list is how
+/// the vocabulary grows; nothing else needs to change.
 const NAMED_KEYS: &[(&str, KeyCode)] = &[
     // Modifiers.
+    //
+    // The left-hand key of each pair, and only that one. A shortcut is about
+    // the symbol, not about which of two physical keys produced it, and a
+    // recorder that told them apart would let someone save a chord their own
+    // right hand could not fire.
     ("ctrl", KeyCode::KEY_LEFTCTRL),
     ("shift", KeyCode::KEY_LEFTSHIFT),
     ("alt", KeyCode::KEY_LEFTALT),
@@ -35,6 +64,7 @@ const NAMED_KEYS: &[(&str, KeyCode)] = &[
     ("space", KeyCode::KEY_SPACE),
     ("backspace", KeyCode::KEY_BACKSPACE),
     ("delete", KeyCode::KEY_DELETE),
+    ("insert", KeyCode::KEY_INSERT),
     ("home", KeyCode::KEY_HOME),
     ("end", KeyCode::KEY_END),
     ("pageup", KeyCode::KEY_PAGEUP),
@@ -43,22 +73,69 @@ const NAMED_KEYS: &[(&str, KeyCode)] = &[
     ("right", KeyCode::KEY_RIGHT),
     ("up", KeyCode::KEY_UP),
     ("down", KeyCode::KEY_DOWN),
-    // Letters the profiles reach for: copy, paste, cut, undo, redo, find,
-    // reload, new tab, close tab, save, quit.
+    ("menu", KeyCode::KEY_COMPOSE),
+    // The lock and system cluster.
+    //
+    // `print` is `KEY_SYSRQ`; see the note above this table.
+    ("print", KeyCode::KEY_SYSRQ),
+    ("scrolllock", KeyCode::KEY_SCROLLLOCK),
+    ("pause", KeyCode::KEY_PAUSE),
+    ("capslock", KeyCode::KEY_CAPSLOCK),
+    ("numlock", KeyCode::KEY_NUMLOCK),
+    // Letters. All of them now, not the handful the built-in profiles reach
+    // for: the recorder captures whatever key was actually pressed, and a
+    // vocabulary with gaps in it fails at the moment somebody presses one.
     ("a", KeyCode::KEY_A),
+    ("b", KeyCode::KEY_B),
     ("c", KeyCode::KEY_C),
+    ("d", KeyCode::KEY_D),
+    ("e", KeyCode::KEY_E),
     ("f", KeyCode::KEY_F),
+    ("g", KeyCode::KEY_G),
+    ("h", KeyCode::KEY_H),
+    ("i", KeyCode::KEY_I),
+    ("j", KeyCode::KEY_J),
+    ("k", KeyCode::KEY_K),
     ("l", KeyCode::KEY_L),
+    ("m", KeyCode::KEY_M),
     ("n", KeyCode::KEY_N),
+    ("o", KeyCode::KEY_O),
+    ("p", KeyCode::KEY_P),
     ("q", KeyCode::KEY_Q),
     ("r", KeyCode::KEY_R),
     ("s", KeyCode::KEY_S),
     ("t", KeyCode::KEY_T),
+    ("u", KeyCode::KEY_U),
     ("v", KeyCode::KEY_V),
     ("w", KeyCode::KEY_W),
     ("x", KeyCode::KEY_X),
     ("y", KeyCode::KEY_Y),
     ("z", KeyCode::KEY_Z),
+    // Digits, on the number row.
+    ("0", KeyCode::KEY_0),
+    ("1", KeyCode::KEY_1),
+    ("2", KeyCode::KEY_2),
+    ("3", KeyCode::KEY_3),
+    ("4", KeyCode::KEY_4),
+    ("5", KeyCode::KEY_5),
+    ("6", KeyCode::KEY_6),
+    ("7", KeyCode::KEY_7),
+    ("8", KeyCode::KEY_8),
+    ("9", KeyCode::KEY_9),
+    // Punctuation, by the symbol on an unshifted US keyboard. Named rather
+    // than spelled, so a name never collides with the `+` that joins a chord
+    // or with the spaces that separate protocol fields.
+    ("minus", KeyCode::KEY_MINUS),
+    ("equal", KeyCode::KEY_EQUAL),
+    ("leftbracket", KeyCode::KEY_LEFTBRACE),
+    ("rightbracket", KeyCode::KEY_RIGHTBRACE),
+    ("backslash", KeyCode::KEY_BACKSLASH),
+    ("semicolon", KeyCode::KEY_SEMICOLON),
+    ("apostrophe", KeyCode::KEY_APOSTROPHE),
+    ("grave", KeyCode::KEY_GRAVE),
+    ("comma", KeyCode::KEY_COMMA),
+    ("period", KeyCode::KEY_DOT),
+    ("slash", KeyCode::KEY_SLASH),
     // Function keys, for full screen and the like.
     ("f1", KeyCode::KEY_F1),
     ("f2", KeyCode::KEY_F2),
@@ -72,6 +149,23 @@ const NAMED_KEYS: &[(&str, KeyCode)] = &[
     ("f10", KeyCode::KEY_F10),
     ("f11", KeyCode::KEY_F11),
     ("f12", KeyCode::KEY_F12),
+    // The keypad, which reports its own codes and is not the number row.
+    ("kp0", KeyCode::KEY_KP0),
+    ("kp1", KeyCode::KEY_KP1),
+    ("kp2", KeyCode::KEY_KP2),
+    ("kp3", KeyCode::KEY_KP3),
+    ("kp4", KeyCode::KEY_KP4),
+    ("kp5", KeyCode::KEY_KP5),
+    ("kp6", KeyCode::KEY_KP6),
+    ("kp7", KeyCode::KEY_KP7),
+    ("kp8", KeyCode::KEY_KP8),
+    ("kp9", KeyCode::KEY_KP9),
+    ("kpplus", KeyCode::KEY_KPPLUS),
+    ("kpminus", KeyCode::KEY_KPMINUS),
+    ("kpasterisk", KeyCode::KEY_KPASTERISK),
+    ("kpslash", KeyCode::KEY_KPSLASH),
+    ("kpenter", KeyCode::KEY_KPENTER),
+    ("kpdot", KeyCode::KEY_KPDOT),
     // Media.
     ("playpause", KeyCode::KEY_PLAYPAUSE),
     ("nexttrack", KeyCode::KEY_NEXTSONG),
@@ -80,6 +174,7 @@ const NAMED_KEYS: &[(&str, KeyCode)] = &[
     ("volumeup", KeyCode::KEY_VOLUMEUP),
     ("volumedown", KeyCode::KEY_VOLUMEDOWN),
     ("mute", KeyCode::KEY_MUTE),
+    ("micmute", KeyCode::KEY_MICMUTE),
     ("brightnessup", KeyCode::KEY_BRIGHTNESSUP),
     ("brightnessdown", KeyCode::KEY_BRIGHTNESSDOWN),
 ];
@@ -90,6 +185,18 @@ pub fn key_by_name(name: &str) -> Option<KeyCode> {
         .iter()
         .find(|(known, _)| *known == name)
         .map(|(_, code)| *code)
+}
+
+/// The name this host uses for a key, if it has one.
+///
+/// The reverse of `key_by_name`, needed because a recorded chord arrives as key
+/// codes and has to be written down: stored on disk, drawn as key caps in the
+/// recorder, and listed on the phone.
+pub fn name_of(code: KeyCode) -> Option<&'static str> {
+    NAMED_KEYS
+        .iter()
+        .find(|(_, known)| *known == code)
+        .map(|(name, _)| *name)
 }
 
 /// Every key the virtual keyboard must declare it can produce.
@@ -132,6 +239,51 @@ impl Chord {
             return Err(ChordError::Empty);
         }
         Ok(Self(keys))
+    }
+    /// Builds a chord from keys the recorder actually saw pressed.
+    ///
+    /// Not called yet: the recorder window is the only caller and it is the
+    /// next piece. Kept here because it is the validated way in, and the
+    /// window should find it waiting rather than invent its own.
+    #[allow(dead_code)]
+    ///
+    /// Goes through the same checks a chord off the wire does — every key must
+    /// be one this host has a name for, nothing may repeat, and the ceiling
+    /// still applies. A recorded chord is not a privileged chord: it is written
+    /// down, read back and validated exactly like any other, so there is no
+    /// second way into the keyboard that skips the first way's rules.
+    pub fn from_keys(keys: &[KeyCode]) -> Result<Self, ChordError> {
+        let mut chord = Vec::with_capacity(keys.len());
+        for key in keys {
+            if chord.len() >= MAX_CHORD_KEYS {
+                return Err(ChordError::TooManyKeys);
+            }
+            let name = name_of(*key).ok_or_else(|| ChordError::Unknown(format!("{key:?}")))?;
+            if chord.contains(key) {
+                return Err(ChordError::Repeated(name.to_owned()));
+            }
+            chord.push(*key);
+        }
+        if chord.is_empty() {
+            return Err(ChordError::Empty);
+        }
+        Ok(Self(chord))
+    }
+}
+
+impl std::fmt::Display for Chord {
+    /// Writes the chord the way it is read: `ctrl+shift+t`.
+    ///
+    /// Every key in a chord came from the table, so every one has a name and
+    /// this always round-trips through `parse`.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (position, key) in self.0.iter().enumerate() {
+            if position > 0 {
+                formatter.write_str("+")?;
+            }
+            formatter.write_str(name_of(*key).unwrap_or("?"))?;
+        }
+        Ok(())
     }
 }
 

@@ -378,6 +378,38 @@ pub fn escape_text(text: &str) -> String {
     escaped
 }
 
+/// Reads back what `escape_text` wrote, or nothing if it was not written by it.
+///
+/// Needed because the same encoding now protects the file custom shortcuts are
+/// kept in: a name is free text a person typed, and a name containing a newline
+/// would otherwise be able to add lines to that file. One encoding, used in both
+/// places, for the same reason.
+///
+/// Strict on the way back. A field holding a raw space, a control character or
+/// a truncated escape was not produced by `escape_text`, so it is refused rather
+/// than half-read — a hand-edited file is exactly where a guess would hurt.
+pub fn unescape_text(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut position = 0;
+    while position < bytes.len() {
+        match bytes[position] {
+            b'%' => {
+                let digits = bytes.get(position + 1..position + 3)?;
+                let digits = std::str::from_utf8(digits).ok()?;
+                decoded.push(u8::from_str_radix(digits, 16).ok()?);
+                position += 3;
+            }
+            byte @ b'!'..=b'~' => {
+                decoded.push(byte);
+                position += 1;
+            }
+            _ => return None,
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
 fn render_entity(entity: &audio::Entity) -> String {
     let target = match entity.target {
         Some(id) => id.to_string(),

@@ -13,6 +13,7 @@ mod pad;
 mod panel;
 mod protocol;
 mod selftest;
+mod shortcuts;
 mod sink;
 mod state;
 mod status;
@@ -25,6 +26,7 @@ use std::net::{TcpListener, TcpStream};
 use keyboard::{ActionRate, Controls};
 use panel::{AudioPanel, Outbox};
 use protocol::{Accepted, Action, Capabilities, Domain, Outbound, Session};
+use shortcuts::Shortcuts;
 use sink::{DebugSink, LazyTouchpad, PadSink};
 use state::ContactState;
 use status::{State, StatusFile};
@@ -389,6 +391,21 @@ fn run() -> io::Result<()> {
         let result = selftest::run(&mut state, sink);
         end_session(&mut state, sink, 0);
         return result;
+    }
+
+    // Read once at start rather than per session: they belong to the machine,
+    // not to whichever phone happens to be plugged in.
+    let shortcuts = Shortcuts::open();
+    for line in shortcuts.damaged() {
+        // Said rather than swallowed. A shortcut that quietly stopped existing
+        // is worse than one that says why, and this is the only place someone
+        // would find out that a hand-edited file has a mistake in it.
+        eprintln!("ignoring a shortcut that could not be read: {line}");
+    }
+    match shortcuts.list().len() {
+        0 => {}
+        1 => println!("  1 custom shortcut"),
+        count => println!("  {count} custom shortcuts"),
     }
 
     let listener = TcpListener::bind(&options.address)?;
