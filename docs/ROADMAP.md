@@ -50,6 +50,23 @@
 The visual design is being produced separately. These are the parts underneath
 it, which do not depend on how the screens look.
 
+The active screen holds two things: the trackpad, and a rail down each side.
+There is no header, no status bar and no settings button — every pixel that is
+not a rail belongs to the touch surface. Which side each rail takes is a
+setting.
+
+One rail holds shortcuts: four on the rail itself, and a fifth slot that opens
+the Quick Ring. The ring is therefore not a shortcut menu but the app's only way
+in to anything at all: settings, profile editing, modes, connection detail and
+whatever comes later. Which four shortcuts sit on the rail is chosen from inside
+it.
+
+That constraint is the point rather than an omission. A dedicated peripheral
+should not spend its surface on chrome.
+
+The other rail holds recently used desktop applications, and is deferred: see
+Milestone 5.
+
 - [x] A separate virtual keyboard, so shortcuts cannot corrupt touch state
 - [x] A closed vocabulary of key names, with no way to run a command
 - [x] `ACTION` messages alongside touch frames
@@ -58,6 +75,22 @@ it, which do not depend on how the screens look.
 - [x] Send actions from the Android client
 - [ ] Profiles: which shortcuts appear where
 - [ ] Mouse buttons as actions
+
+## Milestone 5 — recent applications rail
+
+Four recently used desktop windows on a rail, a fifth slot listing the rest, and
+tapping one switches to it.
+
+Deferred because Linux has no single way to do it. KDE exposes windows through
+`org_kde_plasma_window_management`, confirmed present on the development
+machine; wlroots compositors use a different protocol; GNOME needs an extension.
+X11 has EWMH, which works everywhere it applies.
+
+- [ ] List open windows and their recent order, per desktop environment
+- [ ] Activate a window by request
+- [ ] Fetch application icons
+- [ ] Carry the window list to the client and requests back
+- [ ] Hide the rail entirely where the desktop cannot answer
 
 ## Milestone 4 — wireless fallback
 

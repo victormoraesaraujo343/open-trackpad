@@ -66,6 +66,8 @@ against a shared literal rather than against each other's assumptions.
 | --- | --- |
 | `Protocol.kt` | The OTP/3 wire format, and nothing else. |
 | `Action.kt` | The closed set of things a control button may ask for. |
+| `Shortcuts.kt` | Profiles, and how the rail and the Quick Ring divide them. |
+| `ProfileStore.kt` | Reading and writing what the user has chosen. |
 | `TouchSurfaceView.kt` | Turning `MotionEvent` into complete contact snapshots. |
 | `FrameQueue.kt` | What to discard when frames outpace the socket. |
 | `HostConnection.kt` | The socket, the sender thread, reconnection. |
@@ -91,6 +93,23 @@ shortcuts overtake.
 every frame is a complete snapshot and a newer one supersedes an older one
 entirely. Frames that change *which fingers exist* never are — dropping one
 would leave the host believing a finger is still down. See its tests.
+
+## Profiles and the rail
+
+A profile is one ordered list of shortcuts, not a rail list and a ring list. The
+first four appear on the rail; everything after them lives in the Quick Ring.
+Promoting a shortcut to the rail is moving it up that list, which is exactly
+what reordering from inside the ring does — and it means the two views can never
+disagree about what exists.
+
+The shipped profiles are placeholders in `DefaultProfiles`, which is the only
+place they appear. Which shortcuts belong where is a product question that has
+not been settled; nothing else in the code assumes these particular ones.
+
+Settings and profiles are stored as tab-separated lines rather than JSON: it is
+a handful of fields, it reads clearly in a bug report, it needs no dependency,
+and encoding and decoding are ordinary functions with tests. A damaged file
+costs the user their customisation, never the use of the app.
 
 ## Looking after the screen
 
