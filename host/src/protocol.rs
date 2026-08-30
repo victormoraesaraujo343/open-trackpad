@@ -354,7 +354,16 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     /// The client's own numbering, echoed back when a request is refused so it
-    /// knows which fader to put back. Parsed and otherwise not acted on.
+    /// knows which one was turned down.
+    ///
+    /// **Must increase within a session, across every domain.** `REFUSED` names
+    /// a sequence and nothing else, so if two domains could each produce a
+    /// request numbered 1, a refusal would be ambiguous — and the way that
+    /// fails is a refusal landing on the wrong screen, or on none, which looks
+    /// like a button that sometimes does nothing.
+    ///
+    /// One counter for the whole session settles it, so the requirement is
+    /// enforced rather than written down and hoped for.
     pub sequence: u64,
     pub domain: Domain,
     pub verb: Verb,
@@ -925,6 +934,8 @@ pub enum Accepted {
 #[derive(Debug, Default)]
 pub struct Session {
     hello: Option<Hello>,
+    /// The last request number seen, so a refusal always names exactly one.
+    last_request: Option<u64>,
     /// What the client said it speaks. Nothing introduced after it is accepted
     /// — a version is a promise about what may arrive, not only about the
     /// shape of the handshake.
@@ -1000,6 +1011,23 @@ impl Session {
                         request.domain
                     )));
                 }
+                // Checked last, and recorded only once everything else has
+                // passed: a request turned down for another reason should not
+                // burn its number.
+                //
+                // `REFUSED` names a sequence and nothing else, so two domains
+                // each numbering from one would make a refusal ambiguous — and
+                // that fails as a refusal shown on the wrong screen or on none,
+                // which reads as a button that sometimes does nothing.
+                if self
+                    .last_request
+                    .is_some_and(|previous| request.sequence <= previous)
+                {
+                    return Err(ProtocolError(
+                        "request sequence did not increase; one counter serves every domain".into(),
+                    ));
+                }
+                self.last_request = Some(request.sequence);
                 Ok(Accepted::Request(request))
             }
             Message::Frame(frame) => {
@@ -1042,7 +1070,8 @@ mod tests {
             .unwrap();
         session.grant(Capabilities {
             audio: true,
-            ..Capabilities::NONE
+            shortcuts: true,
+            import: true,
         });
         session
     }
@@ -2003,5 +2032,38 @@ mod tests {
         let line = format!("REQUEST 1 import ACCEPT 1 {}", everything.join(","));
         assert!(line.len() < MAX_LINE_BYTES, "{} bytes", line.len());
         assert!(parse_message(&line).is_ok());
+    }
+
+    #[test]
+    fn one_counter_serves_every_domain() {
+        // `REFUSED` names a sequence and nothing else, so two domains each
+        // numbering from one would make a refusal ambiguous. That fails as a
+        // refusal shown on the wrong screen or on none at all, which reads as a
+        // button that sometimes does nothing — so it is refused at the door
+        // rather than written down and hoped for.
+        let mut session = session_with_audio();
+        assert!(session.accept("REQUEST 1 audio REFRESH").is_ok());
+        assert!(session.accept("REQUEST 2 shortcuts REFRESH").is_ok());
+        // A second domain starting its own count.
+        assert!(session.accept("REQUEST 1 shortcuts REFRESH").is_err());
+    }
+
+    #[test]
+    fn request_numbers_may_skip_but_not_repeat() {
+        let mut session = session_with_audio();
+        assert!(session.accept("REQUEST 5 audio REFRESH").is_ok());
+        // Gaps are fine — a client may share one counter with its actions.
+        assert!(session.accept("REQUEST 900 audio REFRESH").is_ok());
+        assert!(session.accept("REQUEST 900 audio REFRESH").is_err());
+    }
+
+    #[test]
+    fn requests_and_frames_keep_their_own_counts() {
+        // They are independent paths; neither may disturb the other's ordering.
+        let mut session = session_with_audio();
+        session.accept("FRAME 10 1000 0").unwrap();
+        session.accept("REQUEST 1 audio REFRESH").unwrap();
+        assert!(session.accept("FRAME 11 1001 0").is_ok());
+        assert!(session.accept("REQUEST 2 audio REFRESH").is_ok());
     }
 }
