@@ -446,7 +446,12 @@ REQUEST <sequence> windows ACTIVATE <id>
   UUIDs and never cross the wire — a stale rail button must not be able to
   switch to whatever window inherited an identifier
 - `application`: what owns the window, which is what tells four browser windows
-  apart
+  apart. It is the name the application gives itself, in the reader own
+  language, resolved by asking rather than guessing: the compositor says which
+  desktop entry a window belongs to, and the entry says what it is called. No
+  inference at either step, which matters because a class name is often not the
+  entry name and a guess would fail silently by falling back. Where a window
+  declares no entry, its class is sent as it is
 - `title`: percent-encoded
 
 **Switching is the only request.** Not close, not minimise, not move. The design
