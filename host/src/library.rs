@@ -69,7 +69,7 @@ enum Wake {
     Changed,
     /// The desktop's window list moved: something opened, closed, or was
     /// switched to.
-    WindowsMoved(Vec<(String, String, String)>),
+    WindowsMoved(Vec<windows::Reported>),
     Stop,
 }
 

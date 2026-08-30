@@ -69,6 +69,18 @@ pub const MAX_WINDOWS: usize = 30;
 /// The longest title carried, in characters.
 pub const MAX_TITLE_CHARS: usize = 128;
 
+/// One window as the script reported it, before this host has named it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reported {
+    pub kwin_id: String,
+    /// The window's resource class — `org.kde.dolphin`, `systemsettings`.
+    pub class: String,
+    /// The desktop entry KWin says the window belongs to, when it knows one.
+    /// Empty for a window that declares none.
+    pub desktop_entry: String,
+    pub title: String,
+}
+
 /// One window, as the rail shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Window {
@@ -94,7 +106,7 @@ fn script() -> String {
     let out = [];
     for (const w of workspace.stackingOrder) {{
         if (w.normalWindow && w.caption.length > 0) {{
-            out.unshift([String(w.internalId), w.resourceClass, w.caption]);
+            out.unshift([String(w.internalId), w.resourceClass, String(w.desktopFileName), w.caption]);
         }}
     }}
     print("{MARKER} " + JSON.stringify(out));
@@ -110,7 +122,7 @@ report("start");
 /// Reads one line the script printed.
 ///
 /// Free of I/O, so every shape it can arrive in is testable without a desktop.
-pub fn parse_report(line: &str) -> Option<Vec<(String, String, String)>> {
+pub fn parse_report(line: &str) -> Option<Vec<Reported>> {
     let payload = line.split_once(MARKER)?.1.trim();
     let parsed = json::parse(payload).ok()?;
     let entries = parsed.as_array()?;
@@ -118,17 +130,18 @@ pub fn parse_report(line: &str) -> Option<Vec<(String, String, String)>> {
     let mut windows = Vec::with_capacity(entries.len());
     for entry in entries.iter().take(MAX_WINDOWS) {
         let fields = entry.as_array()?;
-        let [kwin_id, application, title] = fields else {
-            // A row that is not three fields is not a window. One malformed row
+        let [kwin_id, class, desktop_entry, title] = fields else {
+            // A row that is not four fields is not a window. One malformed row
             // means a report this host does not understand, and acting on half
             // of it would be worse than waiting for the next one.
             return None;
         };
-        windows.push((
-            kwin_id.as_str()?.to_owned(),
-            application.as_str()?.to_owned(),
-            clamp(title.as_str()?),
-        ));
+        windows.push(Reported {
+            kwin_id: kwin_id.as_str()?.to_owned(),
+            class: class.as_str()?.to_owned(),
+            desktop_entry: desktop_entry.as_str()?.to_owned(),
+            title: clamp(title.as_str()?),
+        });
     }
     Some(windows)
 }
@@ -140,11 +153,128 @@ fn clamp(title: &str) -> String {
     title.chars().take(MAX_TITLE_CHARS).collect()
 }
 
+/// The name an application gives itself, from its desktop entry.
+///
+/// `org.kde.dolphin` and `systemsettings` are identifiers, and in the fifteen
+/// millimetres a rail slot has they truncate to "org.kde.d…" and "systemse…",
+/// which identify nothing. The application already declares what it is called —
+/// `Name=Dolphin`, `Name=System Settings` — so this asks rather than guessing
+/// from the shape of an identifier, which is the same rule the curated GNOME
+/// shortcut names follow.
+///
+/// Which entry to read is not guessed either: KWin says which one a window
+/// belongs to. That matters more than it looks — on this machine the class
+/// `Ship-studio` belongs to `ship_studio.desktop` and `Handy` to
+/// `handy.desktop`, neither of which a name-shaped guess would have found.
+///
+/// In the person's own language where the entry offers one, by the rule the
+/// desktop entry specification sets out: the most specific match for the locale
+/// first, then the bare language, then the untranslated name.
+fn read_display_name(entry: &str, locale: Option<&str>) -> Option<String> {
+    if entry.is_empty() {
+        return None;
+    }
+    // A desktop entry name is a file name and nothing else. Anything with a
+    // path separator in it is not one, and is refused rather than followed.
+    if entry.contains('/') || entry.contains("..") {
+        return None;
+    }
+    let file = if entry.ends_with(".desktop") {
+        entry.to_owned()
+    } else {
+        format!("{entry}.desktop")
+    };
+
+    for directory in entry_directories() {
+        let path = directory.join(&file);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(name) = name_from_entry(&text, locale) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+/// Where desktop entries live, most specific first.
+fn entry_directories() -> Vec<std::path::PathBuf> {
+    let mut directories = Vec::new();
+    if let Some(home) = std::env::var_os("XDG_DATA_HOME") {
+        directories.push(std::path::PathBuf::from(home).join("applications"));
+    } else if let Some(home) = std::env::var_os("HOME") {
+        directories.push(std::path::PathBuf::from(home).join(".local/share/applications"));
+    }
+    let shared =
+        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".to_owned());
+    for base in shared.split(':').filter(|base| !base.is_empty()) {
+        directories.push(std::path::PathBuf::from(base).join("applications"));
+    }
+    // Flatpak exports its own, and they are not always on the data path.
+    directories.push(std::path::PathBuf::from(
+        "/var/lib/flatpak/exports/share/applications",
+    ));
+    directories
+}
+
+/// Reads `Name` out of a desktop entry, preferring the person's language.
+///
+/// Free of I/O so the awkward shapes are testable: the key appears in other
+/// groups too, and only the one under `[Desktop Entry]` is the application's
+/// own name.
+pub fn name_from_entry(text: &str, locale: Option<&str>) -> Option<String> {
+    // `pt_BR.UTF-8@euro` narrows to `pt_BR` and then to `pt`, which is the
+    // order the specification asks for.
+    let locale = locale.map(|full| full.split(['.', '@']).next().unwrap_or(full).to_owned());
+    let language = locale
+        .as_deref()
+        .and_then(|full| full.split('_').next())
+        .map(str::to_owned);
+
+    let mut in_entry = false;
+    let mut best: Option<String> = None;
+    let mut best_rank = 0;
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_entry = line == "[Desktop Entry]";
+            continue;
+        }
+        if !in_entry {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        let rank = match key {
+            "Name" => 1,
+            _ => match key
+                .strip_prefix("Name[")
+                .and_then(|rest| rest.strip_suffix(']'))
+            {
+                Some(tag) if Some(tag) == locale.as_deref() => 3,
+                Some(tag) if Some(tag) == language.as_deref() => 2,
+                _ => 0,
+            },
+        };
+        if rank > best_rank && !value.is_empty() {
+            best_rank = rank;
+            best = Some(value.to_owned());
+        }
+    }
+    best
+}
+
 /// Hands out this host's numbers, one per window, never reused.
 #[derive(Default)]
 pub struct Numbering {
     assigned: HashMap<String, u32>,
     next: u32,
+    /// Display names already looked up, by desktop entry.
+    named: HashMap<String, String>,
+    locale: Option<String>,
 }
 
 impl Numbering {
@@ -152,6 +282,12 @@ impl Numbering {
         Self {
             assigned: HashMap::new(),
             next: 1,
+            named: HashMap::new(),
+            locale: std::env::var("LC_ALL")
+                .or_else(|_| std::env::var("LC_MESSAGES"))
+                .or_else(|_| std::env::var("LANG"))
+                .ok()
+                .filter(|locale| !locale.is_empty() && locale != "C" && locale != "POSIX"),
         }
     }
 
@@ -160,9 +296,37 @@ impl Numbering {
     /// A window that has gone keeps its number retired rather than freed: the
     /// phone holds these to say which button is which, and handing one back out
     /// would let a stale button switch to whatever window inherited it.
-    pub fn number(&mut self, report: Vec<(String, String, String)>) -> Vec<Window> {
+    pub fn number(&mut self, report: Vec<Reported>) -> Vec<Window> {
         let mut windows = Vec::with_capacity(report.len());
-        for (kwin_id, application, title) in report {
+        for entry in report {
+            let Reported {
+                kwin_id,
+                class,
+                desktop_entry,
+                title,
+            } = entry;
+            // Cached by desktop entry, and only when there is one. A window
+            // that declares none falls back to its own class every time:
+            // caching the empty entry would key every unidentified window to
+            // whichever was seen first, and Steam would be called "Emulator"
+            // because an emulator happened to be open before it.
+            let application = if desktop_entry.is_empty() {
+                class.clone()
+            } else {
+                match self.named.get(&desktop_entry) {
+                    Some(known) => known.clone(),
+                    None => {
+                        // Read once per application rather than once per
+                        // report: the same few entries are resolved every time
+                        // a window is touched, and an entry does not change
+                        // while somebody is using it.
+                        let resolved = read_display_name(&desktop_entry, self.locale.as_deref())
+                            .unwrap_or_else(|| class.clone());
+                        self.named.insert(desktop_entry.clone(), resolved.clone());
+                        resolved
+                    }
+                }
+            };
             let id = match self.assigned.get(&kwin_id) {
                 Some(known) => *known,
                 None => {
@@ -277,7 +441,7 @@ impl Watcher {
     /// Loads the script and starts following its output.
     ///
     /// `notify` is called on the reader thread for each report.
-    pub fn start(notify: impl Fn(Vec<(String, String, String)>) + Send + 'static) -> Option<Self> {
+    pub fn start(notify: impl Fn(Vec<Reported>) + Send + 'static) -> Option<Self> {
         // In the runtime directory, not the temporary one. The service runs
         // with `PrivateTmp=true`, so its `/tmp` is a namespace of its own that
         // KWin cannot see — a script written there loads as a file that does
@@ -380,15 +544,15 @@ impl Drop for Watcher {
 mod tests {
     use super::*;
 
-    const REPORT: &str = r#"OTP_WINDOWS [["{aaa}","firefox","OpenTrackpad — Mozilla Firefox"],["{bbb}","org.kde.dolphin","Screenshots — Dolphin"],["{ccc}","steam","Steam"]]"#;
+    const REPORT: &str = r#"OTP_WINDOWS [["{aaa}","firefox","firefox","OpenTrackpad — Mozilla Firefox"],["{bbb}","org.kde.dolphin","org.kde.dolphin","Screenshots — Dolphin"],["{ccc}","steam","","Steam"]]"#;
 
     #[test]
     fn reads_what_the_script_prints() {
         let windows = parse_report(REPORT).expect("a report");
         assert_eq!(windows.len(), 3);
-        assert_eq!(windows[0].1, "firefox");
-        assert_eq!(windows[0].2, "OpenTrackpad — Mozilla Firefox");
-        assert_eq!(windows[1].0, "{bbb}");
+        assert_eq!(windows[0].class, "firefox");
+        assert_eq!(windows[0].title, "OpenTrackpad — Mozilla Firefox");
+        assert_eq!(windows[1].kwin_id, "{bbb}");
     }
 
     #[test]
@@ -397,7 +561,7 @@ mod tests {
         // against a real desktop: activating the last window moved it to the
         // front and left the rest in place.
         let windows = parse_report(REPORT).unwrap();
-        let order: Vec<_> = windows.iter().map(|w| w.1.as_str()).collect();
+        let order: Vec<_> = windows.iter().map(|w| w.class.as_str()).collect();
         assert_eq!(order, vec!["firefox", "org.kde.dolphin", "steam"]);
     }
 
@@ -413,9 +577,9 @@ mod tests {
     fn a_report_this_host_does_not_understand_is_refused_whole() {
         // Acting on half a report would show a rail that disagrees with the
         // desktop, and the next report is never far away.
-        assert!(parse_report("OTP_WINDOWS [[\"only\",\"two\"]]").is_none());
+        assert!(parse_report("OTP_WINDOWS [[\"only\",\"three\",\"fields\"]]").is_none());
         assert!(parse_report("OTP_WINDOWS not json").is_none());
-        assert!(parse_report("OTP_WINDOWS [[1,2,3]]").is_none());
+        assert!(parse_report("OTP_WINDOWS [[1,2,3,4]]").is_none());
         assert!(parse_report("nothing to do with us").is_none());
         assert_eq!(parse_report("OTP_WINDOWS []").unwrap().len(), 0);
     }
@@ -431,7 +595,7 @@ mod tests {
 
         // The same windows in a different order keep their numbers: the phone
         // holds these to say which button is which.
-        let reordered = r#"OTP_WINDOWS [["{ccc}","steam","Steam"],["{aaa}","firefox","OpenTrackpad — Mozilla Firefox"],["{bbb}","org.kde.dolphin","Screenshots — Dolphin"]]"#;
+        let reordered = r#"OTP_WINDOWS [["{ccc}","steam","","Steam"],["{aaa}","firefox","firefox","OpenTrackpad — Mozilla Firefox"],["{bbb}","org.kde.dolphin","org.kde.dolphin","Screenshots — Dolphin"]]"#;
         let second = numbering.number(parse_report(reordered).unwrap());
         assert_eq!(
             second.iter().map(|w| w.id).collect::<Vec<_>>(),
@@ -445,16 +609,16 @@ mod tests {
         let mut numbering = Numbering::new();
         numbering.number(parse_report(REPORT).unwrap());
         let after = numbering
-            .number(parse_report(r#"OTP_WINDOWS [["{ddd}","konsole","Konsole"]]"#).unwrap());
+            .number(parse_report(r#"OTP_WINDOWS [["{ddd}","konsole","","Konsole"]]"#).unwrap());
         assert_eq!(after[0].id, 4);
     }
 
     #[test]
     fn an_overlong_title_is_shortened_rather_than_sent_whole() {
         let long = "x".repeat(400);
-        let line = format!(r#"OTP_WINDOWS [["{{a}}","app","{long}"]]"#);
+        let line = format!(r#"OTP_WINDOWS [["{{a}}","app","","{long}"]]"#);
         assert_eq!(
-            parse_report(&line).unwrap()[0].2.chars().count(),
+            parse_report(&line).unwrap()[0].title.chars().count(),
             MAX_TITLE_CHARS
         );
     }
@@ -462,9 +626,95 @@ mod tests {
     #[test]
     fn more_windows_than_the_rail_can_use_are_cut() {
         let many: Vec<String> = (0..MAX_WINDOWS + 10)
-            .map(|n| format!(r#"["{{{n}}}","app","Window {n}"]"#))
+            .map(|n| format!(r#"["{{{n}}}","app","","Window {n}"]"#))
             .collect();
         let line = format!("OTP_WINDOWS [{}]", many.join(","));
         assert_eq!(parse_report(&line).unwrap().len(), MAX_WINDOWS);
+    }
+
+    const ENTRY: &str = "\
+[Desktop Entry]
+Type=Application
+Name=System Settings
+Name[pt_BR]=Configurações do sistema
+Name[de]=Systemeinstellungen
+Exec=systemsettings
+
+[Desktop Action NewWindow]
+Name=New Window
+";
+
+    #[test]
+    fn an_application_is_called_what_it_calls_itself() {
+        // `systemsettings` truncates to "systemse…" in fifteen millimetres and
+        // identifies nothing. The application already says what it is called.
+        assert_eq!(
+            name_from_entry(ENTRY, None).as_deref(),
+            Some("System Settings")
+        );
+    }
+
+    #[test]
+    fn in_the_persons_own_language_where_the_entry_offers_one() {
+        assert_eq!(
+            name_from_entry(ENTRY, Some("pt_BR.UTF-8")).as_deref(),
+            Some("Configurações do sistema")
+        );
+        // The bare language when the exact locale is not offered, which is what
+        // the desktop entry specification asks for.
+        assert_eq!(
+            name_from_entry(ENTRY, Some("de_AT.UTF-8@euro")).as_deref(),
+            Some("Systemeinstellungen")
+        );
+        // And the untranslated name when neither is.
+        assert_eq!(
+            name_from_entry(ENTRY, Some("ja_JP.UTF-8")).as_deref(),
+            Some("System Settings")
+        );
+    }
+
+    #[test]
+    fn only_the_applications_own_name_counts() {
+        // A desktop entry carries names for its right-click actions too, in
+        // their own groups. "New Window" is not what the application is called.
+        assert_eq!(
+            name_from_entry(ENTRY, None).as_deref(),
+            Some("System Settings")
+        );
+        assert_eq!(
+            name_from_entry("[Desktop Action X]\nName=New Window\n", None),
+            None
+        );
+        assert_eq!(name_from_entry("Name=Loose\n", None), None);
+        assert_eq!(name_from_entry("", None), None);
+        assert_eq!(name_from_entry("[Desktop Entry]\nName=\n", None), None);
+    }
+
+    #[test]
+    fn an_entry_name_is_a_file_name_and_never_a_path() {
+        // It arrives from the compositor rather than from a client, but it ends
+        // up opening a file, and a name that walks out of the directories it is
+        // meant to be looked up in is not a name.
+        assert_eq!(read_display_name("../../etc/passwd", None), None);
+        assert_eq!(read_display_name("/etc/passwd", None), None);
+        assert_eq!(read_display_name("a/b", None), None);
+        assert_eq!(read_display_name("", None), None);
+    }
+
+    #[test]
+    fn windows_with_no_desktop_entry_keep_their_own_names() {
+        // Both Steam and an Android emulator declare no entry. Caching the
+        // empty one would key every unidentified window to whichever was seen
+        // first, and Steam would come out labelled "Emulator" — which it did,
+        // on a real desktop, before this.
+        let mut numbering = Numbering::new();
+        let windows = numbering.number(
+            parse_report(
+                r#"OTP_WINDOWS [["{a}","Emulator","","Android Emulator"],["{b}","steam","","Steam"]]"#,
+            )
+            .unwrap(),
+        );
+        assert_eq!(windows[0].application, "Emulator");
+        assert_eq!(windows[1].application, "steam");
     }
 }
