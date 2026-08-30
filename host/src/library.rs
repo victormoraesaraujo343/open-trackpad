@@ -161,7 +161,7 @@ impl Worker {
             (Domain::Import, Verb::Refresh) => self.send_offer(),
 
             (Domain::Shortcuts, Verb::Rename { id, name }) => {
-                match self.editable(id) {
+                match self.may(id, Origin::is_renameable) {
                     Err(reason) => self.refuse(sequence, reason),
                     Ok(()) => {
                         let outcome = self
@@ -179,7 +179,7 @@ impl Worker {
                     }
                 }
             }
-            (Domain::Shortcuts, Verb::Delete { id }) => match self.editable(id) {
+            (Domain::Shortcuts, Verb::Delete { id }) => match self.may(id, Origin::is_deletable) {
                 Err(reason) => self.refuse(sequence, reason),
                 Ok(()) => {
                     let outcome = self
@@ -215,17 +215,16 @@ impl Worker {
         }
     }
 
-    /// Whether this is a shortcut the person may change.
+    /// Whether this is a shortcut the person may do `allowed` to.
     ///
-    /// A shipped convention and something read out of their desktop
-    /// configuration are not ours to edit: a rename would reappear the next
-    /// time the file is read, and a deletion would come back on the next
-    /// import. Refusing says so; pretending would be worse.
-    fn editable(&self, id: u32) -> Result<(), Refusal> {
+    /// Renaming and deleting allow different sets, deliberately: a convention
+    /// may be neither, an import may be renamed but not deleted, and something
+    /// recorded here may be both. See `Origin`.
+    fn may(&self, id: u32, allowed: fn(Origin) -> bool) -> Result<(), Refusal> {
         let held = self.shortcuts.read().expect("the list is never poisoned");
         match held.find(id) {
             None => Err(Refusal::UnknownId),
-            Some(found) if !found.origin.is_editable() => Err(Refusal::WrongKind),
+            Some(found) if !allowed(found.origin) => Err(Refusal::WrongKind),
             Some(_) => Ok(()),
         }
     }

@@ -154,8 +154,27 @@ impl Origin {
         }
     }
 
-    /// Whether the person may rename or delete this.
-    pub fn is_editable(self) -> bool {
+    /// Whether the person may give this a different name.
+    ///
+    /// A convention may not: it is ours, rewritten from the seed table, and a
+    /// rename that quietly reappeared on the next start would be a lie nobody
+    /// could diagnose. An import may, because once accepted it is in the file
+    /// like anything else and is filtered out of the next offer — so the rename
+    /// sticks. And it is the case that most needs it: "Toggle Present Windows
+    /// (Current desktop)" is accurate and hopeless on a button 15.5mm wide.
+    pub fn is_renameable(self) -> bool {
+        matches!(self, Origin::Recorded | Origin::Imported)
+    }
+
+    /// Whether the person may forget this.
+    ///
+    /// Only something recorded here. Deleting an import would put it straight
+    /// back in the offer, so the button would not mean what somebody pressing
+    /// it expects; declining it at the offer is how an import is refused.
+    ///
+    /// The two lists differ on purpose, and this is not an oversight in one of
+    /// them.
+    pub fn is_deletable(self) -> bool {
         matches!(self, Origin::Recorded)
     }
 }
