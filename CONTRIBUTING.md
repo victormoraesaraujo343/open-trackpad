@@ -45,6 +45,13 @@ wrong time, giving a true answer to a question nobody was asking.
 **An observation is only as fresh as the build it was taken from, and verifying
 identity afterwards does not make an old screenshot new.**
 
+A fifth case moved it somewhere worse. A screenshot comparison written
+specifically to be trustworthy carried a note saying it disabled the screen fade
+and did not disable it — so a walk that took twenty seconds compared a dimmed
+ground against a bright one and reported every screen as changed. **A note
+describing what code does not do is worse in a verification tool than anywhere
+else, because everything downstream trusts its answer instead of looking.**
+
 What ended each of these was the same thing, and it was not thinking harder. It
 was going back and looking at the thing again after having already explained it.
 Three separate symptoms this project reported were each covered by a confident,
