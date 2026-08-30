@@ -638,6 +638,22 @@ fn ask_to_inhibit(window: &ApplicationWindow, when: &str, asked: &Rc<std::cell::
             toplevel.inhibit_system_shortcuts(None::<&gdk::ButtonEvent>);
             asked.set(true);
             trace!("recorder: asked to inhibit desktop shortcuts ({when})");
+            // The compositor answers this asynchronously, and the answer is the
+            // difference between two failures that otherwise look identical: a
+            // request the desktop refused outright, and a request it honoured
+            // while another client holds a grab on one particular chord.
+            //
+            // It does not say which chords. Nothing can: a key another client
+            // took never reaches this process, so from in here it is
+            // indistinguishable from a key nobody pressed. But "the desktop
+            // refused entirely" and "the desktop agreed and something else got
+            // there first" have different answers, and this tells them apart.
+            toplevel.connect_shortcuts_inhibited_notify(|toplevel| {
+                trace!(
+                    "recorder: desktop shortcuts inhibited: {}",
+                    toplevel.is_shortcuts_inhibited()
+                );
+            });
         }
         None => trace!("recorder: no toplevel to inhibit against yet ({when})"),
     }

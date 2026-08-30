@@ -29,6 +29,13 @@ Set `OPENTRACKPAD_TRACE=1` and it narrates itself on stderr: whether it started
 at all, whether it asked to inhibit the desktop's shortcuts and at which moment,
 whether the window ever became active, and what the idle timer believes.
 
+It also reports whether the compositor **honoured** the request, which separates
+two failures that otherwise look the same: a desktop that refused inhibition
+outright, and one that agreed while another application holds a grab on one
+particular chord. Nothing can say *which* chord — a key another client took
+never reaches this process, so from in here it is indistinguishable from a key
+nobody pressed.
+
 Those are chosen for the failures that look identical from outside the process.
 A window that never becomes active explains both a dropped inhibitor and a
 focus-loss close that never fires. A timer that is dead and a timer that is
