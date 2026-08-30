@@ -80,6 +80,47 @@ Two things about it are load-bearing and easy to undo by tidying:
 - **Exclusions are named, not absorbed by a tolerance.** A threshold wide enough
   to swallow a pulsing dot is wide enough to swallow a shadow that moved.
 
+## Known defects, small
+
+**The tray leaks a zombie process per recording.** It spawns the recorder and
+never waits, so a defunct entry accumulates each time somebody records a
+shortcut — sixteen on the development machine after two days. Harmless (no
+memory, gone at the next login) and real. Ten minutes to fix, and while doing it
+check whether the daemon's own `ACTION RECORD` path reaps properly; every
+observed leak came from the tray, so that path is unproven either way.
+
+## Things a new session on this machine needs to know
+
+None of these are in the code, and each one costs an hour to rediscover.
+
+**This shell's environment is poisoned.** `LD_LIBRARY_PATH`, `PYTHONHOME` and
+`GTK_PATH` point into an AppImage, so GTK programs die with `undefined symbol:
+g_once_init_leave_pointer` and `python3` cannot find `encodings`. Use
+`env -u LD_LIBRARY_PATH -u GTK_PATH`, and `jq` rather than python. **The systemd
+user manager is clean** — verified, not assumed — so services are unaffected.
+Without knowing this, running the recorder by hand looks like the recorder being
+broken.
+
+**Verify the installed binary matches what you built, every time.** A stale
+`~/.local/bin/opentrackpadd` cost four hours and looked exactly like a protocol
+bug. `cmp -s` against the release artefact answers it in a second. "The service
+is active" and "the service is running the code I just wrote" are different
+claims and only one of them was ever checked.
+
+**There is no virtual display.** Anything needing a real window has to go on the
+owner's live screen, so GTK behaviour cannot be tested while he is working.
+Design around the question rather than answering it — the naming fix stopped
+asking a widget whether it had focus instead of learning what GTK would answer.
+
+**Commands whose target is implicit will bite you**, and three did in one day.
+`pgrep -f` matches the shell running it, and reported two processes that were
+its own search. `adb -d` means "whichever single USB device", so it changes
+meaning the moment an emulator appears — which is how the bridge broke.
+`git commit --amend` means "whatever HEAD is now", and in a worktree three
+sessions commit to, HEAD is not private: an amend meant to correct one figure
+rewrote another session's commit message. **Amend by hash, or add a correcting
+commit.**
+
 ## How the work was organised
 
 Four roles, and the shape matters more than the names.

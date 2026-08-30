@@ -59,7 +59,13 @@ One more, about repetition rather than verification. Three times in one session 
 pattern was removed from one file and written again in another within the hour —
 a blind tap loop, a guessed offset, a counted sequence of steps — twice inside
 the very tool built to prevent it. **Removing a bad pattern from a file does not
-remove it from your hands.** The fix that generalises is not remembering harder;
+remove it from your hands.** A neighbouring shape, three times in the same day:
+**a command whose target is implicit resolves against a world that moves.**
+`pgrep -f` matched the shell that ran it. `adb -d` meant a different device once
+an emulator appeared. `git commit --amend` rewrote another session's commit,
+because HEAD is not private in a worktree three sessions share. Name the target —
+a serial, a hash, a pattern that cannot match the searcher — or the command will
+one day mean something you did not say. The fix that generalises is not remembering harder;
 it is deriving from the thing itself rather than from a number about it, and
 asserting arrival rather than assuming it.
 Three separate symptoms this project reported were each covered by a confident,
