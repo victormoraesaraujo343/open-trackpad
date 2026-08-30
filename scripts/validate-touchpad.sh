@@ -26,8 +26,6 @@
 
 set -uo pipefail
 
-PORT=${OPENTRACKPAD_PORT:-4343}
-ADDRESS=127.0.0.1:$PORT
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 BIN=$REPO/host/target/debug/opentrackpadd
@@ -55,6 +53,39 @@ fail() {
 [ "$(id -u)" -eq 0 ] || fail "run this with sudo; libinput cannot open /dev/input/* otherwise"
 command -v libinput >/dev/null || fail "libinput debug utilities are missing (Arch: pacman -S libinput-tools)"
 [ -x "$BIN" ] || fail "daemon not built; run: cd $REPO/host && cargo build"
+
+# The port to run the daemon under test on. Never 4242: that is the real
+# service, and this must not disturb a phone somebody is using.
+#
+# If the default is busy it steps to the next free one rather than failing. The
+# failure it replaces was `Address already in use`, which names a port and
+# nothing else — it does not say what already has it, and on this machine the
+# answer turned out to be another test host that had also picked a port
+# deliberately away from 4242. Two things avoiding the same collision chose the
+# same alternative.
+#
+# An explicitly chosen port is never moved. Somebody who set OPENTRACKPAD_PORT
+# meant that port, and quietly using a different one would be worse than saying
+# it is taken.
+port_is_free() {
+  # A connection that refuses is a port nobody is listening on.
+  ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+if [ -n "${OPENTRACKPAD_PORT:-}" ]; then
+  PORT=$OPENTRACKPAD_PORT
+  port_is_free "$PORT" || fail "port $PORT is already in use; something else is listening on it"
+else
+  PORT=
+  for candidate in $(seq 4343 4362); do
+    if port_is_free "$candidate"; then
+      PORT=$candidate
+      break
+    fi
+  done
+  [ -n "$PORT" ] || fail "no free port between 4343 and 4362; set OPENTRACKPAD_PORT to one that is"
+fi
+ADDRESS=127.0.0.1:$PORT
 
 # ------------------------------------------------------------- synthetic input
 # The touch surface the synthetic client claims: a landscape 2400x1080 phone.
@@ -97,7 +128,7 @@ done
 
 echo "touchpad: $NODE"
 echo "buttons:  $BUTTONS"
-echo "address: $ADDRESS"
+echo "port:     $PORT$([ -n "${OPENTRACKPAD_PORT:-}" ] && echo " (from OPENTRACKPAD_PORT)" || echo "")"
 echo
 
 echo "== does libinput accept it? =="
