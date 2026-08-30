@@ -71,6 +71,27 @@ data class RailSlot(
     val icon: String,
     val press: SlotPress,
     val style: SlotStyle = SlotStyle.PLAIN,
+
+    /**
+     * Whether this label may take a second line.
+     *
+     * Off for everything we wrote and on for anything an application named
+     * itself, and the distinction is real rather than a fudge. A shortcut label
+     * is **our** copy — "Copy", "Screenshot", "Full screen" — so "one short
+     * word" is a rule we can simply keep, and there is a test that fails the
+     * build when a default breaks it.
+     *
+     * A window name is somebody else's. Shortening it means inventing a name
+     * for another person's application, which is what we refused to do for
+     * `systemsettings` and the reasoning does not change because a different
+     * name is too long. So the layout gives way instead of the name: "System
+     * Settings" fits two lines comfortably at fifteen millimetres.
+     *
+     * Two lines and not more. Past that it still truncates, because a rail
+     * whose slots change height is worse than a clipped word — the whole point
+     * of the shape is that it does not move.
+     */
+    val wraps: Boolean = false,
 )
 
 /**
@@ -143,6 +164,7 @@ object Rails {
                 label = window.label,
                 icon = RailIcons.forWindow(window.application),
                 press = SlotPress.Switch(window.id),
+                wraps = true,
             )
         },
         RailSlot(

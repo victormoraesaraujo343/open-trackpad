@@ -98,7 +98,26 @@ data class WindowEntry(
      * standing in. Queued there, and this is the note for whoever is tempted to
      * write it here again instead.
      */
-    val label: String get() = application
+    val label: String get() = withoutAside(application)
+}
+
+/**
+ * A name with a trailing parenthetical removed: "Ship Studio (b22db3)" is
+ * "Ship Studio".
+ *
+ * The one shortening that is safe, and it is safe because it removes an aside
+ * rather than abbreviating a name. A parenthetical suffix is almost never the
+ * identifying part — it is a build number, a profile, a channel — and the words
+ * before it are what somebody is looking for.
+ *
+ * A name that is *only* a parenthetical keeps it, because then the aside is all
+ * there is and removing it would leave nothing.
+ */
+private fun withoutAside(name: String): String {
+    if (!name.endsWith(')')) return name
+    val opened = name.lastIndexOf('(')
+    if (opened <= 0) return name
+    return name.substring(0, opened).trim().ifEmpty { name }
 }
 
 sealed interface WindowMessage {

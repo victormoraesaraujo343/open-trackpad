@@ -274,4 +274,44 @@ class WindowsTest {
         // more, and the All screen is where their titles tell them apart.
         assertEquals(rail[0]?.label, rail[1]?.label)
     }
+
+    @Test
+    fun `a trailing parenthetical is an aside and comes off`() {
+        // The one shortening that is safe: it removes an aside rather than
+        // abbreviating a name. A build number, a profile, a channel — never the
+        // part somebody is looking for.
+        assertEquals("Ship Studio", WindowEntry(1, "Ship Studio (b22db3)", "t").label)
+        assertEquals("Firefox", WindowEntry(1, "Firefox (Private Browsing)", "t").label)
+    }
+
+    @Test
+    fun `a name that is only an aside keeps it`() {
+        // Removing it would leave nothing, and a blank rail slot says less than
+        // a strange one.
+        assertEquals("(untitled)", WindowEntry(1, "(untitled)", "t").label)
+    }
+
+    @Test
+    fun `a name is otherwise handed on exactly as sent`() {
+        assertEquals("System Settings", WindowEntry(1, "System Settings", "t").label)
+        assertEquals("Node.js", WindowEntry(1, "Node.js", "t").label)
+        assertEquals("steam", WindowEntry(1, "steam", "t").label)
+        // A parenthesis in the middle is not a trailing aside.
+        assertEquals("A (B) C", WindowEntry(1, "A (B) C", "t").label)
+    }
+
+    @Test
+    fun `only a window's own name may take a second line`() {
+        // Our copy stays one short word, because that is a rule we can keep and
+        // there is a test that fails the build when a default breaks it. A name
+        // somebody else chose gets the room instead, because shortening it
+        // would mean naming their application for them.
+        val windows = Rails.windows(stateWith(1 to "System Settings").onTheRail)
+        assertEquals(true, windows.first()?.wraps)
+        assertEquals(false, windows.last()?.wraps)
+
+        for (slot in Rails.shortcuts(DefaultProfiles.desktop).filterNotNull()) {
+            assertEquals("\"${slot.label}\" should not wrap", false, slot.wraps)
+        }
+    }
 }

@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.text.Layout
+import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
 import android.util.AttributeSet
@@ -72,6 +74,16 @@ class RailView @JvmOverloads constructor(
 
         /** Left and right of the label before it is cut short. */
         const val LABEL_INSET = Artboard.LABEL_INSET_UNITS
+
+        /**
+         * How many lines a name that is not ours may take.
+         *
+         * Two. One is not enough for "System Settings" at fifteen millimetres,
+         * and three would make a slot's content taller than the room above and
+         * below the icon — at which point the icon starts being squeezed and
+         * the rail stops looking like five equal buttons.
+         */
+        const val LABEL_LINES = 2
     }
 
     /** What a press asks for. Set by the activity; never called for a dead slot. */
@@ -250,6 +262,37 @@ class RailView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * A window name across up to two lines, centred, clipped if it still will
+     * not fit.
+     *
+     * [StaticLayout] rather than breaking the string by hand: it knows where a
+     * word may break and how to ellipsize the last line it is allowed, and
+     * doing either badly is how a label ends up reading "System Setting" with
+     * no sign that anything was removed.
+     */
+    private fun wrap(text: String, room: Float): StaticLayout {
+        // Left, not centre, and this is not a detail.
+        //
+        // [StaticLayout] does its own centring and assumes the paint draws from
+        // the left of each line. Handed a centre-aligned paint it shifts every
+        // line left by half its own width on top of that, so the words walk out
+        // of the slot and off the edge of the rail — which is exactly what
+        // happened the first time this was written, and it looked like a
+        // measuring bug rather than an alignment one.
+        //
+        // The single-line path sets it back, because there it *is* centring by
+        // drawing at the middle.
+        label.textAlign = Paint.Align.LEFT
+        return StaticLayout.Builder
+            .obtain(text, 0, text.length, label, room.toInt().coerceAtLeast(1))
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setMaxLines(LABEL_LINES)
+            .setEllipsize(TextUtils.TruncateAt.END)
+            .setIncludePad(false)
+            .build()
+    }
+
     private fun isHeld(slot: Int): Boolean {
         for (index in 0 until held.size()) {
             if (held.valueAt(index) == slot) return true
@@ -304,8 +347,16 @@ class RailView @JvmOverloads constructor(
         canvas.drawRoundRect(shape, radius, radius, border)
         if (slot == null) return
 
+        label.textSize = artboard.text(LABEL)
+        val room = (bounds.width() - labelInset * 2f).coerceAtLeast(0f)
+
+        // Laid out before anything is drawn, because a two-line label makes the
+        // block taller and the icon above it has to move up to keep the pair
+        // centred. Measuring after placing the icon is how a label ends up
+        // hanging off the bottom of its slot.
+        val wrapped = if (slot.wraps) wrap(slot.label, room) else null
         val metrics = label.fontMetrics
-        val textHeight = metrics.descent - metrics.ascent
+        val textHeight = wrapped?.height?.toFloat() ?: (metrics.descent - metrics.ascent)
         val block = iconSize + labelGap + textHeight
         val top = bounds.centerY() - block / 2f
 
@@ -317,7 +368,20 @@ class RailView @JvmOverloads constructor(
         canvas.restore()
 
         label.color = ink
-        val room = (bounds.width() - labelInset * 2f).coerceAtLeast(0f)
+
+        if (wrapped != null) {
+            // Clipped to the slot as well as measured to it. A name is somebody
+            // else's text and the layout is the second defence, not the only
+            // one: nothing an application calls itself may draw outside the
+            // button it belongs to.
+            canvas.save()
+            canvas.clipRect(bounds)
+            canvas.translate(bounds.centerX() - room / 2f, top + iconSize + labelGap)
+            wrapped.draw(canvas)
+            canvas.restore()
+            return
+        }
+        label.textAlign = Paint.Align.CENTER
 
         /*
          * The one place the font scale is allowed to be overruled, and only
