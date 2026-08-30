@@ -35,6 +35,21 @@ was sent, and the socket stayed open.
 So: write the explanation before you are asked for it, and do not accept an
 absence of evidence as evidence. Both are cheaper than the bug.
 
+A fourth case sharpened it further. A panel appeared to render with no padding;
+the code was read, every call site checked, and the conclusion reasoned to. The
+value was then logged and had been correct all along — the screenshot came from
+a stale install. The build had been verified by hash, but *after* a later build
+rather than at the moment the screenshot was taken: the right check, at the
+wrong time, giving a true answer to a question nobody was asking.
+
+**An observation is only as fresh as the build it was taken from, and verifying
+identity afterwards does not make an old screenshot new.**
+
+What ended each of these was the same thing, and it was not thinking harder. It
+was going back and looking at the thing again after having already explained it.
+Three separate symptoms this project reported were each covered by a confident,
+correct, complete-sounding explanation that was also not the whole cause.
+
 ## Development flow
 
 1. Open an issue describing the device, Android version, Linux distribution, and intended change.
