@@ -278,6 +278,18 @@ REQUEST <sequence> <domain> REFRESH
 `sequence` is the client's own numbering, echoed back only when a request is
 refused, so it knows which fader to put back.
 
+**Sequences must increase across the whole session, not within a domain.** A
+client counting per domain would have an audio request 1 and a shortcuts
+request 1, and `REFUSED 1` would name both — landing on the wrong screen or on
+none. That surfaces as a button that sometimes does nothing, and it is slow to
+trace precisely because every line on the wire looks correct. Gaps are fine, so
+one counter shared with actions is fine; requests and frames keep separate
+counts.
+
+The alternative was putting the domain in `REFUSED` as well, which is redundant
+with a unique sequence and adds a second field that can disagree with the first.
+Making the ambiguity impossible beats describing a way around it.
+
 Every request names a **kind as well as an id**. Outputs, inputs and streams are
 numbered independently by the sound daemon — sink 53 and source 53 exist at the
 same time and are different devices — so an id alone would be ambiguous, and the
