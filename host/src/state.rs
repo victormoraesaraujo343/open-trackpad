@@ -327,6 +327,7 @@ mod tests {
 
     fn surface() -> Hello {
         Hello {
+            version: crate::protocol::Version::Four,
             width: 2400,
             height: 1080,
             max_contacts: 10,
@@ -511,6 +512,7 @@ mod tests {
     fn a_one_pixel_surface_does_not_divide_by_zero() {
         let mut state = ContactState::new();
         state.begin_session(&Hello {
+            version: crate::protocol::Version::Four,
             width: 1,
             height: 1,
             max_contacts: 1,

@@ -12,20 +12,70 @@ use crate::pointer::Button;
 use crate::shortcuts;
 use crate::text::{escape_text, unescape_text};
 
-/// The protocol version this host speaks.
+/// The protocol version this host speaks, and the one before it.
 ///
 /// Version 2 added the physical size of the touch surface to the handshake.
 /// Version 3 added actions. Version 4 opened a channel in the other direction:
-/// the handshake now carries what the client wants to be told about, the host
-/// answers with what it can actually serve, and state travels back.
+/// the handshake carries what the client wants to be told about, the host
+/// answers with what it can serve, and state travels back.
 ///
-/// The bump is not optional. Older hosts treat an unexpected field as fatal, so
-/// there is no way to add one quietly — which is the correct trade: a strict
-/// parser is what keeps this from being a remote shell, and the cost of that
-/// strictness is an honest version number. A client that speaks version 4 and
-/// meets an older host is refused at the handshake and reconnects one version
-/// down; see `docs/PROTOCOL.md`. Nothing wedges, because the refusal is
-/// immediate and the client never waits for an answer that is not coming.
+/// # Why version 3 is still accepted
+///
+/// Because a client we shipped speaks it and a person uses it every day. The
+/// light client is tagged `v0.1-light`, sends `HELLO OTP/3`, and **cannot fall
+/// back** — nothing existed before it to fall back to. A version-4-only host
+/// refuses its handshake instantly, so installing one would stop a working
+/// trackpad with a phone that has no way to find out why.
+///
+/// The asymmetry is what hides this: the version 4 client copes, because it was
+/// built knowing older hosts exist. The shipped one does not, because when it
+/// was built there was nothing older to cope with.
+///
+/// So one version back is served, and only one. A version 3 session gets a
+/// virtual touchpad and key chords — everything that version ever had — and
+/// nothing that came after it. It is never sent a `WELCOME`, because nothing
+/// has ever answered a version 3 client and it is not listening for one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Version {
+    /// Touch and key chords. Nothing travels back.
+    Three,
+    /// Adds capabilities, the return channel, mouse buttons and the recorder.
+    Four,
+}
+
+impl Version {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Version::Three => "OTP/3",
+            Version::Four => "OTP/4",
+        }
+    }
+
+    fn parse(token: &str) -> Option<Self> {
+        match token {
+            "OTP/3" => Some(Version::Three),
+            "OTP/4" => Some(Version::Four),
+            _ => None,
+        }
+    }
+
+    /// Whether this version has a way to hear an answer.
+    ///
+    /// Only version 4. Writing to a version 3 client would be writing into a
+    /// socket nobody reads, which is at best wasted and at worst a stall when
+    /// its receive buffer fills.
+    pub fn answers(self) -> bool {
+        self >= Version::Four
+    }
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// The version this host prefers, and answers a handshake with.
 pub const VERSION: &str = "OTP/4";
 
 /// Hard ceiling on contacts in any message, independent of what a client
@@ -181,6 +231,9 @@ impl fmt::Display for Domain {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hello {
+    /// Which version this client speaks. Decides what it may send and whether
+    /// anything is ever written back to it.
+    pub version: Version,
     pub width: u32,
     pub height: u32,
     pub max_contacts: u8,
@@ -612,12 +665,16 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
     let mut parts = line.split_whitespace();
     match parts.next() {
         Some("HELLO") => {
-            if parts.next() != Some(VERSION) {
-                return Err(ProtocolError(format!(
-                    "unsupported protocol version, expected {VERSION}"
-                )));
-            }
+            let token = parts
+                .next()
+                .ok_or_else(|| ProtocolError("missing protocol version".into()))?;
+            let version = Version::parse(token).ok_or_else(|| {
+                ProtocolError(format!(
+                    "unsupported protocol version {token}, expected {VERSION} or OTP/3"
+                ))
+            })?;
             let mut hello = Hello {
+                version,
                 width: parse_number(parts.next(), "width")?,
                 height: parse_number(parts.next(), "height")?,
                 max_contacts: parse_number(parts.next(), "max_contacts")?,
@@ -625,9 +682,14 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                 height_um: parse_number(parts.next(), "height_um")?,
                 capabilities: Capabilities::NONE,
             };
-            // Optional: a client that only wants a trackpad sends the handshake
-            // it always sent, one version number higher.
+            // Optional at version 4: a client that only wants a trackpad sends
+            // the handshake it always sent, one version number higher.
             if let Some(capabilities) = parts.next() {
+                if version < Version::Four {
+                    return Err(ProtocolError(format!(
+                        "{version} has no capabilities in its handshake"
+                    )));
+                }
                 hello.capabilities = Capabilities::parse(capabilities);
             }
             ensure_finished(&mut parts)?;
@@ -853,6 +915,10 @@ pub enum Accepted {
 #[derive(Debug, Default)]
 pub struct Session {
     hello: Option<Hello>,
+    /// What the client said it speaks. Nothing introduced after it is accepted
+    /// — a version is a promise about what may arrive, not only about the
+    /// shape of the handshake.
+    version: Option<Version>,
     last_sequence: Option<u64>,
     granted: Capabilities,
 }
@@ -882,20 +948,37 @@ impl Session {
                 if self.hello.is_some() {
                     return Err(ProtocolError("duplicate HELLO".into()));
                 }
+                self.version = Some(hello.version);
                 self.hello = Some(hello);
                 Ok(Accepted::Hello(hello))
             }
             Message::Action(action) => {
                 // Actions still need a session: a client that has not said who
                 // it is should not be pressing keys.
-                if self.hello.is_none() {
+                let Some(version) = self.version else {
                     return Err(ProtocolError("ACTION before HELLO".into()));
+                };
+                // Mouse buttons and the recorder arrived with version 4. A
+                // version 3 client cannot know about them, so one asking is not
+                // the client it says it is.
+                if version < Version::Four {
+                    let newer = match &action {
+                        Action::Key(_) => None,
+                        Action::Button(_) => Some("BUTTON"),
+                        Action::Record => Some("RECORD"),
+                    };
+                    if let Some(newer) = newer {
+                        return Err(ProtocolError(format!("{newer} is not part of {version}")));
+                    }
                 }
                 Ok(Accepted::Action(action))
             }
             Message::Request(request) => {
-                if self.hello.is_none() {
+                let Some(version) = self.version else {
                     return Err(ProtocolError("REQUEST before HELLO".into()));
+                };
+                if version < Version::Four {
+                    return Err(ProtocolError(format!("REQUEST is not part of {version}")));
                 }
                 // Asking about something never negotiated is a protocol
                 // violation, not a refusal: the client is either broken or
@@ -959,6 +1042,7 @@ mod tests {
         assert_eq!(
             parse_message("HELLO OTP/4 1080 2400 10 69000 156000"),
             Ok(Message::Hello(Hello {
+                version: Version::Four,
                 width: 1080,
                 height: 2400,
                 max_contacts: 10,
@@ -1019,14 +1103,75 @@ mod tests {
     }
 
     #[test]
-    fn rejects_older_protocol_versions() {
-        // Version 1 had no physical size, version 2 had no actions and version
-        // 3 had no way to answer, so accepting any of them would mean guessing
-        // at what the client can do. The refusal is immediate, which is what
-        // lets a newer client drop a version and try again rather than wait.
+    fn rejects_protocol_versions_older_than_the_one_still_in_use() {
+        // Version 1 had no physical size and version 2 had no actions, so
+        // accepting either would mean guessing at what the client can do. No
+        // client we shipped speaks them.
         assert!(parse_message("HELLO OTP/1 1080 2400 10").is_err());
         assert!(parse_message("HELLO OTP/2 1080 2400 10 69000 156000").is_err());
-        assert!(parse_message("HELLO OTP/3 1080 2400 10 69000 156000").is_err());
+        assert!(parse_message("HELLO OTP/9 1080 2400 10 69000 156000").is_err());
+        assert!(parse_message("HELLO 1080 2400 10 69000 156000").is_err());
+    }
+
+    #[test]
+    fn version_three_is_still_accepted_because_a_shipped_client_speaks_it() {
+        // The light client is tagged `v0.1-light`, sends this exact handshake,
+        // and cannot fall back — nothing existed before it to fall back to. A
+        // host that refused this would stop a working trackpad.
+        let Ok(Message::Hello(hello)) = parse_message("HELLO OTP/3 2412 1080 10 155000 69000")
+        else {
+            panic!("the shipped client's handshake must be accepted");
+        };
+        assert_eq!(hello.version, Version::Three);
+        assert!(hello.capabilities.is_empty());
+        assert!(!hello.version.answers());
+    }
+
+    #[test]
+    fn a_version_three_handshake_cannot_carry_capabilities() {
+        // A version is a promise about what may arrive. A client sending a
+        // field its own version never had is not the client it says it is.
+        assert!(parse_message("HELLO OTP/3 2400 1080 10 156000 69000 audio").is_err());
+        assert!(parse_message("HELLO OTP/3 2400 1080 10 156000 69000 -").is_err());
+    }
+
+    #[test]
+    fn a_version_three_session_gets_touch_and_chords_and_nothing_newer() {
+        let mut session = Session::new();
+        session
+            .accept("HELLO OTP/3 2400 1080 10 156000 69000")
+            .unwrap();
+
+        // Everything that version ever had.
+        assert!(session.accept("FRAME 1 1000 1 0 100 100 500 5").is_ok());
+        assert!(session.accept("ACTION 1 KEY ctrl+c").is_ok());
+
+        // And nothing that came after it. A version 3 client cannot know these
+        // exist, so one asking is not what it claims to be.
+        assert!(session.accept("ACTION 2 BUTTON right").is_err());
+        let mut session = Session::new();
+        session
+            .accept("HELLO OTP/3 2400 1080 10 156000 69000")
+            .unwrap();
+        assert!(session.accept("ACTION 2 RECORD").is_err());
+
+        let mut session = Session::new();
+        session
+            .accept("HELLO OTP/3 2400 1080 10 156000 69000")
+            .unwrap();
+        session.grant(Capabilities {
+            audio: true,
+            ..Capabilities::NONE
+        });
+        assert!(session.accept("REQUEST 1 audio REFRESH").is_err());
+    }
+
+    #[test]
+    fn only_version_four_is_ever_written_to() {
+        // Nothing has answered a version 3 client, so it is not reading.
+        // Writing to it would be wasted at best and a stall at worst.
+        assert!(!Version::Three.answers());
+        assert!(Version::Four.answers());
     }
 
     #[test]

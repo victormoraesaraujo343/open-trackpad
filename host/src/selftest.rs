@@ -13,6 +13,7 @@ use crate::state::ContactState;
 /// The touch surface the synthetic client pretends to have: a landscape
 /// 2400x1080 phone.
 const SURFACE: Hello = Hello {
+    version: crate::protocol::Version::Four,
     width: 2400,
     height: 1080,
     max_contacts: 10,

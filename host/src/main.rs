@@ -436,6 +436,14 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                 // machine can actually answer. A host with no sound daemon
                 // grants no audio, so the phone never draws a panel rather than
                 // drawing a broken one.
+                // Nothing is ever written to a version 3 client. Nothing has
+                // answered one before, so it is not reading — writing would be
+                // wasted at best and a stall at worst once its receive buffer
+                // filled. It gets a trackpad and key chords, which is all that
+                // version ever had.
+                if !hello.version.answers() {
+                    println!("  speaking {}: trackpad and shortcuts only", hello.version);
+                }
                 let servable = Capabilities {
                     audio: pactl::probe().is_ok(),
                     // Always servable: the list is in memory and there is
@@ -446,11 +454,17 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                     // with no sound daemon.
                     import: true,
                 };
-                let granted = hello.capabilities.intersect(servable);
+                let granted = if hello.version.answers() {
+                    hello.capabilities.intersect(servable)
+                } else {
+                    Capabilities::NONE
+                };
                 session.grant(granted);
                 // Before the panel starts, so the handshake answer is the first
                 // line the client reads.
-                out.send(Outbound::Welcome(granted));
+                if hello.version.answers() {
+                    out.send(Outbound::Welcome(granted));
+                }
                 if !hello.capabilities.is_empty() {
                     println!("  serving: {granted}");
                 }
