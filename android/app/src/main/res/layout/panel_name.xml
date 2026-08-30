@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Naming a copied profile, from NameProfile.dc.html.
+
+  Everything sits in the top third because the system keyboard takes the rest
+  of a landscape screen the moment this opens. **No keyboard is drawn here** —
+  a painted one would sit under the real one, which is the classic failure of
+  this screen.
+
+  It is also the only place in the app that asks for typing, which is why it
+  uses the phone's own keyboard rather than anything of ours.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/name_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ground"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/name_back"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="@string/settings_back"
+            android:focusable="true"
+            android:src="@drawable/ic_back" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:fontFamily="@font/space_grotesk_semibold"
+            android:text="@string/name_title"
+            android:textColor="@color/ink"
+            android:textSize="13sp" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/name_save"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/lime_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="@font/inter_medium"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="5dp"
+            android:text="@string/editor_save"
+            android:textColor="@color/ground"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        style="@style/SettingsCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:baselineAligned="true"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/CardHeading"
+                android:layout_marginBottom="0dp"
+                android:text="@string/name_label" />
+
+            <TextView
+                android:id="@+id/name_origin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:fontFamily="@font/inter_regular"
+                android:textColor="@color/faint"
+                android:textSize="10sp"
+                tools:text="copied from Desktop · same nine shortcuts" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/name_field"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="9dp"
+            android:background="@drawable/name_field"
+            android:fontFamily="@font/inter_regular"
+            android:importantForAutofill="no"
+            android:imeOptions="actionDone"
+            android:inputType="text"
+            android:maxLength="40"
+            android:maxLines="1"
+            android:paddingHorizontal="13dp"
+            android:paddingVertical="10dp"
+            android:textColor="@color/ink"
+            android:textCursorDrawable="@null"
+            android:textSize="15sp"
+            tools:text="Desktop copy" />
+
+        <TextView
+            android:id="@+id/name_note"
+            style="@style/CardNote"
+            android:layout_marginTop="9dp"
+            android:text="@string/name_note" />
+    </LinearLayout>
+
+    <!--
+      Left empty on purpose. The keyboard lands here, and the line only shows
+      while it has not yet: it is a promise about where the screen goes, not a
+      drawing of one.
+    -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="bottom|center_horizontal"
+        android:paddingBottom="4dp"
+        android:text="@string/name_keyboard"
+        android:textColor="#FF34383D"
+        android:textSize="10sp" />
+</LinearLayout>

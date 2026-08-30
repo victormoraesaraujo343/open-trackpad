@@ -57,6 +57,20 @@
             android:layout_weight="1" />
 
         <TextView
+            android:id="@+id/editor_duplicate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="@font/inter_regular"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="5dp"
+            android:text="@string/editor_duplicate"
+            android:textColor="@color/body"
+            android:textSize="11sp" />
+
+        <TextView
             android:id="@+id/editor_reset"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

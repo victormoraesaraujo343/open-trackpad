@@ -138,6 +138,18 @@
     <string name="editor_rail_overflow">Opposite rail</string>
     <string name="editor_hint">Drag a shortcut onto a slot · tap a slot to empty it</string>
 
+    <!-- Naming a copied profile: the only text entry in the app. -->
+    <string name="name_title">Name this profile</string>
+    <string name="name_label">Name</string>
+    <string name="name_origin">copied from %1$s · same %2$d shortcuts</string>
+    <string name="name_note">This is the only place the app asks you to type. It uses your phone\'s own keyboard, so it goes away as soon as you are done.</string>
+    <string name="name_keyboard">your keyboard covers this half</string>
+    <string name="name_taken">There is already a profile called that.</string>
+    <string name="name_blank">A profile needs a name.</string>
+    <string name="name_copy">%1$s copy</string>
+    <string name="name_copy_numbered">%1$s copy %2$d</string>
+    <string name="editor_duplicate">Duplicate</string>
+
     <!-- The rails, for a screen reader. -->
     <string name="rail_shortcuts">Shortcuts</string>
     <string name="rail_overflow">More shortcuts</string>

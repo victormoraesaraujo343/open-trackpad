@@ -117,6 +117,7 @@
     <include layout="@layout/panel_settings" />
     <include layout="@layout/panel_import" />
     <include layout="@layout/panel_editor" />
+    <include layout="@layout/panel_name" />
 
     <!--
       Clickable on purpose: while it is up, nothing behind it can be pressed.

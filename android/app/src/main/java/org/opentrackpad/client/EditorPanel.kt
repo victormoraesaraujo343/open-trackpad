@@ -33,6 +33,9 @@ class EditorPanel(private val root: View) {
     /** Leave, keeping nothing. */
     var onDismiss: (() -> Unit)? = null
 
+    /** Make a copy of what is being edited, which needs a name first. */
+    var onDuplicate: ((Profile) -> Unit)? = null
+
     private val inflater = LayoutInflater.from(root.context)
     private val shortcutRail: LinearLayout = root.findViewById(R.id.editor_rail_shortcuts)
     private val overflowRail: LinearLayout = root.findViewById(R.id.editor_rail_overflow)
@@ -51,6 +54,12 @@ class EditorPanel(private val root: View) {
     init {
         root.findViewById<View>(R.id.editor_back).setOnClickListener { onDismiss?.invoke() }
         root.findViewById<View>(R.id.editor_save).setOnClickListener { onSave?.invoke(draft) }
+        root.findViewById<View>(R.id.editor_duplicate).setOnClickListener {
+            // The draft rather than the saved profile: somebody who has just
+            // rearranged a rail and then duplicates means the thing in front of
+            // them, not the one they started from.
+            onDuplicate?.invoke(draft)
+        }
         root.findViewById<View>(R.id.editor_reset).setOnClickListener {
             draft = original
             drawRails()

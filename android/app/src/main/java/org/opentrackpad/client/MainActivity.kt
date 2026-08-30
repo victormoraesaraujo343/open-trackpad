@@ -71,6 +71,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var importScreen: ImportPanel
     private lateinit var editorPanel: View
     private lateinit var editorScreen: EditorPanel
+    private lateinit var namePanel: View
+    private lateinit var nameScreen: NamePanel
+
+    /** The profile being copied, while its name is being chosen. */
+    private var copying: Profile? = null
 
     /** What the computer knows about shortcuts, and what it is offering. */
     private val library = LibraryState()
@@ -175,6 +180,19 @@ class MainActivity : AppCompatActivity() {
             ProfileStore.save(settingsFile, stored)
             layOutRails()
             show(Panel.NONE)
+        }
+
+        namePanel = findViewById(R.id.name_panel)
+        nameScreen = NamePanel(namePanel)
+        nameScreen.isTaken = { name -> stored.profiles.any { it.name.equals(name, true) } }
+        nameScreen.onDismiss = { show(Panel.EDITOR) }
+        nameScreen.onSave = ::saveCopy
+        nameScreen.onTyping = ::waitBeforeReturning
+
+        editorScreen.onDuplicate = { draft ->
+            copying = draft
+            nameScreen.show(draft, NamePanel.suggest(this, draft, stored.profiles.map { it.name }))
+            show(Panel.NAME)
         }
 
         settingsPanel = findViewById(R.id.settings_panel)
@@ -348,7 +366,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** What is over the trackpad, if anything. Only ever one thing. */
-    private enum class Panel { NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT, EDITOR }
+    private enum class Panel { NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT, EDITOR, NAME }
 
     private var panel = Panel.NONE
 
@@ -389,6 +407,9 @@ class MainActivity : AppCompatActivity() {
         audioPanel.visibility = if (next == Panel.AUDIO) View.VISIBLE else View.GONE
         importPanel.visibility = if (next == Panel.IMPORT) View.VISIBLE else View.GONE
         editorPanel.visibility = if (next == Panel.EDITOR) View.VISIBLE else View.GONE
+        namePanel.visibility = if (next == Panel.NAME) View.VISIBLE else View.GONE
+        // The keyboard belongs to one screen and must not outlive it.
+        if (next != Panel.NAME) nameScreen.hideKeyboard()
         // The rail opposite the Quick Ring becomes the panel's pages while one
         // is open, and goes back to being shortcuts when it closes. The rail
         // with the ring on it never changes, so the way out never moves.
@@ -565,6 +586,27 @@ class MainActivity : AppCompatActivity() {
     private fun update(change: (Settings) -> Settings) {
         stored = stored.copy(settings = change(stored.settings))
         ProfileStore.save(settingsFile, stored)
+    }
+
+    /**
+     * Keeps the copy and starts editing it.
+     *
+     * The copy becomes the active profile, because duplicating is something
+     * done on the way to changing it — leaving the original active would mean
+     * every edit after this landed on a profile nobody is looking at.
+     */
+    private fun saveCopy(name: String) {
+        val from = copying ?: return
+        copying = null
+        val copy = from.copy(name = name)
+        stored = stored.copy(
+            profiles = stored.profiles + copy,
+            settings = stored.settings.copy(activeProfile = name),
+        )
+        ProfileStore.save(settingsFile, stored)
+        layOutRails()
+        editorScreen.show(copy, library.entries)
+        show(Panel.EDITOR)
     }
 
     private fun chooseProfile(name: String) {
@@ -860,9 +902,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        // The system back gesture closes whatever is over the pad before it
-        // closes the app. Leaving the app is what the second press is for.
-        if (panel != Panel.NONE) show(Panel.NONE) else @Suppress("DEPRECATION") super.onBackPressed()
+        // Back goes back one step, not all the way out. Naming a copy was
+        // opened from the editor, so it returns there — collapsing straight to
+        // the trackpad would throw away the draft behind it as well, which is
+        // two things lost for one press.
+        when (panel) {
+            Panel.NONE -> @Suppress("DEPRECATION") super.onBackPressed()
+            Panel.NAME -> show(Panel.EDITOR)
+            else -> show(Panel.NONE)
+        }
     }
 
     override fun onPause() {
