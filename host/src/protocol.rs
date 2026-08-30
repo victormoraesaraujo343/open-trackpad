@@ -470,13 +470,25 @@ impl Record {
                     None => "-".to_owned(),
                 };
                 format!(
-                    "{} {} {} {} {} {} {}",
+                    "{} {} {} {} {} {} {} {} {}",
                     entity.kind.as_str(),
                     entity.id,
                     entity.volume,
                     u8::from(entity.muted),
                     u8::from(entity.default),
                     target,
+                    entity.port.map_or("-", audio::Port::as_str),
+                    // A device is never paused; the dash says the field does
+                    // not apply rather than that it is false.
+                    if entity.kind == audio::Kind::Stream {
+                        if entity.paused {
+                            "1"
+                        } else {
+                            "0"
+                        }
+                    } else {
+                        "-"
+                    },
                     escape_text(&entity.name),
                 )
             }
@@ -1490,6 +1502,8 @@ mod tests {
             muted: false,
             default: true,
             target: None,
+            port: None,
+            paused: false,
             name: name.to_owned(),
         }
     }
@@ -1528,7 +1542,7 @@ mod tests {
                 record: Record::Audio(entity(audio::Kind::Output, 53, "HDMI Digital Stereo")),
             }
             .to_string(),
-            "ENTRY audio 7 output 53 950 0 1 - HDMI%20Digital%20Stereo"
+            "ENTRY audio 7 output 53 950 0 1 - - - HDMI%20Digital%20Stereo"
         );
     }
 
@@ -1544,7 +1558,7 @@ mod tests {
                 record: Record::Audio(stream),
             }
             .to_string(),
-            "CHANGED audio 7 stream 1348 950 0 0 53 Firefox"
+            "CHANGED audio 7 stream 1348 950 0 0 53 - 0 Firefox"
         );
     }
 
@@ -1596,7 +1610,7 @@ mod tests {
         }
         .to_string();
         assert_eq!(rendered.lines().count(), 1);
-        assert_eq!(rendered.split_whitespace().count(), 10);
+        assert_eq!(rendered.split_whitespace().count(), 12);
     }
 
     #[test]

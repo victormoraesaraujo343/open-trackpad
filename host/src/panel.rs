@@ -689,6 +689,8 @@ mod tests {
                 muted: false,
                 default: true,
                 target: None,
+                port: Some(crate::audio::Port::Hdmi),
+                paused: false,
                 name: "HDMI".to_owned(),
             },
             Entity {
@@ -698,6 +700,8 @@ mod tests {
                 muted: false,
                 default: false,
                 target: Some(53),
+                port: None,
+                paused: false,
                 name: "Firefox".to_owned(),
             },
         ])
@@ -931,6 +935,8 @@ mod tests {
             muted: false,
             default: false,
             target: None,
+            port: None,
+            paused: false,
             name: "x".to_owned(),
         };
         let parts = Parts {

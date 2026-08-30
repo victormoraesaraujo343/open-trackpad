@@ -86,6 +86,62 @@ impl Kind {
     }
 }
 
+/// How a device is attached, when the daemon says so plainly.
+///
+/// Two devices both called "Headset" is not a rare case, and it is exactly
+/// where the name stops being enough. This is read from `device.bus` and
+/// `active_port` — both stable identifiers — and never parsed out of the
+/// description, which is free text in whatever language the machine speaks.
+///
+/// Transport before connector: a USB sound card with an analog output is
+/// usefully "usb", because that is the thing that tells it apart from the one
+/// built into the machine. Analog and HDMI have no transport worth naming, so
+/// they answer with the connector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Port {
+    Bluetooth,
+    Hdmi,
+    Usb,
+    /// S/PDIF or optical.
+    Digital,
+    Analog,
+}
+
+impl Port {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Port::Bluetooth => "bluetooth",
+            Port::Hdmi => "hdmi",
+            Port::Usb => "usb",
+            Port::Digital => "digital",
+            Port::Analog => "analog",
+        }
+    }
+
+    /// Works it out, or says nothing rather than guessing.
+    fn read(bus: Option<&str>, active_port: Option<&str>) -> Option<Self> {
+        let bus = bus.unwrap_or_default().to_ascii_lowercase();
+        let port = active_port.unwrap_or_default().to_ascii_lowercase();
+
+        if bus == "bluetooth" {
+            return Some(Port::Bluetooth);
+        }
+        if port.contains("hdmi") || port.contains("displayport") {
+            return Some(Port::Hdmi);
+        }
+        if bus == "usb" {
+            return Some(Port::Usb);
+        }
+        if port.contains("iec958") || port.contains("spdif") {
+            return Some(Port::Digital);
+        }
+        if port.contains("analog") {
+            return Some(Port::Analog);
+        }
+        None
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entity {
     pub kind: Kind,
@@ -99,6 +155,12 @@ pub struct Entity {
     pub default: bool,
     /// Streams only: the output this plays through.
     pub target: Option<u32>,
+    /// Devices only: how it is attached, when the daemon says so plainly.
+    pub port: Option<Port>,
+    /// Streams only: whether the application has paused it.
+    ///
+    /// Not quite "is it making sound" — see the note on `read_streams`.
+    pub paused: bool,
     pub name: String,
 }
 
@@ -306,6 +368,11 @@ fn read_devices(
             muted: entry.get("mute").and_then(Value::as_bool).unwrap_or(false),
             default: !default_name.is_empty() && name == default_name,
             target: None,
+            port: Port::read(
+                property(entry, "device.bus"),
+                entry.get("active_port").and_then(Value::as_str),
+            ),
+            paused: false,
             name: clamp_name(shown),
         });
     }
@@ -327,6 +394,19 @@ pub fn monitor_names(sinks_document: &str) -> Result<Vec<String>, json::JsonErro
 
 /// Reads `pactl --format=json list sink-inputs`: what each application is
 /// playing, and how loudly.
+///
+/// # `paused` is not quite "is it making sound"
+///
+/// It is the daemon's `corked` flag, which means the application has stopped
+/// the stream — what a media player does when you press pause. That is a
+/// one-directional truth: paused certainly means silent, but not paused only
+/// means the stream is open, and an application can hold one open while writing
+/// silence for hours.
+///
+/// It is sent as what it is rather than as what a screen wants, because there
+/// is no second signal to combine it with: a sink input reports nothing else
+/// bearing on this. The client can filter on it, which catches the case that
+/// actually clutters the list — a paused media player sitting in it.
 pub fn read_streams(document: &str) -> Result<Vec<Entity>, json::JsonError> {
     let parsed = json::parse(document)?;
     let entries = parsed
@@ -352,6 +432,11 @@ pub fn read_streams(document: &str) -> Result<Vec<Entity>, json::JsonError> {
             muted: entry.get("mute").and_then(Value::as_bool).unwrap_or(false),
             default: false,
             target: entry.get("sink").and_then(Value::as_u32),
+            port: None,
+            paused: entry
+                .get("corked")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             name: clamp_name(shown),
         });
     }
@@ -528,6 +613,8 @@ mod tests {
             muted: false,
             default: false,
             target: None,
+            port: None,
+            paused: false,
             name: format!("{}-{id}", kind.as_str()),
         }
     }
@@ -657,5 +744,80 @@ mod tests {
         }
         assert_eq!(Kind::parse("sink"), None);
         assert_eq!(Kind::parse(""), None);
+    }
+
+    #[test]
+    fn how_a_device_is_attached_comes_from_the_daemon_and_not_from_its_name() {
+        // Never parsed out of the description. That is free text in whatever
+        // language the machine speaks, and it is the one approach that would be
+        // wrong on somebody else's computer while looking right here.
+        assert_eq!(
+            Port::read(Some("bluetooth"), Some("headset-output")),
+            Some(Port::Bluetooth)
+        );
+        assert_eq!(
+            Port::read(Some("pci"), Some("hdmi-output-1")),
+            Some(Port::Hdmi)
+        );
+        assert_eq!(
+            Port::read(Some("pci"), Some("iec958-stereo-output")),
+            Some(Port::Digital)
+        );
+        assert_eq!(
+            Port::read(Some("pci"), Some("analog-output")),
+            Some(Port::Analog)
+        );
+        // Transport before connector: a USB sound card with an analog output is
+        // usefully "usb", because that is what tells it apart from the one
+        // built into the machine.
+        assert_eq!(
+            Port::read(Some("usb"), Some("analog-output")),
+            Some(Port::Usb)
+        );
+    }
+
+    #[test]
+    fn a_device_that_says_nothing_useful_gets_no_token_rather_than_a_guess() {
+        assert_eq!(Port::read(None, None), None);
+        assert_eq!(Port::read(Some(""), Some("")), None);
+        assert_eq!(Port::read(Some("pci"), Some("some-future-port")), None);
+    }
+
+    #[test]
+    fn a_stream_says_whether_the_application_paused_it() {
+        // The daemon's `corked`. Paused certainly means silent; not paused only
+        // means the stream is open.
+        let streams = read_streams(
+            r#"[{"index":1,"sink":2,"corked":true,"properties":{"application.name":"mpv"}}]"#,
+        )
+        .unwrap();
+        assert!(streams[0].paused);
+
+        let streams = read_streams(
+            r#"[{"index":1,"sink":2,"corked":false,"properties":{"application.name":"mpv"}}]"#,
+        )
+        .unwrap();
+        assert!(!streams[0].paused);
+
+        // A daemon that does not say is taken as playing: a stream wrongly
+        // hidden is worse than one wrongly shown, because nobody goes looking
+        // for what they cannot see.
+        let streams = read_streams(r#"[{"index":1,"sink":2}]"#).unwrap();
+        assert!(!streams[0].paused);
+    }
+
+    #[test]
+    fn devices_carry_a_port_and_streams_do_not() {
+        let sinks = read_sinks(
+            r#"[{"index":1,"name":"a","description":"A","active_port":"hdmi-output-1",
+                 "properties":{"device.bus":"pci"}}]"#,
+            "",
+        )
+        .unwrap();
+        assert_eq!(sinks[0].port, Some(Port::Hdmi));
+        assert!(!sinks[0].paused);
+
+        let streams = read_streams(r#"[{"index":1,"sink":2}]"#).unwrap();
+        assert_eq!(streams[0].port, None);
     }
 }

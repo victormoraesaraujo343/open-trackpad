@@ -1029,4 +1029,25 @@ mod tests {
         assert!(!reloaded.allows(&Chord::parse("ctrl+c").unwrap()));
         assert_eq!(reloaded.list().len(), CONVENTIONS.len() - 1);
     }
+
+    #[test]
+    fn what_may_be_renamed_and_what_may_be_deleted_are_different_lists() {
+        // Deliberately different, and neither is an oversight in the other.
+        //
+        // A convention is ours and is rewritten from the seed table, so a
+        // rename would quietly reappear — a lie nobody could diagnose.
+        assert!(!Origin::Convention.is_renameable());
+        assert!(!Origin::Convention.is_deletable());
+
+        // An import, once accepted, is in the file like anything else and is
+        // filtered out of the next offer, so a rename sticks. Deleting it would
+        // put it straight back in the offer, so the button would not mean what
+        // pressing it suggests.
+        assert!(Origin::Imported.is_renameable());
+        assert!(!Origin::Imported.is_deletable());
+
+        // Theirs entirely.
+        assert!(Origin::Recorded.is_renameable());
+        assert!(Origin::Recorded.is_deletable());
+    }
 }
