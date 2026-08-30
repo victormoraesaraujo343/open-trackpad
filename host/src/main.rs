@@ -20,6 +20,7 @@ mod state;
 mod status;
 mod timing;
 mod uinput;
+mod windows;
 
 use std::io::{self, BufRead, BufReader, Read};
 use std::net::{TcpListener, TcpStream};
@@ -453,6 +454,10 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                     // domain is then simply empty, the way audio is absent
                     // with no sound daemon.
                     import: true,
+                    // Not offered at all on a desktop whose windows cannot be
+                    // listed. An empty rail that looks like a bug is worse than
+                    // no rail, and only the host can tell the difference.
+                    windows: windows::available(),
                 };
                 let granted = if hello.version.answers() {
                     hello.capabilities.intersect(servable)
@@ -471,7 +476,7 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
 
                 // The library first: it needs no probing, so it can answer
                 // while the sound daemon is still being asked about.
-                if granted.shortcuts || granted.import {
+                if granted.shortcuts || granted.import || granted.windows {
                     let started = Library::start(out.clone(), Arc::clone(shortcuts), granted);
                     // Left where the file watcher can find it, so a shortcut
                     // recorded while this phone is connected reaches it without
@@ -564,10 +569,12 @@ fn handle_client(stream: TcpStream, serving: Serving<'_>) -> io::Result<()> {
                         // survives it, the panel does not.
                         None => Some(protocol::Refusal::Unavailable),
                     },
-                    Domain::Shortcuts | Domain::Import => match library.as_mut() {
-                        Some(library) => library.request(request, std::time::Instant::now()),
-                        None => Some(protocol::Refusal::Unavailable),
-                    },
+                    Domain::Shortcuts | Domain::Import | Domain::Windows => {
+                        match library.as_mut() {
+                            Some(library) => library.request(request, std::time::Instant::now()),
+                            None => Some(protocol::Refusal::Unavailable),
+                        }
+                    }
                 };
                 if let Some(reason) = refusal {
                     out.send(Outbound::Refused { sequence, reason });

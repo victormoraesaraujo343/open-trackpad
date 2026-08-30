@@ -35,6 +35,7 @@ use crate::panel::Sender;
 use crate::protocol::{Capabilities, Domain, Outbound, Record, Refusal, Request, Verb};
 use crate::shortcuts::{Origin, Shortcut, Shortcuts};
 use crate::timing::TokenBucket;
+use crate::windows::{self, Numbering, Watcher, Window};
 
 const INBOX_DEPTH: usize = 32;
 
@@ -66,6 +67,9 @@ pub type Watched = Arc<Mutex<Option<Notifier>>>;
 enum Wake {
     Request(Request),
     Changed,
+    /// The desktop's window list moved: something opened, closed, or was
+    /// switched to.
+    WindowsMoved(Vec<(String, String, String)>),
     Stop,
 }
 
@@ -81,8 +85,13 @@ impl Library {
             out,
             shortcuts,
             granted,
+            notifier: inbox.clone(),
             shortcuts_generation: 0,
             import_generation: 0,
+            seen: Vec::new(),
+            numbering: Numbering::new(),
+            windows_generation: 0,
+            watcher: None,
             offer: Vec::new(),
         };
         let _ = std::thread::Builder::new()
@@ -123,10 +132,19 @@ impl Drop for Library {
 
 struct Worker {
     out: Sender,
+    /// Its own way back into its inbox, so the window watcher can wake it.
+    notifier: SyncSender<Wake>,
     shortcuts: Arc<RwLock<Shortcuts>>,
     granted: Capabilities,
     shortcuts_generation: u64,
     import_generation: u64,
+    /// The windows last reported, most recently used first.
+    seen: Vec<Window>,
+    numbering: Numbering,
+    windows_generation: u64,
+    /// The loaded KWin script and the reader following it. Dropped with the
+    /// session, so nothing is left in somebody's compositor.
+    watcher: Option<Watcher>,
     /// The candidates last offered, with the numbers they were offered under.
     ///
     /// Those numbers are the host's and mean nothing outside the generation
@@ -138,6 +156,7 @@ impl Worker {
     fn run(mut self, wakes: &Receiver<Wake>) {
         self.send_shortcuts();
         self.send_offer();
+        self.watch_windows();
 
         while let Ok(wake) = wakes.recv() {
             match wake {
@@ -149,6 +168,13 @@ impl Worker {
                     self.send_shortcuts();
                     self.send_offer();
                 }
+                Wake::WindowsMoved(report) => {
+                    // A whole picture each time. The desktop tells us when
+                    // something moved and not what moved, and a rail that lags
+                    // reality is worse than no rail.
+                    self.seen = self.numbering.number(report);
+                    self.send_windows();
+                }
                 Wake::Request(request) => self.carry_out(request),
             }
         }
@@ -159,6 +185,8 @@ impl Worker {
         match (request.domain, request.verb) {
             (Domain::Shortcuts, Verb::Refresh) => self.send_shortcuts(),
             (Domain::Import, Verb::Refresh) => self.send_offer(),
+            (Domain::Windows, Verb::Refresh) => self.send_windows(),
+            (Domain::Windows, Verb::Activate { id }) => self.activate(sequence, id),
 
             (Domain::Shortcuts, Verb::Rename { id, name }) => {
                 match self.may(id, Origin::is_renameable) {
@@ -274,6 +302,66 @@ impl Worker {
 
         self.send_shortcuts();
         self.send_offer();
+    }
+
+    /// Loads the KWin script and starts following what it reports.
+    ///
+    /// Only when the capability was granted, which only happens on a desktop
+    /// this host can ask. Elsewhere nothing is loaded and nothing is sent.
+    fn watch_windows(&mut self) {
+        if !self.granted.windows {
+            return;
+        }
+        let notifier = self.notifier.clone();
+        self.watcher = Watcher::start(move |report| {
+            let _ = notifier.try_send(Wake::WindowsMoved(report));
+        });
+        if self.watcher.is_none() {
+            // Asked for and could not be given. Said rather than left as a rail
+            // that never fills.
+            self.out.send(Outbound::Unavailable {
+                domain: Domain::Windows,
+                reason: crate::protocol::Absence::NoTool,
+            });
+        }
+    }
+
+    fn send_windows(&mut self) {
+        if !self.granted.windows {
+            return;
+        }
+        self.windows_generation += 1;
+        self.out.send(Outbound::Snapshot {
+            domain: Domain::Windows,
+            generation: self.windows_generation,
+            count: self.seen.len(),
+        });
+        for window in &self.seen {
+            self.out.send(Outbound::Entry {
+                domain: Domain::Windows,
+                generation: self.windows_generation,
+                record: Record::Window(window.clone()),
+            });
+        }
+    }
+
+    /// Switches to a window the client named by number.
+    ///
+    /// The number is looked up in what was last published, so the KWin
+    /// identifier that actually reaches the desktop is one this host chose. A
+    /// client cannot name a window that was never sent to it, and cannot name
+    /// one that has closed — which is the ordinary case, since a rail button
+    /// outlives the window behind it by however long it takes somebody to look.
+    fn activate(&mut self, sequence: u64, id: u32) {
+        let Some(window) = self.seen.iter().find(|window| window.id == id) else {
+            self.refuse(sequence, Refusal::UnknownId);
+            return;
+        };
+        if !windows::activate(&window.kwin_id) {
+            self.refuse(sequence, Refusal::BackendFailed);
+        }
+        // Success needs no answer: switching raises the window, which the
+        // desktop reports, which arrives as the next snapshot.
     }
 
     fn send_shortcuts(&mut self) {

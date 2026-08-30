@@ -11,6 +11,7 @@ use crate::keys::Chord;
 use crate::pointer::Button;
 use crate::shortcuts;
 use crate::text::{escape_text, unescape_text};
+use crate::windows;
 
 /// The protocol version this host speaks, and the one before it.
 ///
@@ -124,6 +125,7 @@ pub struct Capabilities {
     pub audio: bool,
     pub shortcuts: bool,
     pub import: bool,
+    pub windows: bool,
 }
 
 impl Capabilities {
@@ -131,6 +133,7 @@ impl Capabilities {
         audio: false,
         shortcuts: false,
         import: false,
+        windows: false,
     };
 
     /// Reads a comma-separated list, or `-` for none.
@@ -145,6 +148,7 @@ impl Capabilities {
                 "audio" => capabilities.audio = true,
                 "shortcuts" => capabilities.shortcuts = true,
                 "import" => capabilities.import = true,
+                "windows" => capabilities.windows = true,
                 // Ignored, not refused: that is what lets a later panel be
                 // added without another version bump.
                 _ => {}
@@ -160,11 +164,12 @@ impl Capabilities {
             audio: self.audio && other.audio,
             shortcuts: self.shortcuts && other.shortcuts,
             import: self.import && other.import,
+            windows: self.windows && other.windows,
         }
     }
 
     pub fn is_empty(self) -> bool {
-        !self.audio && !self.shortcuts && !self.import
+        !self.audio && !self.shortcuts && !self.import && !self.windows
     }
 
     pub fn allows(self, domain: Domain) -> bool {
@@ -172,6 +177,7 @@ impl Capabilities {
             Domain::Audio => self.audio,
             Domain::Shortcuts => self.shortcuts,
             Domain::Import => self.import,
+            Domain::Windows => self.windows,
         }
     }
 }
@@ -187,6 +193,9 @@ impl fmt::Display for Capabilities {
         }
         if self.import {
             named.push("import");
+        }
+        if self.windows {
+            named.push("windows");
         }
         if named.is_empty() {
             return formatter.write_str("-");
@@ -212,6 +221,12 @@ pub enum Domain {
     /// leave `shortcuts` carrying entries that cannot be fired, which is
     /// exactly how a button that does nothing gets built.
     Import,
+    /// The windows open on this desktop, most recently used first.
+    ///
+    /// Absent on a desktop this host cannot ask, the same way audio is absent
+    /// with no sound daemon: the capability is never granted and the phone does
+    /// not draw the rail.
+    Windows,
 }
 
 impl Domain {
@@ -220,6 +235,7 @@ impl Domain {
             Domain::Audio => "audio",
             Domain::Shortcuts => "shortcuts",
             Domain::Import => "import",
+            Domain::Windows => "windows",
         }
     }
 
@@ -228,6 +244,7 @@ impl Domain {
             "audio" => Some(Domain::Audio),
             "shortcuts" => Some(Domain::Shortcuts),
             "import" => Some(Domain::Import),
+            "windows" => Some(Domain::Windows),
             _ => None,
         }
     }
@@ -398,6 +415,12 @@ pub enum Verb {
     Rename { id: u32, name: String },
     /// Forget a recorded shortcut.
     Delete { id: u32 },
+    /// Switch to a window.
+    ///
+    /// The only thing the rail may ask for. Not close, not minimise, not move:
+    /// the design is "tap one and switch to it", and anything more would be a
+    /// window manager on a phone, which this is not.
+    Activate { id: u32 },
     /// Record a set of the candidates last offered.
     ///
     /// All or nothing. A partly-applied set leaves somebody looking at a screen
@@ -521,6 +544,8 @@ pub enum Record {
     Audio(audio::Entity),
     /// Something recorded and fireable.
     Shortcut(shortcuts::Shortcut),
+    /// A window open on this desktop.
+    Window(windows::Window),
     /// Something this computer has that is not recorded yet.
     ///
     /// Carries a number of its own so a set of them can be accepted. It is the
@@ -573,6 +598,14 @@ impl Record {
                 shortcut.origin.as_str(),
                 shortcut.group.map_or("-", shortcuts::Group::as_str),
                 escape_text(&shortcut.name),
+            ),
+            // The KWin identifier is not here and never is: the client names
+            // a number this host handed out, and nothing else.
+            Record::Window(window) => format!(
+                "window {} {} {}",
+                window.id,
+                escape_text(&window.application),
+                escape_text(&window.title),
             ),
             // No origin here: everything offered came from this computer's own
             // configuration, so the field would say the same thing every time.
@@ -868,6 +901,10 @@ pub fn parse_message(line: &str) -> Result<Message, ProtocolError> {
                     id: parse_number(parts.next(), "shortcut id")?,
                 },
 
+                (Domain::Windows, Some("ACTIVATE")) => Verb::Activate {
+                    id: parse_number(parts.next(), "window id")?,
+                },
+
                 (Domain::Import, Some("ACCEPT")) => {
                     // The generation the offer was made in. A set accepted
                     // against a stale offer is refused rather than applied to
@@ -1072,6 +1109,7 @@ mod tests {
             audio: true,
             shortcuts: true,
             import: true,
+            windows: true,
         });
         session
     }
@@ -2065,5 +2103,78 @@ mod tests {
         session.accept("REQUEST 1 audio REFRESH").unwrap();
         assert!(session.accept("FRAME 11 1001 0").is_ok());
         assert!(session.accept("REQUEST 2 audio REFRESH").is_ok());
+    }
+
+    #[test]
+    fn parses_a_request_to_switch_to_a_window() {
+        assert_eq!(
+            parse_message("REQUEST 1 windows ACTIVATE 7"),
+            Ok(Message::Request(Request {
+                sequence: 1,
+                domain: Domain::Windows,
+                verb: Verb::Activate { id: 7 },
+            }))
+        );
+    }
+
+    #[test]
+    fn switching_is_the_only_thing_the_rail_may_ask_for() {
+        // Not close, not minimise, not move. The design is "tap one and switch
+        // to it"; anything more would be a window manager on a phone.
+        assert!(parse_message("REQUEST 1 windows CLOSE 7").is_err());
+        assert!(parse_message("REQUEST 1 windows MINIMISE 7").is_err());
+        assert!(parse_message("REQUEST 1 windows MOVE 7 2").is_err());
+        assert!(parse_message("REQUEST 1 windows RENAME 7 Name").is_err());
+        // And a window is named by a number this host published, never by a
+        // KWin identifier the client invented.
+        assert!(parse_message("REQUEST 1 windows ACTIVATE {3bfc35fa}").is_err());
+        assert!(parse_message("REQUEST 1 windows ACTIVATE").is_err());
+        assert!(parse_message("REQUEST 1 windows ACTIVATE 7 8").is_err());
+    }
+
+    #[test]
+    fn a_window_carries_no_identifier_of_the_desktops_own() {
+        // The KWin UUID stays on the host. What crosses is a number this host
+        // handed out, so a client can only ever name something it was sent.
+        let window = windows::Window {
+            id: 4,
+            kwin_id: "{3bfc35fa-073b-42c1-9ff9-c7ff7d0879dd}".to_owned(),
+            application: "firefox".to_owned(),
+            title: "OpenTrackpad — Mozilla Firefox".to_owned(),
+        };
+        let rendered = Outbound::Entry {
+            domain: Domain::Windows,
+            generation: 2,
+            record: Record::Window(window),
+        }
+        .to_string();
+        assert_eq!(
+            rendered,
+            "ENTRY windows 2 window 4 firefox OpenTrackpad%20%E2%80%94%20Mozilla%20Firefox"
+        );
+        assert!(!rendered.contains("3bfc35fa"));
+    }
+
+    #[test]
+    fn a_window_title_cannot_write_its_own_protocol_lines() {
+        // The most attacker-influenced string this product handles: a browser
+        // tab title is whatever a web page decided to call itself.
+        let window = windows::Window {
+            id: 1,
+            kwin_id: "{a}".to_owned(),
+            application: "firefox".to_owned(),
+            title: "ok\nENTRY windows 2 window 99 evil pwned".to_owned(),
+        };
+        let rendered = Outbound::Entry {
+            domain: Domain::Windows,
+            generation: 1,
+            record: Record::Window(window),
+        }
+        .to_string();
+        assert_eq!(rendered.lines().count(), 1);
+        // Seven fields: the keyword, domain, generation, kind, number,
+        // application and title. The title being exactly one of them is the
+        // property — a newline or a space in it would make more.
+        assert_eq!(rendered.split_whitespace().count(), 7);
     }
 }

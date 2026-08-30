@@ -572,7 +572,7 @@ fn decide(snapshot: &Snapshot, available: bool, request: &Request) -> Decision {
         | Verb::Mute { kind, id, .. }
         | Verb::MakeDefault { kind, id } => (*kind, *id),
         // The parser refuses another domain's verb before it reaches here.
-        Verb::Rename { .. } | Verb::Delete { .. } | Verb::Accept { .. } => {
+        Verb::Rename { .. } | Verb::Delete { .. } | Verb::Accept { .. } | Verb::Activate { .. } => {
             return Decision::Refuse(Refusal::WrongKind)
         }
     };
