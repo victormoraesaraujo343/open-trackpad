@@ -14,10 +14,18 @@ data class Slot(val label: String, val action: Action)
  * which is exactly what reordering from inside the ring does — and it means the
  * two views can never disagree about what exists.
  */
-data class Profile(val name: String, val shortcuts: List<Slot>) {
+data class Profile(val name: String, val shortcuts: List<Slot?>) {
 
-    /** The shortcuts shown directly on the rail. */
-    val rail: List<Slot> get() = shortcuts.take(RAIL_SLOTS)
+    /**
+     * A position with nothing in it.
+     *
+     * The list is positions rather than contents, and that is the whole point:
+     * emptying the second slot must not pull the third one up into it. **A
+     * button that moves is a button pressed by mistake**, and a surface used
+     * without looking cannot have its arrangement rearrange itself as a side
+     * effect of removing something else.
+     */
+    val rail: List<Slot?> get() = shortcuts.take(RAIL_SLOTS)
 
     /**
      * Everything after the shortcut rail.
@@ -26,7 +34,7 @@ data class Profile(val name: String, val shortcuts: List<Slot>) {
      * only through the Quick Ring. One list rather than three, so the views can
      * never disagree about what exists.
      */
-    val ring: List<Slot> get() = shortcuts.drop(RAIL_SLOTS)
+    val ring: List<Slot?> get() = shortcuts.drop(RAIL_SLOTS)
 
     /**
      * Moves the shortcut at [from] to [to], which is how the ring promotes one
@@ -35,6 +43,21 @@ data class Profile(val name: String, val shortcuts: List<Slot>) {
      * Out-of-range positions are ignored rather than throwing: this is driven
      * by dragging, and a drag that ends somewhere unexpected should do nothing.
      */
+    /** The same profile with [index] emptied, every other position untouched. */
+    fun clear(index: Int): Profile {
+        if (index !in shortcuts.indices) return this
+        return copy(shortcuts = shortcuts.toMutableList().also { it[index] = null })
+    }
+
+    /** The same profile with [slot] at [index], growing the list if it must. */
+    fun put(index: Int, slot: Slot): Profile {
+        if (index < 0) return this
+        val out = shortcuts.toMutableList()
+        while (out.size <= index) out.add(null)
+        out[index] = slot
+        return copy(shortcuts = out)
+    }
+
     fun reorder(from: Int, to: Int): Profile {
         if (from !in shortcuts.indices || to !in shortcuts.indices || from == to) return this
         val moved = shortcuts.toMutableList()

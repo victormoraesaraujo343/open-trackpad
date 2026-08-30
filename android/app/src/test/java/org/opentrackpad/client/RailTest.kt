@@ -32,8 +32,8 @@ class RailTest {
     fun `the first four are the profile's own shortcuts`() {
         val rail = Rails.shortcuts(profile)
         for (index in 0 until Profile.RAIL_SLOTS) {
-            assertEquals(SlotPress.Send(profile.shortcuts[index].action), rail[index]?.press)
-            assertEquals(profile.shortcuts[index].label, rail[index]?.label)
+            assertEquals(SlotPress.Send(profile.shortcuts[index]!!.action), rail[index]?.press)
+            assertEquals(profile.shortcuts[index]!!.label, rail[index]?.label)
         }
     }
 
@@ -69,7 +69,7 @@ class RailTest {
         assertEquals(Rails.SLOTS, rail.size)
         assertTrue(rail.all { it != null })
         for (index in 0 until Rails.SLOTS) {
-            assertEquals(profile.ring[index].label, rail[index]?.label)
+            assertEquals(profile.ring[index]!!.label, rail[index]?.label)
         }
     }
 
@@ -89,7 +89,7 @@ class RailTest {
         // Shortcuts fire the moment a finger lands, so nothing that destroys
         // work may ship on a rail somebody has not chosen.
         val destructive = setOf("alt+f4", "ctrl+w", "ctrl+q", "ctrl+shift+q")
-        for (slot in DefaultProfiles.desktop.shortcuts) {
+        for (slot in DefaultProfiles.desktop.shortcuts.filterNotNull()) {
             val chord = (slot.action as Action.KeyChord).chord
             assertTrue("$chord ships on the Desktop rail", chord !in destructive)
         }

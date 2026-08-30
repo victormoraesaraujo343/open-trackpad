@@ -65,7 +65,7 @@ class ProfileStoreTest {
             line("profile", "Real") +
             line("slot", "Copy", "ctrl+c")
         val recovered = ProfileStore.decode(text)
-        assertEquals(listOf("Copy"), recovered.profiles.single().shortcuts.map { it.label })
+        assertEquals(listOf("Copy"), recovered.profiles.single().shortcuts.map { it?.label })
     }
 
     @Test
@@ -76,7 +76,7 @@ class ProfileStoreTest {
             line("slot", "OnlyALabel") +
             line("slot", "Copy", "ctrl+c")
         val recovered = ProfileStore.decode(text)
-        assertEquals(listOf("Copy"), recovered.profiles.single().shortcuts.map { it.label })
+        assertEquals(listOf("Copy"), recovered.profiles.single().shortcuts.map { it?.label })
     }
 
     @Test

@@ -35,6 +35,13 @@ object ProfileStore {
         for (profile in stored.profiles) {
             appendLine(listOf("profile", profile.name).joinToString(FIELD))
             for (slot in profile.shortcuts) {
+                if (slot == null) {
+                    // Written rather than skipped: an empty position that
+                    // vanished on reload would pull every position after it up
+                    // one, which is the shuffling the model exists to prevent.
+                    appendLine(listOf("empty").joinToString(FIELD))
+                    continue
+                }
                 val chord = (slot.action as? Action.KeyChord)?.chord ?: continue
                 appendLine(listOf("slot", slot.label, chord).joinToString(FIELD))
             }
@@ -60,7 +67,7 @@ object ProfileStore {
         var audioPage: AudioPage? = null
         val profiles = mutableListOf<Profile>()
         var name: String? = null
-        var slots = mutableListOf<Slot>()
+        var slots = mutableListOf<Slot?>()
 
         fun finishProfile() {
             val finished = name ?: return
@@ -99,6 +106,8 @@ object ProfileStore {
                     finishProfile()
                     name = parts[1]
                 }
+
+                "empty" -> if (name != null) slots += null
 
                 "slot" -> {
                     if (parts.size < 3 || name == null) continue

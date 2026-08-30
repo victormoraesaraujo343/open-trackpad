@@ -36,6 +36,9 @@ sealed interface SlotPress {
     /** The settings screen. */
     data object Settings : SlotPress
 
+    /** The screen for choosing which shortcuts sit where. */
+    data object Editor : SlotPress
+
     /** The audio panel, on one of its pages. */
     data class Audio(val page: AudioPage) : SlotPress
 
@@ -81,7 +84,7 @@ object Rails {
      * know or care.
      */
     fun shortcuts(profile: Profile): List<RailSlot?> = rail(
-        first = profile.rail.map(::slotFor),
+        first = profile.rail.map { it?.let(::slotFor) },
         last = RailSlot(
             label = "Quick",
             icon = RailIcons.path("quick"),
@@ -147,7 +150,7 @@ object Rails {
      * surface used without looking cannot have. Anything past the fourth
      * shortcut is refused the room instead.
      */
-    private fun rail(first: List<RailSlot>, last: RailSlot?): List<RailSlot?> =
+    private fun rail(first: List<RailSlot?>, last: RailSlot?): List<RailSlot?> =
         List(SLOTS) { index -> if (index == SLOTS - 1) last else first.getOrNull(index) }
 }
 

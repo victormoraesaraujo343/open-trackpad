@@ -30,7 +30,7 @@ class FontCoverageTest {
         for (face in faces!!) {
             val covered = charactersIn(face)
             for (profile in DefaultProfiles.all) {
-                for (slot in profile.shortcuts) {
+                for (slot in profile.shortcuts.filterNotNull()) {
                     for (character in slot.label) {
                         assertTrue(
                             "${face.name} cannot draw '$character' " +

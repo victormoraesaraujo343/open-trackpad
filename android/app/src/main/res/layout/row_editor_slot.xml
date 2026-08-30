@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One position on a rail, as the editor shows it: a small icon, the word, and a
+  lock where the slot is not the person's to change.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/row"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="8dp">
+
+    <TextView
+        android:id="@+id/slot_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:fontFamily="@font/inter_medium"
+        android:singleLine="true"
+        android:textColor="@color/secondary"
+        android:textSize="10sp"
+        tools:text="Switch" />
+
+    <ImageView
+        android:id="@+id/slot_lock"
+        android:layout_width="11dp"
+        android:layout_height="11dp"
+        android:layout_marginStart="6dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_lock"
+        android:visibility="gone" />
+</LinearLayout>

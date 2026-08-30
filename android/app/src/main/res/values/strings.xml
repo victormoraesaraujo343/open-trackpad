@@ -126,6 +126,18 @@
     <string name="group_other">Other</string>
     <string name="group_mine">Mine</string>
 
+    <!-- The profile editor. -->
+    <string name="editor_profile">profile</string>
+    <string name="editor_reset">Reset</string>
+    <string name="editor_save">Save</string>
+    <string name="editor_search">Search %1$d shortcuts</string>
+    <string name="editor_all">All</string>
+    <string name="editor_empty">Empty</string>
+    <string name="editor_quick">Quick Ring</string>
+    <string name="editor_rail_shortcuts">Shortcut rail</string>
+    <string name="editor_rail_overflow">Opposite rail</string>
+    <string name="editor_hint">Drag a shortcut onto a slot · tap a slot to empty it</string>
+
     <!-- The rails, for a screen reader. -->
     <string name="rail_shortcuts">Shortcuts</string>
     <string name="rail_overflow">More shortcuts</string>

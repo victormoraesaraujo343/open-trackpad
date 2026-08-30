@@ -69,6 +69,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var importPanel: View
     private lateinit var importScreen: ImportPanel
+    private lateinit var editorPanel: View
+    private lateinit var editorScreen: EditorPanel
 
     /** What the computer knows about shortcuts, and what it is offering. */
     private val library = LibraryState()
@@ -162,6 +164,18 @@ class MainActivity : AppCompatActivity() {
         // request instead would leave somebody believing thirty shortcuts had
         // been added when the answer was a refusal.
         importScreen.onAccepted = { show(Panel.NONE) }
+
+        editorPanel = findViewById(R.id.editor_panel)
+        editorScreen = EditorPanel(editorPanel)
+        editorScreen.onDismiss = { show(Panel.NONE) }
+        editorScreen.onSave = { edited ->
+            stored = stored.copy(
+                profiles = stored.profiles.map { if (it.name == edited.name) edited else it }
+            )
+            ProfileStore.save(settingsFile, stored)
+            layOutRails()
+            show(Panel.NONE)
+        }
 
         settingsPanel = findViewById(R.id.settings_panel)
         findViewById<View>(R.id.settings_back).setOnClickListener { show(Panel.NONE) }
@@ -326,6 +340,7 @@ class MainActivity : AppCompatActivity() {
             SlotPress.QuickRing -> show(if (panel == Panel.RING) Panel.NONE else Panel.RING)
             SlotPress.Profiles -> show(Panel.PROFILES)
             SlotPress.Settings -> show(Panel.SETTINGS)
+            SlotPress.Editor -> show(Panel.EDITOR)
             is SlotPress.Audio -> openAudio(press.page)
             SlotPress.Close -> show(Panel.NONE)
             SlotPress.None -> Unit
@@ -333,7 +348,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** What is over the trackpad, if anything. Only ever one thing. */
-    private enum class Panel { NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT }
+    private enum class Panel { NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT, EDITOR }
 
     private var panel = Panel.NONE
 
@@ -366,12 +381,14 @@ class MainActivity : AppCompatActivity() {
         }
         if (next == Panel.SETTINGS) showSettings()
         if (next == Panel.IMPORT) importScreen.show(library)
+        if (next == Panel.EDITOR) editorScreen.show(activeProfile, library.entries)
 
         ring.visibility = if (next == Panel.RING) View.VISIBLE else View.GONE
         profileMenu.visibility = if (next == Panel.PROFILES) View.VISIBLE else View.GONE
         settingsPanel.visibility = if (next == Panel.SETTINGS) View.VISIBLE else View.GONE
         audioPanel.visibility = if (next == Panel.AUDIO) View.VISIBLE else View.GONE
         importPanel.visibility = if (next == Panel.IMPORT) View.VISIBLE else View.GONE
+        editorPanel.visibility = if (next == Panel.EDITOR) View.VISIBLE else View.GONE
         // The rail opposite the Quick Ring becomes the panel's pages while one
         // is open, and goes back to being shortcuts when it closes. The rail
         // with the ring on it never changes, so the way out never moves.
@@ -568,9 +585,15 @@ class MainActivity : AppCompatActivity() {
                 name = profile.name,
                 active = profile.name == stored.settings.activeProfile,
             )
-        } + ProfileMenuView.Row.Destination(
-            label = getString(R.string.profile_settings),
-            press = SlotPress.Settings,
+        } + listOf(
+            ProfileMenuView.Row.Destination(
+                label = getString(R.string.profile_manage),
+                press = SlotPress.Editor,
+            ),
+            ProfileMenuView.Row.Destination(
+                label = getString(R.string.profile_settings),
+                press = SlotPress.Settings,
+            ),
         )
 
     /**
@@ -617,7 +640,10 @@ class MainActivity : AppCompatActivity() {
                 )
             )
         }
-        val shortcuts = activeProfile.ring.drop(Rails.SLOTS).map { slot ->
+        // Empty positions are dropped here rather than carried through: the
+        // ring's wedges are its own five-and-eight arrangement, and a hole left
+        // on a rail has no meaning once the shortcuts have moved into a circle.
+        val shortcuts = activeProfile.ring.drop(Rails.SLOTS).filterNotNull().map { slot ->
             RailSlot(
                 label = slot.label,
                 icon = RailIcons.path(RailIcons.forAction(slot.action)),
@@ -732,6 +758,10 @@ class MainActivity : AppCompatActivity() {
         audio.reset()
         library.reset()
         offeredThisSession = false
+        // A request from the previous session can never be answered now, and
+        // leaving its number here would let a refusal from this one land on a
+        // screen that asked nothing.
+        accepting = -1
         if (audio.granted) ask(Audio.refresh(++requestSequence))
         if (Library.SHORTCUTS in granted) ask(Library.refresh(++requestSequence, Library.SHORTCUTS))
         // Asked for every time the offer screen opens as well as here: it is
