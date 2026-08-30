@@ -25,7 +25,7 @@ import android.view.WindowManager
  */
 class ScreenCare(private val window: Window) {
 
-    private companion object {
+    companion object {
         /** How long without a touch before the screen dims. */
         const val IDLE_AFTER_MS = 30_000L
 
@@ -40,6 +40,24 @@ class ScreenCare(private val window: Window) {
 
         /** How far they move, in density-independent pixels. */
         const val NUDGE_SCALE_DP = 2f
+
+        /**
+         * Whether the screen should be scheduled to dim at all.
+         *
+         * Pulled out of the class so it can be tested, because [ScreenCare]
+         * needs a [Window] and this rule is the part Victor actually hit: he
+         * opened settings, read for half a minute, and the screen went almost
+         * black under him.
+         *
+         * Three conditions and all of them necessary. [running] because a
+         * paused activity should not be scheduling anything. [wanted] because
+         * it is a setting somebody can turn off. [onThePad] because the setting
+         * means *the trackpad surface* fades when nobody is touching it, and on
+         * every other screen a minute without a finger means somebody is
+         * reading.
+         */
+        fun mayDim(running: Boolean, wanted: Boolean, onThePad: Boolean): Boolean =
+            running && wanted && onThePad
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -80,15 +98,47 @@ class ScreenCare(private val window: Window) {
             field = value
             if (!value) undim()
             handler.removeCallbacks(dim)
-            if (value && running) handler.postDelayed(dim, IDLE_AFTER_MS)
+            if (mayDim(running, value, showingPad)) handler.postDelayed(dim, IDLE_AFTER_MS)
         }
 
-    /** Called whenever the user touches, to undo any dimming. */
+    /**
+     * Whether the trackpad is what is on screen.
+     *
+     * **Only the pad ever dims.** The setting says the surface fades when
+     * nobody is touching it, and a person reading a settings screen is not
+     * idle — they are reading. Victor found this the way anybody would: he
+     * opened settings, read for half a minute, and the screen went almost black
+     * under him.
+     *
+     * A touch is the wrong signal for those screens. Anywhere else in the app,
+     * time passing without a finger means somebody is looking rather than
+     * absent, and the only surface where the two are the same thing is the one
+     * whose entire purpose is being touched.
+     */
+    var showingPad: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            if (!value) {
+                undim()
+                handler.removeCallbacks(dim)
+            } else {
+                onActivity()
+            }
+        }
+
+    /**
+     * Called whenever the person does anything, to undo any dimming.
+     *
+     * Any touch, not only one on the pad. This used to be called from the touch
+     * frame alone — the path a finger on the trackpad takes — so a finger on a
+     * rail did not count as activity either.
+     */
     fun onActivity() {
         if (!running) return
         undim()
         handler.removeCallbacks(dim)
-        if (fadeWhenIdle) handler.postDelayed(dim, IDLE_AFTER_MS)
+        if (mayDim(running, fadeWhenIdle, showingPad)) handler.postDelayed(dim, IDLE_AFTER_MS)
     }
 
     private fun undim() {

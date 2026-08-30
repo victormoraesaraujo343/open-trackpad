@@ -524,6 +524,9 @@ class MainActivity : AppCompatActivity() {
         editorPanel.visibility = if (next == Panel.EDITOR) View.VISIBLE else View.GONE
         namePanel.visibility = if (next == Panel.NAME) View.VISIBLE else View.GONE
         recordingPanel.visibility = if (next == Panel.RECORDING) View.VISIBLE else View.GONE
+        // Only the trackpad dims. Anywhere else, time passing means somebody is
+        // reading rather than gone.
+        screen.showingPad = next == Panel.NONE
         allWindowsPanel.visibility =
             if (next == Panel.ALL_WINDOWS) View.VISIBLE else View.GONE
         if (next == Panel.ALL_WINDOWS) allWindowsScreen.show(windows.windows)
@@ -1100,7 +1103,12 @@ class MainActivity : AppCompatActivity() {
      */
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP -> waitBeforeReturning()
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP -> {
+                waitBeforeReturning()
+                // Every touch, not only the ones that reach the pad. A finger
+                // on a rail is somebody using the thing.
+                screen.onActivity()
+            }
         }
         return super.dispatchTouchEvent(event)
     }
