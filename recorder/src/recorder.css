@@ -150,3 +150,10 @@
   background-color: #1b1d1f;
   color: #4e545b;
 }
+
+/* A key that was refused. Amber, which this app already uses for
+ * degraded-but-working, rather than red: nothing is broken and the next key
+ * press will very likely work. */
+.hint.refused {
+  color: #f5a524;
+}

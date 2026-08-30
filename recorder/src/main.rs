@@ -37,7 +37,7 @@ use gtk4::{
     EventControllerKey, Label, Orientation,
 };
 
-use opentrackpadd::keys::{name_of, Chord, KeyCode};
+use opentrackpadd::keys::{name_of, Chord, ChordError, KeyCode};
 use opentrackpadd::shortcuts::Shortcuts;
 
 /// How long the window may sit with nothing pressed before it closes itself.
@@ -101,9 +101,7 @@ fn build(application: &Application) {
     capture.append(&waiting);
     panel.append(&capture);
 
-    let hint = Label::new(Some(
-        "A combination, or a single key like Print — both work.",
-    ));
+    let hint = Label::new(Some(HINT));
     hint.add_css_class("hint");
     hint.set_halign(Align::Start);
     panel.append(&hint);
@@ -122,7 +120,7 @@ fn build(application: &Application) {
 
     window.set_child(Some(&panel));
 
-    watch_keys(&window, &state, &capture, &name, &save);
+    watch_keys(&window, &state, &capture, &hint, &name, &save);
     save_on_click(&window, &state, &name, &save);
     close_when_unfocused(&window);
     close_when_idle(&window, &state);
@@ -218,10 +216,38 @@ fn evdev_from_hardware(keycode: u32) -> Option<KeyCode> {
     u16::try_from(code).ok().map(KeyCode)
 }
 
+/// What the line under the box says when nothing has gone wrong.
+const HINT: &str = "A combination, or a single key like Print — both work.";
+
+/// Why a key press could not become a shortcut, in words for the person who
+/// pressed it.
+///
+/// Every one of these used to be silence: the box simply did not change, which
+/// looks like a broken recorder rather than a refused key. That is the failure
+/// this project refuses everywhere else, and it is likeliest on a keyboard that
+/// is not the one this vocabulary was written for.
+fn refusal(error: &ChordError) -> String {
+    match error {
+        ChordError::Unknown(_) => {
+            "That key has no name here yet, so it cannot be recorded.".to_owned()
+        }
+        ChordError::MagicSysRq => {
+            "Alt with Print is the system's own emergency key, so it is not available.".to_owned()
+        }
+        ChordError::TooManyKeys => {
+            "That is more keys than one shortcut can hold. Try three or four.".to_owned()
+        }
+        ChordError::Empty | ChordError::Repeated(_) => {
+            "That combination cannot be recorded.".to_owned()
+        }
+    }
+}
+
 fn watch_keys(
     window: &ApplicationWindow,
     state: &Rc<Recorder>,
     capture: &GtkBox,
+    hint: &Label,
     name: &Entry,
     save: &Button,
 ) {
@@ -229,6 +255,7 @@ fn watch_keys(
     let state = Rc::clone(state);
     let window_handle = window.clone();
     let capture = capture.clone();
+    let hint = hint.clone();
     let name = name.clone();
     let save = save.clone();
 
@@ -244,15 +271,26 @@ fn watch_keys(
         }
 
         let Some(pressed) = keys_from(modifiers, keycode) else {
+            hint.set_text("That key has no name here yet, so it cannot be recorded.");
+            hint.add_css_class("refused");
             return glib::Propagation::Stop;
         };
         // The same constructor the daemon uses, with the same refusals: a key
         // with no name here, the chord ceiling, and the alt-with-print pair are
         // all turned down at this line rather than after being saved.
-        let Ok(chord) = Chord::from_keys(&pressed) else {
-            return glib::Propagation::Stop;
+        let chord = match Chord::from_keys(&pressed) {
+            Ok(chord) => chord,
+            Err(error) => {
+                // Said out loud. A key that does nothing and explains nothing is
+                // indistinguishable from a recorder that has stopped working.
+                hint.set_text(&refusal(&error));
+                hint.add_css_class("refused");
+                return glib::Propagation::Stop;
+            }
         };
 
+        hint.set_text(HINT);
+        hint.remove_css_class("refused");
         show_captured(&capture, &chord);
         *state.chord.borrow_mut() = Some(chord);
         // Every press replaces the last, which is what "press another
@@ -481,5 +519,33 @@ mod tests {
         assert_eq!(cap_text("print"), "Print");
         assert_eq!(cap_text("pageup"), "Page Up");
         assert_eq!(cap_text("leftbracket"), "[");
+    }
+
+    #[test]
+    fn a_refused_key_is_explained_rather_than_ignored() {
+        // Every one of these used to be silence, which is indistinguishable
+        // from a recorder that has stopped working. Most likely to happen on a
+        // keyboard that is not the one this vocabulary was written for.
+        for error in [
+            ChordError::Unknown("KEY_RO".to_owned()),
+            ChordError::MagicSysRq,
+            ChordError::TooManyKeys,
+            ChordError::Empty,
+            ChordError::Repeated("ctrl".to_owned()),
+        ] {
+            let said = refusal(&error);
+            assert!(!said.is_empty(), "{error:?} was refused in silence");
+            assert!(said.ends_with('.'), "{said:?} is not a sentence");
+            // The person pressed a key; they should not be shown the name of a
+            // kernel constant for their trouble.
+            assert!(!said.contains("KEY_"), "{said:?} leaks an internal name");
+        }
+    }
+
+    #[test]
+    fn the_hint_says_both_shapes_are_allowed() {
+        // A single key is a shortcut on its own, and somebody who does not know
+        // that will try a combination and give up.
+        assert!(HINT.contains("single key"));
     }
 }
