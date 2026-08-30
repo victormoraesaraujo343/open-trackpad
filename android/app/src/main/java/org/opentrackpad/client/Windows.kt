@@ -55,19 +55,30 @@ data class WindowEntry(
      * looking. "Firefox" beats forty characters of page title truncated to
      * eight.
      *
-     * Usually this is already a name a person would recognise: the host asks
-     * the desktop entry the window belongs to, and the entry states its own
-     * name, localised where it offers a translation. No inference at either
-     * step.
+     * Taken exactly as sent, and there was briefly a rule here that dropped a
+     * reverse-DNS prefix. It is gone, and the reason it went is worth more than
+     * the rule was.
      *
-     * The dotted prefix is dropped for the windows that have **no** entry,
-     * which still fall back to the raw class. On Victor's desktop that was
-     * `org.kde.dolphin`, truncating to "org.kde.d…" in fifteen millimetres and
-     * identifying nothing. It can no longer fire on a named window, because a
-     * name has no dots — but the fallback is still real and still reaches a
-     * rail.
+     * It was written when this field carried a resource class, where
+     * `org.kde.dolphin` truncates to "org.kde.d…" in fifteen millimetres and
+     * identifies nothing. The host then changed the field to carry the name an
+     * application gives itself — it asks the desktop entry the window belongs
+     * to, and the entry states its own name, localised where it offers a
+     * translation, with no inference at either step.
+     *
+     * dc said the stripping could no longer help and could no longer hurt. The
+     * first half is true and the second is not: it runs on **every** window
+     * now, named ones included, and a name is free to contain a dot.
+     * "Node.js" would have become "js". The case it was built for stopped
+     * arriving and the case it could damage started.
+     *
+     * A window with no desktop entry still falls back to its class, and one of
+     * those can still be reverse-DNS somewhere. Then a rail truncates a long
+     * word, which is a smaller harm than renaming an application that got its
+     * name right — and the honest fix for it is a shorter name from the host,
+     * not a guess here.
      */
-    val label: String get() = application.substringAfterLast('.')
+    val label: String get() = application
 }
 
 sealed interface WindowMessage {

@@ -187,24 +187,55 @@ class WindowsTest {
     }
 
     @Test
-    fun `a reverse-DNS application name loses its prefix on a rail`() {
-        // Seen on Victor's desktop. A rail is fifteen millimetres wide and
-        // "org.kde.dolphin" truncates to "org.kde.d…", which identifies
-        // nothing. The prefix is the part that is never what somebody is
-        // looking for.
-        assertEquals("dolphin", WindowEntry(1, "org.kde.dolphin", "t").label)
-        assertEquals("WarpPreview", WindowEntry(1, "dev.warp.WarpPreview", "t").label)
-        // Names without a prefix are left exactly alone.
-        assertEquals("firefox", WindowEntry(1, "firefox", "t").label)
+    fun `an application name reaches the rail exactly as sent`() {
+        // There was a rule here that dropped a reverse-DNS prefix, written when
+        // this field carried a resource class. The host now sends the name an
+        // application gives itself, and a name may contain a dot: that rule
+        // turned "Node.js" into "js". It is gone. Truncating a long word is a
+        // smaller harm than renaming an application that got its name right.
+        assertEquals("Node.js", WindowEntry(1, "Node.js", "t").label)
+        assertEquals("System Settings", WindowEntry(1, "System Settings", "t").label)
+        assertEquals("org.kde.dolphin", WindowEntry(1, "org.kde.dolphin", "t").label)
         assertEquals("steam", WindowEntry(1, "steam", "t").label)
     }
 
     @Test
-    fun `the glyph still keys off the whole application name`() {
-        // The label is shortened for reading; the match is not. "org.kde.dolphin"
-        // must still find the file-manager glyph, and would not if the match ran
-        // on the shortened word for some applications.
+    fun `a glyph is found whether the host sends a name or a class`() {
+        // Both reach this field now — a name where the window declares a
+        // desktop entry, the raw class where it does not — so the match has to
+        // work on either spelling of the same application.
         assertEquals(RailIcons.path("grid"), RailIcons.forWindow("org.kde.dolphin"))
+        assertEquals(RailIcons.path("grid"), RailIcons.forWindow("Dolphin"))
+        assertEquals(RailIcons.path("gear"), RailIcons.forWindow("System Settings"))
+        assertEquals(RailIcons.path("globe"), RailIcons.forWindow("Firefox"))
+    }
+
+    @Test
+    fun `the lines his desktop actually sent are parsed as sent`() {
+        // Captured from the running daemon rather than invented. The third is
+        // why the missing decode stayed hidden: `steam` is byte-identical
+        // escaped or not, and until tonight every application on that machine
+        // looked like it.
+        val lines = listOf(
+            "ENTRY windows 1 window 3 System%20Settings " +
+                "Power%20Management%20%E2%80%94%20System%20Settings",
+            "ENTRY windows 1 window 2 Ship%20Studio%20(b22db3) " +
+                "Ship%20Studio%20-%20open-trackpad",
+            "ENTRY windows 1 window 4 steam Steam",
+        )
+        val parsed = lines.map { entry(it)!!.entry }
+        assertEquals(
+            listOf("System Settings", "Ship Studio (b22db3)", "steam"),
+            parsed.map { it.application },
+        )
+        assertEquals(
+            listOf(
+                "Power Management — System Settings",
+                "Ship Studio - open-trackpad",
+                "Steam",
+            ),
+            parsed.map { it.title },
+        )
     }
 
     @Test
