@@ -155,13 +155,27 @@ object Rails {
 }
 
 /**
- * The same rail with nothing on it working.
+ * The same rail with everything that needs the computer greyed out.
  *
- * Drawn, not hidden: the app is still here, it just cannot do anything until
- * the session comes back, and a rail that vanished and returned would move
- * every button on the way. Also the only thing standing between a dead session
- * and a shortcut that goes nowhere, since a dead slot refuses the press itself
- * rather than trusting the caller to check.
+ * Drawn, not hidden: the app is still here, it just cannot do some of this
+ * until the session comes back, and a rail that vanished and returned would
+ * move every button on the way. A dead slot refuses the press itself rather
+ * than trusting the caller to check.
+ *
+ * **Only what actually needs the host.** A shortcut has nowhere to go without
+ * a session and is greyed; the Quick Ring is the way in to settings, profiles
+ * and the app itself, and greying that out locks somebody out of the whole
+ * interface for as long as the cable is unplugged — including out of the screen
+ * that would tell them what is wrong.
+ *
+ * This deadened the ring as well until Victor found the fifth slot doing
+ * nothing. That turned out to be a stale build, but this would have produced
+ * exactly the same symptom the moment the session was anything short of
+ * connected, and the wrong explanation would have been sitting ready.
  */
-fun List<RailSlot?>.deadened(): List<RailSlot?> =
-    map { it?.copy(press = SlotPress.None, style = SlotStyle.DEAD) }
+fun List<RailSlot?>.deadened(): List<RailSlot?> = map { slot ->
+    when (slot?.press) {
+        is SlotPress.Send -> slot.copy(press = SlotPress.None, style = SlotStyle.DEAD)
+        else -> slot
+    }
+}

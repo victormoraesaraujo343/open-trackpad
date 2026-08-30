@@ -96,14 +96,24 @@ class RailTest {
     }
 
     @Test
-    fun `a dead rail keeps its shape and refuses every press`() {
+    fun `a dead rail greys the shortcuts and keeps the way in`() {
         val dead = Rails.shortcuts(profile).deadened()
         assertEquals(Rails.SLOTS, dead.size)
         for (index in Rails.shortcuts(profile).indices) {
             assertEquals(Rails.shortcuts(profile)[index] == null, dead[index] == null)
         }
-        assertTrue(dead.filterNotNull().all { it.press == SlotPress.None })
-        assertTrue(dead.filterNotNull().all { it.style == SlotStyle.DEAD })
+
+        // Everything that would have gone to the computer is refused and grey.
+        val shortcuts = dead.filterNotNull().filter { it.label != "Quick" }
+        assertTrue(shortcuts.all { it.press == SlotPress.None })
+        assertTrue(shortcuts.all { it.style == SlotStyle.DEAD })
+
+        // The Quick Ring is not one of those. It is the way in to settings,
+        // profiles and the app itself, and greying it out would lock somebody
+        // out of the whole interface while the cable is unplugged — including
+        // out of the screen that would tell them what is wrong.
+        assertEquals(SlotPress.QuickRing, dead[4]?.press)
+        assertEquals(SlotStyle.PRIMARY, dead[4]?.style)
     }
 
     @Test

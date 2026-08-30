@@ -111,6 +111,19 @@ class Artboard private constructor(
         /** A rail, in units of the drawing. */
         const val RAIL_UNITS = 78f
 
+        /** The word under a glyph, and the space kept either side of it. */
+        const val LABEL_UNITS = 12f
+        const val LABEL_INSET_UNITS = 5f
+
+        /**
+         * How wide a rail label may be before it is cut short.
+         *
+         * Public, and free of Android, so `LabelWidthTest` can hold every
+         * default to it. Two of them sit above 90% of this, which is a fact
+         * that should fail a build rather than live in somebody's memory.
+         */
+        const val RAIL_LABEL_ROOM = RAIL_UNITS - LABEL_INSET_UNITS * 2
+
         /** Both rails together may not take more of the width than this. */
         const val RAILS_MAX_FRACTION = 0.25f
 

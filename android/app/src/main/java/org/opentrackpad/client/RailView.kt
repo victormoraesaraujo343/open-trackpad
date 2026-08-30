@@ -69,10 +69,10 @@ class RailView @JvmOverloads constructor(
          * phone. A physical size is the only one that means the same thing
          * twice.
          */
-        const val LABEL = 12f
+        const val LABEL = Artboard.LABEL_UNITS
 
         /** Left and right of the label before it is cut short. */
-        const val LABEL_INSET = 5f
+        const val LABEL_INSET = Artboard.LABEL_INSET_UNITS
 
         val GROUND = Color.parseColor("#0E0F10")
         val INSET = Color.parseColor("#1B1D1F")
