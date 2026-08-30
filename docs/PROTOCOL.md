@@ -66,6 +66,23 @@ The bump could not be avoided. Older hosts treat an unexpected field as fatal, s
 there is no way to add one quietly. That strictness is what keeps this from
 being a remote shell, and an honest version number is what it costs.
 
+### Meeting an older client
+
+The host accepts `OTP/3` as well, and serves it exactly what version 3 had: a
+touchpad and key chords. No `WELCOME`, because nothing had ever answered a
+version 3 client and one arriving would be written into a socket nobody reads.
+No capabilities, no buttons, no `RECORD`, no requests — a version 3 client
+cannot know those exist, so one asking is not the client it claims to be.
+
+This is not politeness. The `v0.1-light` client is a shipped, tagged thing that
+people use, and it speaks version 3 with no lower version to retry at. A
+version 4 host that refused it would take a working trackpad off somebody's desk
+and give the phone no way to explain why. The newer client copes and the shipped
+one cannot, which is exactly the asymmetry that makes this easy to miss.
+
+One version back and only one. Versions 1 and 2 are refused; no client that
+shipped speaks them.
+
 ## Contact frame
 
 ```text
@@ -118,6 +135,17 @@ command. A control surface that can press any key, or run anything, is a remote
 shell with buttons on it. Unknown names, empty parts, repeated keys and chords
 longer than five keys are all rejected, so a malformed action never becomes a
 partially pressed one.
+
+### A chord is a position, not a letter
+
+The recorder captures the hardware key, not the symbol printed on it. A shortcut
+is a place your hand goes, and every desktop treats it that way: `ctrl+a`
+recorded on one layout must not fire somewhere else when the layout changes.
+
+The visible consequence is that a chord names the key by its US-layout symbol
+whichever keyboard recorded it. On a Brazilian keyboard `ç` records as
+`semicolon`, because that is the key. Someone who switches layouts keeps the
+position rather than the letter, which is what a shortcut has always meant.
 
 ### Separate paths
 
@@ -183,10 +211,10 @@ lines of the same generation. `CHANGED` is one entity that has appeared or is no
 longer what it was. The generation rises with every snapshot, so a client can
 tell that an update belongs to the picture it holds.
 
-An `<entity>` is seven fields:
+An `<entity>` is nine fields:
 
 ```text
-<kind> <id> <volume> <muted> <default> <target> <name>
+<kind> <id> <volume> <muted> <default> <target> <port> <paused> <name>
 ```
 
 - `kind`: `output`, `input` or `stream`
@@ -196,7 +224,24 @@ An `<entity>` is seven fields:
   the ceiling sits above the reference because louder than 100% is offered
 - `muted`, `default`: `0` or `1`. `default` is always `0` for a stream
 - `target`: for a stream, the output it plays through; `-` for a device
+- `port`: how a device is attached — `usb`, `pci`, `bluetooth`, `hdmi`,
+  `analog`, `digital`. Transport before connector, so a USB sound card with an
+  analog output says `usb`: that is what tells it apart from the built-in one.
+  `-` for a stream
+- `paused`: `1` when the application has stopped the stream, `0` otherwise;
+  `-` for a device, which is never paused. Named for what it is rather than for
+  what a screen wants: paused certainly means silent, but not-paused only means
+  the stream is open, and an application can hold one writing silence for hours
 - `name`: percent-encoded (see below)
+
+A client should draw `port` only where two devices on the same page carry
+exactly the same name — the case where the name resolves nothing at all. Shown
+always it is noise: on the development machine four devices in seven have a name
+that already says it, and one reads as a contradiction, `usb` beside a name
+ending "Analog Stereo". Both are true, one being the transport and the other the
+profile, and nobody reading a phone screen knows that. The comparison is exact
+equality between two names the host wrote; anything cleverer means interpreting
+free text, which is the thing this protocol keeps refusing to do.
 
 Example:
 
@@ -253,7 +298,10 @@ something that can be acted on.
 Anything else is a protocol error and closes the connection, exactly as an
 unknown key name does:
 
-- an unknown domain, verb or kind
+- an unknown domain, verb or kind. Verbs are dispatched per domain, so asking
+  the shortcut list to change a volume is a protocol error rather than a
+  refusal: a client doing that is broken or probing, and neither deserves a
+  polite answer
 - a level outside the accepted range — refused, not clamped: a client that does
   not know the scale is a client whose next message cannot be trusted either
 - a mute flag that is not `0` or `1`, or an id that is not a number
@@ -272,6 +320,8 @@ done. The session continues.
 - `wrong-kind` — the verb does not apply to that entity
 - `unavailable` — the domain cannot be served right now
 - `backend-failed` — the sound daemon refused
+- `stale` — the offer being accepted has moved on
+- `full` — the shortcut list cannot hold them all
 - `too-fast` — see below
 
 Success is not acknowledged. The `CHANGED` that follows is the acknowledgement,
@@ -287,6 +337,88 @@ The host also gathers requests for 50 ms and drops any that a later one has
 overtaken, so a drag across the screen costs one change rather than forty. A
 later mute does not overtake an earlier level change: someone who slides a fader
 and then mutes expects the level to be there when they unmute.
+
+## The shortcuts domain
+
+What the host will fire, which is what the profile editor offers.
+
+```text
+ENTRY shortcuts <generation> shortcut <id> <chord> <origin> <group> <name>
+```
+
+- `origin`: `convention`, `imported` or `recorded`
+- `group`: one of `windows desktop screenshot sound media session power
+  keyboard accessibility text browser terminal other`, or `-`
+- `name`: percent-encoded
+
+A recorded shortcut always sends `-` for its group. The person never said what
+theirs is for, and inferring it from a chord would be worse than silence.
+
+```text
+REQUEST <sequence> shortcuts RENAME <id> <escaped name>
+REQUEST <sequence> shortcuts DELETE <id>
+```
+
+### What may be renamed is not what may be deleted
+
+Deliberately, and the two lists differ for two unrelated reasons:
+
+- `recorded` — both. It is theirs.
+- `imported` — rename yes, delete no. Once accepted it lives in the file like
+  anything else, so a rename sticks. But deleting it only returns it to the
+  offer, so delete would not mean what somebody pressing it expects.
+- `convention` — neither. These are rewritten from the seed table, so a rename
+  would quietly reappear and nobody could work out why.
+
+Renaming is the one place a client's own free text crosses into the host. It
+arrives percent-encoded like every other name, and a field carrying a raw space
+was not written by anything that knows the rules, so it is refused rather than
+half-read.
+
+## The import domain
+
+What this computer already has that OpenTrackpad does not — the desktop's own
+keyboard shortcuts, offered for review.
+
+```text
+ENTRY import <generation> candidate <id> <chord> <group> <recommended> <name>
+```
+
+`recommended` is `0` or `1`. A candidate carries no origin and a shortcut
+carries no recommendation: each would say the same thing every time in its own
+domain, and a field that never varies teaches people to stop reading it.
+
+The recommendation matters more than it sounds. The development machine offers
+seventy-five candidates and forty-five are window management, a good third of
+those "Switch to Desktop 7" and "Activate Task Manager Entry 3" — real
+shortcuts nobody wants on a phone rail. So the review screen arrives with about
+a dozen chosen rather than everything ticked, and the choosing happens here,
+where the stable action keys are, rather than in a client guessing from the
+shape of a name.
+
+```text
+REQUEST <sequence> import ACCEPT <generation> <id>,<id>,...
+```
+
+Accepted candidates become recorded and appear in `shortcuts`; their chords are
+then filtered out of the next offer. Declining is not a state worth storing, so
+there is no reject.
+
+The offer is not a first-run event. It is available whenever asked, because
+someone who binds a new desktop shortcut next month should be able to pick it
+up, and a one-shot offer makes the only chance to say yes the moment somebody is
+least ready to decide.
+
+### Why ACCEPT carries a generation, and is all or nothing
+
+Candidate numbers are the host's and mean nothing outside the offer they were
+made in, so an accept quoting a stale generation is refused rather than applied
+to whatever those numbers mean now.
+
+A set naming anything unknown is refused whole. A partly applied set leaves
+somebody looking at a screen that half agrees with the machine, with no way to
+tell which half — the worst outcome available here, and worth the strictness to
+make impossible.
 
 ## Note for the audio panel
 
