@@ -254,6 +254,58 @@ fresh install ships with the built-in shortcuts already recorded, and what a
 stranger's first launch contains is a decision, not an implementation detail. The
 store has a `contains(chord)` waiting for the answer either way.
 
+
+### The gap between a screen and a shape
+
+Found on 2026-08-30, by Victor looking for things in the app and not finding
+them. Three drawn screens were absent — the dial, the held key, and the phone's
+way of asking for the recorder — and they were absent for one reason.
+
+**The client can only express a key chord.** `Action` had a single member. So
+every screen that needed a *different kind of action* was undeliverable, and
+nobody noticed because each half reported truthfully about its own: every screen
+drawn had been handed over, and every screen handed over had been built.
+
+Handing over a screen is not handing over what it rests on. A shape needs to be
+specified as a shape — what it sends, and what the wire does with it — before
+the screen is worth drawing.
+
+Two of the three are now unblocked, since `ACTION RECORD` and `ACTION BUTTON`
+exist on the host. The other two remain design work rather than implementation:
+
+- **The dial** has to decide what it sends. Repeated `volumeup` presses is the
+  plus-and-minus mistake wearing a circle. Volume has an honest answer already —
+  the audio domain's `VOLUME` request — but that only helps the one thing that
+  happens to have a domain, and brightness has none. So continuous control is
+  either a verb of its own or it is per-domain and there are only ever as many
+  as there are domains.
+- **The held key** needs the wire to express down and up separately, which was
+  deliberately refused for `BUTTON` and for good reasons: a stuck button cannot
+  be clicked out of. Whatever allows it has to carry the same release guarantee.
+
+### The Quick Ring holds destinations
+
+The ring appeared in the app with three items, which was arithmetic rather than
+a bug: a profile's shortcuts were consumed by two rails and the ring received
+what was left, which was nothing.
+
+The drawing contradicted this file. The ring is "not a shortcut menu but the
+app's only way in to anything at all" — so it holds Audio, Profiles, Settings,
+the import offer and the keyboard, and its wedge count follows what exists
+rather than being padded to fill a circle. The far rail keeps the overflow
+shortcuts until recent applications replace it whole.
+
+### A second visual identity, as a theme
+
+A skeuomorphic look was drawn in parallel and is good enough to keep — physical
+keycaps, cast shadows, an LED in a lit key — in both light and dark. It ships as
+a theme rather than a second application: Settings already carries the switch,
+and two builds would mean two releases and a person who picked wrong having to
+reinstall.
+
+What a theme selects is a **surface description** rather than a palette. This
+one differs in depth, borders, shadows and key shape, not only in colour.
+
 ## Milestone 5 — recent applications rail
 
 Four recently used desktop windows on a rail, a fifth slot listing the rest, and
