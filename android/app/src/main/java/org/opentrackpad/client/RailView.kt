@@ -284,13 +284,43 @@ class RailView @JvmOverloads constructor(
         // The single-line path sets it back, because there it *is* centring by
         // drawing at the middle.
         label.textAlign = Paint.Align.LEFT
+        val laid = forWrapping(text, room)
         return StaticLayout.Builder
-            .obtain(text, 0, text.length, label, room.toInt().coerceAtLeast(1))
+            .obtain(laid, 0, laid.length, label, room.toInt().coerceAtLeast(1))
             .setAlignment(Layout.Alignment.ALIGN_CENTER)
             .setMaxLines(LABEL_LINES)
             .setEllipsize(TextUtils.TruncateAt.END)
             .setIncludePad(false)
             .build()
+    }
+
+    /**
+     * The name, with a break put in it if it needs one and has nowhere obvious
+     * to take it.
+     *
+     * Three answers in order, and the order is the whole rule:
+     *
+     * 1. **A real space wins.** "System Settings" already says where it breaks.
+     * 2. **It fits, so leave it.** No break is inserted into a name that does
+     *    not need one — otherwise "Dolphin" would come out on two lines.
+     * 3. **A capital following a lowercase is a word boundary the name already
+     *    carries.** "WarpPreview" becomes "Warp / Preview", which loses
+     *    nothing. That is the same category as dropping a parenthetical:
+     *    finding a boundary rather than inventing or abbreviating one.
+     *
+     * With none of those it breaks mid-word as before — ugly, complete, and
+     * still better than losing characters off a name that is not ours.
+     *
+     * A newline rather than a zero-width space. A zero-width space would let
+     * the layout choose, which is tidier, and it is a character this app's
+     * subset fonts do not carry — that is exactly how "Vol −" nearly shipped as
+     * a blank box.
+     */
+    private fun forWrapping(text: String, room: Float): String {
+        if (text.any { it.isWhitespace() }) return text
+        if (label.measureText(text) <= room) return text
+        val at = WindowName.boundary(text) ?: return text
+        return text.substring(0, at) + "\n" + text.substring(at)
     }
 
     private fun isHeld(slot: Int): Boolean {

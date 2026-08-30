@@ -314,4 +314,48 @@ class WindowsTest {
             assertEquals("\"${slot.label}\" should not wrap", false, slot.wraps)
         }
     }
+
+    private fun split(name: String): String =
+        WindowName.boundary(name)
+            ?.let { name.substring(0, it) + " / " + name.substring(it) }
+            ?: name
+
+    @Test
+    fun `a run-together name divides where it already divides`() {
+        // Not inventing a boundary and not abbreviating: finding one the name
+        // carries. Same category as dropping a parenthetical.
+        assertEquals("Warp / Preview", split("WarpPreview"))
+        assertEquals("Open / Trackpad", split("OpenTrackpad"))
+        assertEquals("System / Settings", split("SystemSettings"))
+        assertEquals("Libre / Office", split("LibreOffice"))
+    }
+
+    @Test
+    fun `an acronym is one word and is never cut`() {
+        // The rule that keeps this honest. A run of capitals is not two words,
+        // and the transition into one is not a boundary either — the C of
+        // VLCMedia belongs to VLC.
+        assertEquals("VLCMedia / Player", split("VLCMediaPlayer"))
+        assertEquals("VLC", split("VLC"))
+        assertEquals("KDE", split("KDE"))
+        assertEquals("GIMP", split("GIMP"))
+    }
+
+    @Test
+    fun `a name with no boundary has none reported`() {
+        // Then the rail breaks mid-word, which is ugly and complete. Losing
+        // characters off somebody else's name is the thing being avoided.
+        assertEquals(null, WindowName.boundary("firefox"))
+        assertEquals(null, WindowName.boundary("steam"))
+        assertEquals(null, WindowName.boundary(""))
+        assertEquals(null, WindowName.boundary("a"))
+    }
+
+    @Test
+    fun `several boundaries take the balanced one`() {
+        // Both lines have the same width, so the break nearest the middle is
+        // the one most likely to let each fit. Breaking at the first would put
+        // "My" on a line by itself and the rest still overflowing.
+        assertEquals("MyApp / NameHere", split("MyAppNameHere"))
+    }
 }

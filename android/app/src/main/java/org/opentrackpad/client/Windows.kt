@@ -120,6 +120,31 @@ private fun withoutAside(name: String): String {
     return name.substring(0, opened).trim().ifEmpty { name }
 }
 
+/**
+ * Where a name divides, for the rail that has to fit it.
+ *
+ * Free of Android so it can be tested, because the rule has more edges than it
+ * looks and every one of them is somebody's application coming out wrong.
+ */
+object WindowName {
+
+    /**
+     * The index a run-together name divides at, or null if it does not.
+     *
+     * **Only a lowercase followed by an uppercase.** A run of capitals is an
+     * acronym and not two words: `VLC` and `KDE` must not be cut in half, and
+     * the transition *into* one — the `C` of `VLCMedia` — is not a boundary
+     * either. `VLCMediaPlayer` divides once, after `Media`.
+     *
+     * The boundary nearest the middle when there are several, since both lines
+     * have the same width to work with and the balanced break is the one most
+     * likely to let each fit.
+     */
+    fun boundary(name: String): Int? = (1 until name.length)
+        .filter { name[it - 1].isLowerCase() && name[it].isUpperCase() }
+        .minByOrNull { kotlin.math.abs(it - name.length / 2) }
+}
+
 sealed interface WindowMessage {
     data class Snapshot(val generation: Long, val count: Int) : WindowMessage
     data class Window(val generation: Long, val entry: WindowEntry) : WindowMessage
