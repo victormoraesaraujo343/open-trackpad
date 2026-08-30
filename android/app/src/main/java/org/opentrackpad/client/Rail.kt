@@ -42,6 +42,12 @@ sealed interface SlotPress {
     /** What the computer found lying around and is offering. */
     data object Import : SlotPress
 
+    /** Switch to one of the computer's windows. */
+    data class Switch(val id: Int) : SlotPress
+
+    /** Every window, not just the four on the rail. */
+    data object AllWindows : SlotPress
+
 
     /** The audio panel, on one of its pages. */
     data class Audio(val page: AudioPage) : SlotPress
@@ -111,6 +117,41 @@ object Rails {
      */
     fun overflow(profile: Profile): List<RailSlot?> =
         List(SLOTS) { index -> profile.overflow.getOrNull(index)?.let(::slotFor) }
+
+    /**
+     * The far rail when the computer can say what its windows are: four of them
+     * and a way to the rest.
+     *
+     * It replaces the rail whole rather than sharing it, which is what the
+     * comment above always said would happen. So a profile's overflow shortcuts
+     * stop being shown on a desktop that offers windows — the trade being that
+     * a recently used window is time-sensitive in a way a shortcut never is. A
+     * shortcut is still there in a minute; the window you were just in is the
+     * thing you want now, and the shortcuts remain reachable from the editor and
+     * the shortcut rail.
+     *
+     * The order is the host's and is not touched. It is most recently used
+     * first, and that ordering is the only reason this rail exists.
+     *
+     * Fewer than four windows leaves slots empty rather than growing the
+     * others, the same as everywhere: slot five stays slot five whether the
+     * desktop has one window open or twenty.
+     */
+    fun windows(open: List<WindowEntry>): List<RailSlot?> = rail(
+        open.take(SLOTS - 1).map { window ->
+            RailSlot(
+                label = window.label,
+                icon = RailIcons.forWindow(window.application),
+                press = SlotPress.Switch(window.id),
+            )
+        },
+        RailSlot(
+            label = "All",
+            icon = RailIcons.path("grid"),
+            press = SlotPress.AllWindows,
+            style = SlotStyle.PRIMARY,
+        ),
+    )
 
     /**
      * The rail a panel takes over while it is open: the way out, then its pages.

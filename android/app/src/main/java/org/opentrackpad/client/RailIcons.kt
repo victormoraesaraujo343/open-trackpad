@@ -132,6 +132,53 @@ object RailIcons {
     private val GLYPHS = HashMap<String, Path>()
 
     /** The glyph name for an action, which today is always a chord. */
+    /**
+     * A glyph for a window, keyed off what owns it.
+     *
+     * Generic on purpose and not a limitation to be worked around later: the
+     * compositor offers real icons only as raw 64x64 pixel data, sixteen
+     * kilobytes a window, and a line-framed text protocol that stays readable
+     * is worth more than an icon. The application name carries the
+     * identification; this only says roughly what kind of thing it is.
+     *
+     * Matched loosely, because a resource class is `firefox` on one desktop and
+     * `org.kde.dolphin` on another and neither is a fixed vocabulary. Anything
+     * unrecognised gets a plain window, which is honest — it is a window.
+     */
+    fun forWindow(application: String): String {
+        val name = application.lowercase()
+        val known = BY_APPLICATION.entries.firstOrNull { name.contains(it.key) }
+        return path(known?.value ?: "app")
+    }
+
+    /**
+     * Substrings rather than whole names, ordered longest first so that a
+     * specific match cannot be shadowed by a shorter one it contains.
+     */
+    private val BY_APPLICATION: Map<String, String> = listOf(
+        "firefox" to "globe",
+        "chrom" to "globe",
+        "brave" to "globe",
+        "epiphany" to "globe",
+        "konsole" to "term",
+        "terminal" to "term",
+        "alacritty" to "term",
+        "kitty" to "term",
+        "dolphin" to "grid",
+        "nautilus" to "grid",
+        "thunar" to "grid",
+        "code" to "note",
+        "kate" to "note",
+        "gedit" to "note",
+        "writer" to "note",
+        "mpv" to "play",
+        "vlc" to "play",
+        "spotify" to "play",
+        "steam" to "play",
+        "settings" to "gear",
+        "systemsettings" to "gear",
+    ).sortedByDescending { it.first.length }.toMap()
+
     fun forAction(action: Action): String = when (action) {
         is Action.KeyChord -> BY_CHORD[action.chord.lowercase()] ?: FALLBACK
 

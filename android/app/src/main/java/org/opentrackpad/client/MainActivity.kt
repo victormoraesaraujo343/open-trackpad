@@ -87,6 +87,9 @@ class MainActivity : AppCompatActivity() {
     /** The profile being copied, while its name is being chosen. */
     private var copying: Profile? = null
 
+    /** The computer's recently used windows, if this desktop can say. */
+    private val windows = WindowsState()
+
     /** What the computer knows about shortcuts, and what it is offering. */
     private val library = LibraryState()
 
@@ -241,7 +244,12 @@ class MainActivity : AppCompatActivity() {
             // Asked for every time. A host that cannot serve it answers with a
             // shorter list and the panel is simply absent, which is the whole
             // reason the handshake carries one.
-            wanted = setOf(Audio.CAPABILITY, Library.SHORTCUTS, Library.IMPORT),
+            wanted = setOf(
+                Audio.CAPABILITY,
+                Library.SHORTCUTS,
+                Library.IMPORT,
+                Windows.CAPABILITY,
+            ),
             onState = ::showState,
             onGranted = ::onGranted,
             onLine = ::onHostLine,
@@ -378,9 +386,25 @@ class MainActivity : AppCompatActivity() {
         val onLeft = stored.settings.shortcutSide == Side.LEFT
 
         val shortcuts = Rails.shortcuts(profile).let { if (live) it else it.deadened() }
-        val opposite =
-            if (panel == Panel.AUDIO) Rails.audioPages(audioPage)
-            else Rails.overflow(profile)
+        /*
+         * What the far rail shows, in order of how urgent it is.
+         *
+         * A panel's own pages first, because a panel is open in front of you.
+         * Then the computer's windows if this desktop can say what they are:
+         * they replace the overflow shortcuts whole rather than sharing the
+         * rail, which is the trade 70 decided and I agree with — a shortcut is
+         * still there in a minute, the window you were just in is the thing you
+         * want now, and the shortcuts stay reachable from the editor.
+         *
+         * Absent rather than empty where the desktop cannot answer: no
+         * capability, no windows rail, and the shortcuts keep the rail as
+         * before.
+         */
+        val opposite = when {
+            panel == Panel.AUDIO -> Rails.audioPages(audioPage)
+            windows.granted && windows.windows.isNotEmpty() -> Rails.windows(windows.onTheRail)
+            else -> Rails.overflow(profile)
+        }
         val overflow = opposite.let { if (live || panel == Panel.AUDIO) it else it.deadened() }
 
         railStart.slots = if (onLeft) shortcuts else overflow
@@ -410,6 +434,17 @@ class MainActivity : AppCompatActivity() {
             SlotPress.Settings -> show(Panel.SETTINGS)
             SlotPress.Editor -> show(Panel.EDITOR)
             SlotPress.Import -> openImport()
+
+            // Nothing is acknowledged: switching raises the window, the desktop
+            // notices, and the next snapshot arrives with it first. That
+            // snapshot is the acknowledgement.
+            is SlotPress.Switch -> ask(Windows.activate(++requestSequence, press.id))
+
+            // Drawn but not yet a screen. Refuse rather than open something
+            // wrong: `RecentApps.dc.html` has a list behind this and it is not
+            // built, and a button that opened the wrong panel would be worse
+            // than one that says no.
+            SlotPress.AllWindows -> haptics.refused()
             is SlotPress.Audio -> openAudio(press.page)
             SlotPress.Close -> show(Panel.NONE)
             SlotPress.None -> Unit
@@ -884,6 +919,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun onGranted(granted: Set<String>) {
         audio.grant(Audio.CAPABILITY in granted)
+        windows.grant(Windows.CAPABILITY in granted)
         audio.reset()
         library.reset()
         library.grant(
@@ -896,6 +932,7 @@ class MainActivity : AppCompatActivity() {
         // screen that asked nothing.
         accepting = -1
         if (audio.granted) ask(Audio.refresh(++requestSequence))
+        if (windows.granted) ask(Windows.refresh(++requestSequence))
         if (Library.SHORTCUTS in granted) ask(Library.refresh(++requestSequence, Library.SHORTCUTS))
         // Asked for every time the offer screen opens as well as here: it is
         // re-runnable rather than first-run.
@@ -938,6 +975,15 @@ class MainActivity : AppCompatActivity() {
                 // says is true, which the picture already holds.
                 Log.i(TAG, "refused " + refusal.sequence + ": " + refusal.reason)
             }
+            return
+        }
+        Windows.parse(line)?.let { message ->
+            if (windows.apply(message)) ask(Windows.refresh(++requestSequence))
+            // The far rail is this list, so every snapshot redraws it. Redrawn
+            // rather than diffed: a snapshot is the whole truth and working out
+            // what moved would be a second opinion about the one thing the host
+            // is authoritative on.
+            layOutRails()
             return
         }
         Library.parse(line)?.let { message ->

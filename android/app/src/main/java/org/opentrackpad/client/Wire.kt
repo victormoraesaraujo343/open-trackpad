@@ -56,6 +56,20 @@ object Wire {
             }
             if (index + 2 >= encoded.length) return null
             val value = encoded.substring(index + 1, index + 3).toIntOrNull(16) ?: return null
+            // Escaped is not the same as allowed.
+            //
+            // The line above already refuses an unescaped control character as
+            // malformed, and the reason was never framing — it was that a
+            // control character is not part of anybody's name. Escaping one
+            // gets it past the framing safely and leaves it in the string, and
+            // a window title is the most attacker-influenced text in this
+            // protocol: it is whatever a web page decided to call itself. A
+            // newline that survived to a label would draw as a second line and
+            // push everything under it out of place.
+            //
+            // Refused here rather than stripped at each place a name is drawn,
+            // because there is one decoder and there are many labels.
+            if (value in 0x00..0x1F || value == 0x7F) return null
             bytes.add(value.toByte())
             index += 3
         }
