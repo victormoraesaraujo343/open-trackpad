@@ -206,4 +206,41 @@ class WindowsTest {
         // on the shortened word for some applications.
         assertEquals(RailIcons.path("grid"), RailIcons.forWindow("org.kde.dolphin"))
     }
+
+    @Test
+    fun `an application name with a space survives the wire`() {
+        // The host escapes this field and always did; this decoded only the
+        // title, and every application on the machine it was tested against
+        // was one word, so nothing needed escaping and nothing looked wrong.
+        // "System Settings" would have reached a rail as "System%20Settings".
+        val message = entry(
+            "ENTRY windows 1 window 5 System%20Settings Power%20Management"
+        )!!
+        assertEquals("System Settings", message.entry.application)
+        assertEquals("System Settings", message.entry.label)
+        assertEquals("Power Management", message.entry.title)
+    }
+
+    @Test
+    fun `an application name cannot become a second line either`() {
+        assertNull(entry("ENTRY windows 1 window 5 two%0Alines a%20title"))
+    }
+
+    @Test
+    fun `two windows with no application entry stay two windows`() {
+        // dc's bug, in the shape it would take here. On the host, caching names
+        // by desktop entry made every window without one share the empty key,
+        // and Steam was labelled "Emulator". Nothing on this side keys by name
+        // — the id decides everything — and this is what pins that, because
+        // two windows that look identical are exactly when a name-keyed lookup
+        // would collapse them.
+        val state = stateWith(1 to "steam", 2 to "steam")
+        assertEquals(2, state.windows.size)
+        val rail = Rails.windows(state.onTheRail)
+        assertEquals(SlotPress.Switch(1), rail[0]?.press)
+        assertEquals(SlotPress.Switch(2), rail[1]?.press)
+        // Same word on both, which is honest: on a rail there is no room for
+        // more, and the All screen is where their titles tell them apart.
+        assertEquals(rail[0]?.label, rail[1]?.label)
+    }
 }

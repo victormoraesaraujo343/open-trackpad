@@ -55,15 +55,17 @@ data class WindowEntry(
      * looking. "Firefox" beats forty characters of page title truncated to
      * eight.
      *
-     * The last dotted part, because a resource class is `firefox` on one
-     * desktop and `org.kde.dolphin` on another. Seen on Victor's machine, where
-     * the rail is fifteen millimetres wide: the full string truncates to
-     * "org.kde.d…", which identifies nothing and is worse than no button at
-     * all. "dolphin" fits and is the word somebody is looking for.
+     * Usually this is already a name a person would recognise: the host asks
+     * the desktop entry the window belongs to, and the entry states its own
+     * name, localised where it offers a translation. No inference at either
+     * step.
      *
-     * Only the prefix goes. A long single word — `systemsettings` — still
-     * truncates, and shortening that would mean inventing names for other
-     * people's applications rather than shortening one.
+     * The dotted prefix is dropped for the windows that have **no** entry,
+     * which still fall back to the raw class. On Victor's desktop that was
+     * `org.kde.dolphin`, truncating to "org.kde.d…" in fifteen millimetres and
+     * identifying nothing. It can no longer fire on a named window, because a
+     * name has no dots — but the fallback is still real and still reaches a
+     * rail.
      */
     val label: String get() = application.substringAfterLast('.')
 }
@@ -115,9 +117,17 @@ object Windows {
                 if (parts.size != 7 || parts[3] != WINDOW) return null
                 val generation = parts[2].toLongOrNull() ?: return null
                 val id = parts[4].toIntOrNull() ?: return null
-                // The application is a resource class and arrives as written;
-                // the title is percent-encoded like every other name.
-                val application = parts[5].takeIf { it.isNotBlank() } ?: return null
+                // Both are percent-encoded, and this decoded only the title
+                // for a while. Every application on the machine it was tested
+                // against happened to be one word — `firefox`, `steam`,
+                // `systemsettings` — so nothing needed escaping and nothing
+                // looked wrong. The host had always escaped this field; the
+                // day it started carrying "System Settings" the rail would
+                // have read "System%20Settings".
+                //
+                // A fixture that cannot tell two behaviours apart is not a
+                // test of either.
+                val application = Wire.decode(parts[5])?.takeIf { it.isNotBlank() } ?: return null
                 val title = Wire.decode(parts[6]) ?: return null
                 WindowMessage.Window(generation, WindowEntry(id, application, title))
             }
