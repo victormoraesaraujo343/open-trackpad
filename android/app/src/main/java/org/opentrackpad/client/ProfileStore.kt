@@ -31,6 +31,7 @@ object ProfileStore {
         appendLine(listOf("setting", "return", "${settings.returnToPadSeconds}").joinToString(FIELD))
         appendLine(listOf("setting", "boost", "${settings.audioBoost}").joinToString(FIELD))
         appendLine(listOf("setting", "audiopage", settings.audioOpensOn.wire).joinToString(FIELD))
+        appendLine(listOf("setting", "showidle", "${settings.audioShowIdle}").joinToString(FIELD))
         for (profile in stored.profiles) {
             appendLine(listOf("profile", profile.name).joinToString(FIELD))
             for (slot in profile.shortcuts) {
@@ -55,6 +56,7 @@ object ProfileStore {
         var fade: Boolean? = null
         var returnAfter: Int? = null
         var boost: Boolean? = null
+        var showIdle: Boolean? = null
         var audioPage: AudioPage? = null
         val profiles = mutableListOf<Profile>()
         var name: String? = null
@@ -78,6 +80,7 @@ object ProfileStore {
                         "haptics" -> haptics = parts[2].toBooleanStrictOrNull()
                         "fade" -> fade = parts[2].toBooleanStrictOrNull()
                         "boost" -> boost = parts[2].toBooleanStrictOrNull()
+                        "showidle" -> showIdle = parts[2].toBooleanStrictOrNull()
                         // Only a page that can be opened on: a file naming the
                         // panel's own settings page would open on a screen
                         // about the panel rather than on any sound.
@@ -120,6 +123,7 @@ object ProfileStore {
                 fadeWhenIdle = fade ?: fallback.fadeWhenIdle,
                 returnToPadSeconds = returnAfter ?: fallback.returnToPadSeconds,
                 audioBoost = boost ?: fallback.audioBoost,
+                audioShowIdle = showIdle ?: fallback.audioShowIdle,
                 audioOpensOn = audioPage ?: fallback.audioOpensOn,
             ),
             profiles = recovered,

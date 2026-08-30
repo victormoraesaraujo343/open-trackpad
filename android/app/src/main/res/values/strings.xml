@@ -61,11 +61,17 @@
     <string name="audio_apps">Apps</string>
     <string name="audio_settings">Settings</string>
     <string name="audio_settings_title">Audio settings</string>
-    <string name="audio_hint">Green = the one in use · tap a knob to mute</string>
+    <string name="audio_hint">Tap a name to switch · tap a knob to mute</string>
     <string name="audio_hint_apps">Tap a knob to mute</string>
     <string name="audio_muted">Muted</string>
+    <string name="audio_port_analog">Analog</string>
+    <string name="audio_port_usb">USB</string>
+    <string name="audio_port_hdmi">HDMI</string>
+    <string name="audio_port_digital">Digital</string>
+    <string name="audio_port_bluetooth">Bluetooth</string>
+    <string name="audio_show_idle">Show apps that are not playing</string>
+    <string name="audio_show_idle_note">Off, the Apps page lists only what is making sound right now.</string>
     <string name="audio_percent">%1$d%%</string>
-    <string name="audio_in_use">In use</string>
 
     <!-- Why the panel has nothing to show. Each says what to do about it. -->
     <string name="audio_none_outputs">No outputs</string>

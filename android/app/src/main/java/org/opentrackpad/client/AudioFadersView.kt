@@ -78,6 +78,17 @@ class AudioFadersView @JvmOverloads constructor(
     /** A knob was tapped. */
     var onMute: ((AudioEntity, Boolean) -> Unit)? = null
 
+    /**
+     * A device's name was tapped: make it the one in use.
+     *
+     * A tap rather than a long press. A press-and-hold on a control whose whole
+     * job is press-and-drag is a collision waiting to happen, and starting a
+     * drag is the one gesture this surface cannot afford to get wrong. The name
+     * is already its own region, big enough to hit without looking, and "tap
+     * the thing's name to pick it" needs no teaching.
+     */
+    var onMakeDefault: ((AudioEntity) -> Unit)? = null
+
     var hapticsEnabled: Boolean = true
 
     /**
@@ -134,6 +145,9 @@ class AudioFadersView @JvmOverloads constructor(
     private val startY = SparseIntArray(4)
     private val moved = SparseIntArray(4)
 
+    /** Whether each finger landed on the name rather than on the fader. */
+    private val onName = SparseIntArray(4)
+
     init {
         isClickable = true
         isHapticFeedbackEnabled = true
@@ -155,10 +169,58 @@ class AudioFadersView @JvmOverloads constructor(
     private fun trackTop() = px(TRACK_INSET)
     private fun trackBottom() = height - labelBlockHeight() - px(TRACK_INSET)
 
+    /**
+     * Names that appear on this page more than once.
+     *
+     * Exact string equality on names the host wrote, with no interpretation of
+     * any kind. It is deliberately *not* "does the port disagree with the
+     * name": that would mean parsing free text and guessing whether two strings
+     * mean the same thing, which is how you end up telling somebody their
+     * "Analog Stereo" device is USB. Both are true — one is the profile, the
+     * other the transport — and no one reading a phone screen knows that.
+     */
+    private fun duplicated(): Set<String> = faders
+        .groupingBy { it.name }
+        .eachCount()
+        .filterValues { it > 1 }
+        .keys
+
+    /** How tall the block under every track is. One height, so the tracks line up. */
     private fun labelBlockHeight(): Float {
         text.textSize = px(VALUE)
-        val line = text.fontMetrics.let { it.descent - it.ascent }
-        return line * 3f + px(ROW_GAP) * 3f
+        val valueLine = text.fontMetrics.let { it.descent - it.ascent }
+        text.textSize = px(NAME)
+        val nameLine = text.fontMetrics.let { it.descent - it.ascent }
+        text.textSize = px(PORT)
+        val portLine = text.fontMetrics.let { it.descent - it.ascent }
+
+        val room = columnWidth() - px(4f)
+        // A long name wraps rather than being cut. These names are long exactly
+        // because they are trying to tell themselves apart, so "Built-in Aud…"
+        // throws away the part that was doing the work.
+        val nameLines = faders.maxOfOrNull { wrapName(it.name, room).size } ?: 1
+        val ports = if (duplicated().isEmpty()) 0f else portLine + px(ROW_GAP)
+        return valueLine + px(ROW_GAP) + nameLine * nameLines + px(ROW_GAP) * nameLines + ports
+    }
+
+    /**
+     * Breaks a name over at most two lines.
+     *
+     * Two rather than any number: past that the fader has no room left, and a
+     * name needing three lines is one the person will read from the computer
+     * instead. The second line is cut short if even two will not hold it.
+     */
+    private fun wrapName(name: String, room: Float): List<String> {
+        text.textSize = px(NAME)
+        if (text.measureText(name) <= room) return listOf(name)
+        val fits = text.breakText(name, true, room, null)
+        // Break at a space if there is one to break at, so a word is not split
+        // down the middle when the line could simply have ended sooner.
+        val space = name.lastIndexOf(' ', fits.coerceAtMost(name.length - 1))
+        val cut = if (space > 0) space else fits
+        val first = name.substring(0, cut).trim()
+        val rest = name.substring(cut).trim()
+        return listOf(first, rest)
     }
 
     private fun columnAt(x: Float): Int {
@@ -188,6 +250,10 @@ class AudioFadersView @JvmOverloads constructor(
                 holding.put(pointer, column)
                 startY.put(pointer, event.getY(index).toInt())
                 moved.put(pointer, 0)
+                // Below the track is the name, and a name is tapped rather than
+                // dragged. Marking it here keeps a finger that started on the
+                // name from ever moving a level.
+                onName.put(pointer, if (event.getY(index) >= trackBottom()) 1 else 0)
             }
 
             MotionEvent.ACTION_MOVE -> {
@@ -197,6 +263,7 @@ class AudioFadersView @JvmOverloads constructor(
                     if (at < 0) continue
                     val column = holding.valueAt(at)
                     val entity = faders.getOrNull(column) ?: continue
+                    if (onName.get(pointer) == 1) continue
                     val travelled = abs(event.getY(index) - startY.get(pointer))
                     if (travelled < px(SLOP)) continue
                     moved.put(pointer, 1)
@@ -218,21 +285,30 @@ class AudioFadersView @JvmOverloads constructor(
                     // header on the screen promises. One that moved was a drag
                     // and has already done its work.
                     if (entity != null && moved.get(pointer) == 0) {
-                        if (hapticsEnabled) {
-                            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        val name = onName.get(pointer) == 1
+                        // A stream has no default to be, so its name does
+                        // nothing rather than doing something else.
+                        val switching = name && entity.kind != AudioKind.STREAM
+                        if (!name || switching) {
+                            if (hapticsEnabled) {
+                                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            }
+                            if (switching) onMakeDefault?.invoke(entity)
+                            else if (!name) onMute?.invoke(entity, !entity.muted)
                         }
-                        onMute?.invoke(entity, !entity.muted)
                     }
                     holding.removeAt(at)
                 }
                 startY.delete(pointer)
                 moved.delete(pointer)
+                onName.delete(pointer)
             }
 
             MotionEvent.ACTION_CANCEL -> {
                 holding.clear()
                 startY.clear()
                 moved.clear()
+                onName.clear()
             }
         }
         return true
@@ -302,7 +378,7 @@ class AudioFadersView @JvmOverloads constructor(
         canvas.drawPath(RailIcons.parsed(if (entity.muted) ICON_MUTED else ICON_ON), stroke)
         canvas.restore()
 
-        drawLabels(canvas, entity, centre, columnWidth(), bottom + px(TRACK_INSET), boosted)
+        drawLabels(canvas, entity, centre, columnWidth() - px(4f), bottom + px(TRACK_INSET), boosted)
     }
 
     private fun drawLabels(
@@ -315,7 +391,6 @@ class AudioFadersView @JvmOverloads constructor(
     ) {
         text.textSize = px(VALUE)
         val metrics = text.fontMetrics
-        val line = metrics.descent - metrics.ascent
         var y = from - metrics.ascent
 
         text.color = when {
@@ -330,31 +405,35 @@ class AudioFadersView @JvmOverloads constructor(
         }
         canvas.drawText(value, centre, y, text)
 
-        y += line + px(ROW_GAP)
         text.textSize = px(NAME)
+        val nameLine = text.fontMetrics.let { it.descent - it.ascent }
         text.color = when {
             entity.muted -> MUTED
             entity.isDefault -> INK
             else -> SECONDARY
         }
-        val name = TextUtils.ellipsize(entity.name, text, room, TextUtils.TruncateAt.END)
-        canvas.drawText(name, 0, name.length, centre, y, text)
+        for (part in wrapName(entity.name, room)) {
+            y += nameLine + px(ROW_GAP)
+            val shown = TextUtils.ellipsize(part, text, room, TextUtils.TruncateAt.END)
+            canvas.drawText(shown, 0, shown.length, centre, y, text)
+        }
 
-        // The third line is what a device is plugged into. A stream has none,
-        // and an empty line is left empty rather than closed up, so the names
-        // above stay on the same baseline across all three pages.
-        val detail = entity.detail() ?: return
-        y += line + px(ROW_GAP)
+        // The port only where the name cannot tell two things apart. Everywhere
+        // else it repeats what the name already says, and a row that is
+        // redundant most of the time teaches people to stop reading it.
+        val port = entity.port ?: return
+        if (entity.name !in duplicated()) return
         text.textSize = px(PORT)
+        y += text.fontMetrics.let { it.descent - it.ascent } + px(ROW_GAP)
         text.color = FAINT
-        val shown = TextUtils.ellipsize(detail, text, room, TextUtils.TruncateAt.END)
-        canvas.drawText(shown, 0, shown.length, centre, y, text)
+        canvas.drawText(context.getString(port.label()), centre, y, text)
     }
 
-    /** The small line under the name, or null when there is nothing to say. */
-    private fun AudioEntity.detail(): String? = when {
-        kind == AudioKind.STREAM -> null
-        isDefault -> context.getString(R.string.audio_in_use)
-        else -> null
+    private fun AudioPort.label(): Int = when (this) {
+        AudioPort.ANALOG -> R.string.audio_port_analog
+        AudioPort.USB -> R.string.audio_port_usb
+        AudioPort.HDMI -> R.string.audio_port_hdmi
+        AudioPort.DIGITAL -> R.string.audio_port_digital
+        AudioPort.BLUETOOTH -> R.string.audio_port_bluetooth
     }
 }

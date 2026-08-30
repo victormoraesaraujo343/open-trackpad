@@ -72,6 +72,26 @@ data class AudioEntity(
 
     /** For a stream, the output it plays through. Null for a device. */
     val target: Int?,
+
+    /**
+     * What a device is plugged into, or null for a stream.
+     *
+     * Read from the sound daemon's own bus and port fields on the host, never
+     * parsed out of the name. It earns its line on the fader for one case: two
+     * devices both called "Headset".
+     */
+    val port: AudioPort?,
+
+    /**
+     * Whether a stream is stopped, or null for a device.
+     *
+     * The daemon's own corked flag, and worth knowing exactly what it means:
+     * **paused certainly means silent, but not-paused only means the stream is
+     * open.** An application can hold one open writing silence. It is good
+     * enough to hide what is obviously idle and not good enough to claim
+     * anything is definitely making sound.
+     */
+    val paused: Boolean?,
     val name: String,
 ) {
     /** What a person would call this level. */
@@ -85,6 +105,20 @@ data class AudioEntity(
 
     /** Which entity this is, across all three kinds. */
     val key: Pair<AudioKind, Int> get() = kind to id
+}
+
+/** What a device is plugged into. */
+enum class AudioPort(val wire: String) {
+    ANALOG("analog"),
+    USB("usb"),
+    HDMI("hdmi"),
+    DIGITAL("digital"),
+    BLUETOOTH("bluetooth"),
+    ;
+
+    companion object {
+        fun of(wire: String): AudioPort? = entries.firstOrNull { it.wire == wire }
+    }
 }
 
 /** Why the panel has nothing to show. */
@@ -194,9 +228,17 @@ object Audio {
         return AudioMessage.Snapshot(generation, count)
     }
 
-    /** `<verb> audio <generation> <kind> <id> <volume> <muted> <default> <target> <name>` */
+    /**
+     * `<verb> audio <gen> <kind> <id> <volume> <muted> <default> <target> <port> <paused> <name>`
+     *
+     * Nine fields after the generation, not seven: `port` and `paused` were
+     * added on 2026-08-30 and the older shape is not accepted. A field that
+     * moved is worse than one that is missing — the name would land in the
+     * paused column and be read as a flag — so a line of the wrong length is
+     * refused outright rather than read as far as it goes.
+     */
     private fun parseEntity(parts: List<String>): Pair<Long, AudioEntity>? {
-        if (parts.size != 10 || parts[1] != DOMAIN) return null
+        if (parts.size != 12 || parts[1] != DOMAIN) return null
         val generation = parts[2].toLongOrNull() ?: return null
         val kind = AudioKind.of(parts[3]) ?: return null
         val id = parts[4].toIntOrNull() ?: return null
@@ -213,8 +255,24 @@ object Audio {
         }
         if (kind == AudioKind.STREAM && isDefault) return null
         if (kind != AudioKind.STREAM && target != null) return null
-        val name = decode(parts[9]) ?: return null
-        return generation to AudioEntity(kind, id, volume, muted, isDefault, target, name)
+
+        // A port belongs to a device and a paused flag to a stream, and each
+        // says so with a dash when it is the other one. A host sending both, or
+        // neither, is confused about what it is describing.
+        val stream = kind == AudioKind.STREAM
+        val port = when {
+            parts[9] == "-" -> null
+            stream -> return null
+            else -> AudioPort.of(parts[9]) ?: return null
+        }
+        val paused = when {
+            parts[10] == "-" -> if (stream) return null else null
+            !stream -> return null
+            else -> parts[10].asFlag() ?: return null
+        }
+        val name = decode(parts[11]) ?: return null
+        return generation to
+            AudioEntity(kind, id, volume, muted, isDefault, target, port, paused, name)
     }
 
     private fun parseRemoved(parts: List<String>): AudioMessage? {
@@ -255,26 +313,7 @@ object Audio {
      * a name is the one field a person reads, and a wrong one is worse than a
      * refused line.
      */
-    fun decode(encoded: String): String? {
-        val bytes = ArrayList<Byte>(encoded.length)
-        var index = 0
-        while (index < encoded.length) {
-            val character = encoded[index]
-            if (character != '%') {
-                // Anything the host should have escaped and did not is a
-                // malformed line, not a name with a space in it.
-                if (character.code !in 0x21..0x7E) return null
-                bytes.add(character.code.toByte())
-                index += 1
-                continue
-            }
-            if (index + 2 >= encoded.length) return null
-            val value = encoded.substring(index + 1, index + 3).toIntOrNull(16) ?: return null
-            bytes.add(value.toByte())
-            index += 3
-        }
-        return String(bytes.toByteArray(), Charsets.UTF_8)
-    }
+    fun decode(encoded: String): String? = Wire.decode(encoded)
 
     // -- what the phone asks for ---------------------------------------------
 

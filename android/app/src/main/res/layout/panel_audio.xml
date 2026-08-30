@@ -111,6 +111,17 @@
             </LinearLayout>
 
             <TextView style="@style/CardNote" android:text="@string/audio_boost_note" />
+
+            <LinearLayout style="@style/SettingRow" android:layout_marginTop="12dp">
+                <TextView style="@style/SettingLabel" android:text="@string/audio_show_idle" />
+                <org.opentrackpad.client.PillToggle
+                    android:id="@+id/audio_show_idle"
+                    android:layout_width="28dp"
+                    android:layout_height="16dp"
+                    android:layout_gravity="center_vertical" />
+            </LinearLayout>
+
+            <TextView style="@style/CardNote" android:text="@string/audio_show_idle_note" />
         </LinearLayout>
     </FrameLayout>
 </LinearLayout>

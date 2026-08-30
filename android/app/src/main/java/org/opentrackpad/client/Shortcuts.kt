@@ -96,6 +96,17 @@ data class Settings(
 
     /** Which page the audio panel shows first, every time. */
     val audioOpensOn: AudioPage = AudioPage.OUTPUT,
+
+    /**
+     * Whether the Apps page lists streams that are stopped.
+     *
+     * Off, it shows what is making sound now. The flag behind it is the sound
+     * daemon's own corked state, which is certain about silence and only
+     * hopeful about the opposite — an application can hold a stream open
+     * writing nothing — so this hides what is obviously idle rather than
+     * claiming the rest is definitely audible.
+     */
+    val audioShowIdle: Boolean = false,
 ) {
     val applicationsSide: Side get() = shortcutSide.opposite()
 

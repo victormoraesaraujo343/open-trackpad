@@ -28,8 +28,8 @@ class AudioStateTest {
 
     private val picture = arrayOf(
         "SNAPSHOT audio 1 2",
-        "ENTRY audio 1 output 53 950 0 1 - Speakers",
-        "ENTRY audio 1 stream 1348 990 0 0 53 Firefox",
+        "ENTRY audio 1 output 53 950 0 1 - analog - Speakers",
+        "ENTRY audio 1 stream 1348 990 0 0 53 - 0 Firefox",
     )
 
     @Test
@@ -38,10 +38,10 @@ class AudioStateTest {
         assertTrue(state.settling)
         assertEquals(emptyList<AudioEntity>(), state.entities)
 
-        take("ENTRY audio 1 output 53 950 0 1 - Speakers")
+        take("ENTRY audio 1 output 53 950 0 1 - analog - Speakers")
         assertTrue("still one short", state.settling)
 
-        take("ENTRY audio 1 stream 1348 990 0 0 53 Firefox")
+        take("ENTRY audio 1 stream 1348 990 0 0 53 - 0 Firefox")
         assertFalse(state.settling)
         assertEquals(2, state.entities.size)
     }
@@ -59,7 +59,7 @@ class AudioStateTest {
     @Test
     fun `a change to the picture we hold is applied in place`() {
         take(*picture)
-        take("CHANGED audio 1 output 53 400 1 1 - Speakers")
+        take("CHANGED audio 1 output 53 400 1 1 - analog - Speakers")
         val speakers = state.of(AudioKind.OUTPUT).single()
         assertEquals(400, speakers.volume)
         assertTrue(speakers.muted)
@@ -71,7 +71,7 @@ class AudioStateTest {
     @Test
     fun `a change for something we have never seen is an appearance`() {
         take(*picture)
-        take("CHANGED audio 1 output 88 700 0 0 - Headset")
+        take("CHANGED audio 1 output 88 700 0 0 - analog - Headset")
         assertEquals(2, state.of(AudioKind.OUTPUT).size)
         assertEquals("Headset", state.of(AudioKind.OUTPUT).last().name)
     }
@@ -79,8 +79,8 @@ class AudioStateTest {
     @Test
     fun `an update from a picture we have already replaced is dropped`() {
         take(*picture)
-        take("SNAPSHOT audio 2 1", "ENTRY audio 2 output 53 950 0 1 - Speakers")
-        assertFalse(take("CHANGED audio 1 output 53 100 0 1 - Speakers"))
+        take("SNAPSHOT audio 2 1", "ENTRY audio 2 output 53 950 0 1 - analog - Speakers")
+        assertFalse(take("CHANGED audio 1 output 53 100 0 1 - analog - Speakers"))
         assertEquals("the stale change was applied", 950, state.of(AudioKind.OUTPUT).single().volume)
     }
 
@@ -89,13 +89,13 @@ class AudioStateTest {
         // A SNAPSHOT went missing. Nothing we hold can be relied on, and the
         // only honest recovery is to ask rather than to patch.
         take(*picture)
-        assertTrue(take("CHANGED audio 9 output 53 100 0 1 - Speakers"))
+        assertTrue(take("CHANGED audio 9 output 53 100 0 1 - analog - Speakers"))
         assertTrue(take("REMOVED audio 9 output 53"))
     }
 
     @Test
     fun `an entry with no snapshot behind it asks for the whole thing again`() {
-        assertTrue(take("ENTRY audio 5 output 53 950 0 1 - Speakers"))
+        assertTrue(take("ENTRY audio 5 output 53 950 0 1 - analog - Speakers"))
     }
 
     @Test
@@ -105,7 +105,7 @@ class AudioStateTest {
         assertEquals(AudioOutage.LOST, state.outage)
         assertEquals(emptyList<AudioEntity>(), state.entities)
         // And a fresh snapshot brings it back without anything else happening.
-        take("SNAPSHOT audio 3 1", "ENTRY audio 3 output 53 950 0 1 - Speakers")
+        take("SNAPSHOT audio 3 1", "ENTRY audio 3 output 53 950 0 1 - analog - Speakers")
         assertNull(state.outage)
         assertEquals(1, state.entities.size)
     }
@@ -116,8 +116,8 @@ class AudioStateTest {
         // is ambiguous — which shows up as the wrong row disappearing.
         take(
             "SNAPSHOT audio 1 2",
-            "ENTRY audio 1 output 53 950 0 1 - Speakers",
-            "ENTRY audio 1 input 53 500 0 1 - Microphone",
+            "ENTRY audio 1 output 53 950 0 1 - analog - Speakers",
+            "ENTRY audio 1 input 53 500 0 1 - analog - Microphone",
         )
         take("REMOVED audio 1 input 53")
         assertEquals(1, state.entities.size)
@@ -131,7 +131,7 @@ class AudioStateTest {
         assertEquals(emptyList<AudioEntity>(), state.entities)
         assertNull(state.outage)
         // And a stale update from before the reset cannot resurrect anything.
-        assertTrue(take("CHANGED audio 1 output 53 100 0 1 - Speakers"))
+        assertTrue(take("CHANGED audio 1 output 53 100 0 1 - analog - Speakers"))
     }
 
     @Test
@@ -146,9 +146,9 @@ class AudioStateTest {
     fun `the default device is found per kind`() {
         take(
             "SNAPSHOT audio 1 3",
-            "ENTRY audio 1 output 53 950 0 1 - Speakers",
-            "ENTRY audio 1 output 54 500 0 0 - Headset",
-            "ENTRY audio 1 input 9 500 0 1 - Microphone",
+            "ENTRY audio 1 output 53 950 0 1 - analog - Speakers",
+            "ENTRY audio 1 output 54 500 0 0 - analog - Headset",
+            "ENTRY audio 1 input 9 500 0 1 - analog - Microphone",
         )
         assertEquals("Speakers", state.defaultOf(AudioKind.OUTPUT)?.name)
         assertEquals("Microphone", state.defaultOf(AudioKind.INPUT)?.name)

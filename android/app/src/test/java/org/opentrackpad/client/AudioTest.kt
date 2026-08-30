@@ -16,7 +16,7 @@ import org.junit.Test
 class AudioTest {
 
     private val example =
-        "ENTRY audio 1 output 53 950 0 1 - Built-in%20Audio%20Digital%20Stereo"
+        "ENTRY audio 1 output 53 950 0 1 - analog - Built-in%20Audio%20Digital%20Stereo"
 
     @Test
     fun `the worked example from the protocol reads as it is written`() {
@@ -30,6 +30,8 @@ class AudioTest {
                 muted = false,
                 isDefault = true,
                 target = null,
+                port = AudioPort.ANALOG,
+                paused = null,
                 name = "Built-in Audio Digital Stereo",
             ),
             message.entity,
@@ -40,7 +42,7 @@ class AudioTest {
 
     @Test
     fun `a stream names the output it plays through`() {
-        val message = Audio.parse("ENTRY audio 1 stream 1348 990 0 0 53 Firefox") as AudioMessage.Entry
+        val message = Audio.parse("ENTRY audio 1 stream 1348 990 0 0 53 - 0 Firefox") as AudioMessage.Entry
         assertEquals(AudioKind.STREAM, message.entity.kind)
         assertEquals(53, message.entity.target)
         assertEquals("Firefox", message.entity.name)
@@ -105,7 +107,7 @@ class AudioTest {
     @Test
     fun `a host confused about what it is describing is refused`() {
         // Only a device can be the default, and only a stream has a target.
-        assertNull(Audio.parse("ENTRY audio 1 stream 9 500 0 1 53 Firefox"))
+        assertNull(Audio.parse("ENTRY audio 1 stream 9 500 0 1 53 - 0 Firefox"))
         assertNull(Audio.parse("ENTRY audio 1 output 9 500 0 1 53 Speakers"))
     }
 
@@ -116,12 +118,12 @@ class AudioTest {
         assertNull(Audio.parse("ENTRY audio 1 output x 950 0 1 - Name"))
         assertNull(Audio.parse("ENTRY audio 1 output 53 -5 0 1 - Name"))
         // Trailing fields, which the protocol calls an error in both directions.
-        assertNull(Audio.parse("ENTRY audio 1 output 53 950 0 1 - Name extra"))
+        assertNull(Audio.parse("ENTRY audio 1 output 53 950 0 1 - analog - Name extra"))
     }
 
     @Test
     fun `a level above the reference is boosted and drawn against the ceiling`() {
-        val loud = Audio.parse("CHANGED audio 1 output 1 1300 0 0 - Speakers") as AudioMessage.Changed
+        val loud = Audio.parse("CHANGED audio 1 output 1 1300 0 0 - analog - Speakers") as AudioMessage.Changed
         assertTrue(loud.entity.boosted)
         assertEquals(130, loud.entity.percent)
         assertEquals(1300f / Audio.CEILING, loud.entity.fraction, 0.001f)

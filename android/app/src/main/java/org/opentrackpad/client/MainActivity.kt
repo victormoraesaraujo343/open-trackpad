@@ -156,7 +156,7 @@ class MainActivity : AppCompatActivity() {
             // Asked for every time. A host that cannot serve it answers with a
             // shorter list and the panel is simply absent, which is the whole
             // reason the handshake carries one.
-            wanted = setOf(Audio.CAPABILITY),
+            wanted = setOf(Audio.CAPABILITY, Library.SHORTCUTS, Library.IMPORT),
             onState = ::showState,
             onGranted = ::onGranted,
             onLine = ::onHostLine,
@@ -378,6 +378,10 @@ class MainActivity : AppCompatActivity() {
             showLevelNow(entity, level)
             waitBeforeReturning()
         }
+        audioFaders.onMakeDefault = { entity ->
+            ask(Audio.makeDefault(++requestSequence, entity.kind, entity.id))
+            waitBeforeReturning()
+        }
         audioFaders.onMute = { entity, muted ->
             ask(Audio.mute(++requestSequence, entity.kind, entity.id, muted))
             waitBeforeReturning()
@@ -388,6 +392,10 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<SegmentedView>(R.id.audio_opens_on).onChoose = { index ->
             update { it.copy(audioOpensOn = AudioPage.openable[index]) }
+        }
+        findViewById<PillToggle>(R.id.audio_show_idle).onChange = { on ->
+            update { it.copy(audioShowIdle = on) }
+            showAudio()
         }
     }
 
@@ -628,6 +636,7 @@ class MainActivity : AppCompatActivity() {
             audioFaders.visibility = View.GONE
             audioEmpty.visibility = View.GONE
             findViewById<PillToggle>(R.id.audio_boost).checked = stored.settings.audioBoost
+            findViewById<PillToggle>(R.id.audio_show_idle).checked = stored.settings.audioShowIdle
             findViewById<SegmentedView>(R.id.audio_opens_on).apply {
                 options = AudioPage.openable.map { getString(it.title()) }
                 chosen = AudioPage.openable.indexOf(stored.settings.audioOpensOn)
@@ -637,7 +646,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val kind = audioPage.kind ?: return
-        val shown = audio.of(kind)
+        val shown = audio.of(kind).filter {
+            // A stopped stream is hidden unless asked for. `paused` is certain
+            // about silence and only hopeful about the opposite, so this hides
+            // what is obviously idle rather than promising the rest is audible.
+            stored.settings.audioShowIdle || it.paused != true
+        }
         audioFaders.allowBoost = stored.settings.audioBoost
         audioFaders.hapticsEnabled = stored.settings.haptics
         audioFaders.faders = shown
