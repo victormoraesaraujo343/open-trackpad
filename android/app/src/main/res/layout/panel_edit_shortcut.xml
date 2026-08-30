@@ -182,6 +182,18 @@
                 style="@style/FieldLabel"
                 android:text="@string/edit_on_rails" />
 
+            <!--
+              Where the rails would be, which is where their absence belongs
+              too. An empty state at the bottom of the column reads as a
+              footnote under a void, and a void reads as content that failed to
+              arrive.
+            -->
+            <TextView
+                android:id="@+id/edit_used_empty"
+                style="@style/FieldNote"
+                android:layout_marginTop="9dp"
+                android:text="@string/edit_nowhere" />
+
             <LinearLayout
                 android:id="@+id/edit_used"
                 android:layout_width="match_parent"

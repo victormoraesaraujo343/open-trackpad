@@ -54,6 +54,23 @@ RING_OUTER = 112.0
 RING_SIZE = 240.0
 RING_MARGIN = 22.0
 
+# ProfileMenuView draws its own rows, so there is no id to aim at and these
+# mirror its constants — the same duplication the ring needed, accepted for the
+# same reason: every step asserts it arrived, so a drawing that moves stops the
+# run instead of quietly photographing the wrong screen.
+MENU_WIDTH = 196.0
+MENU_MARGIN_SIDE = 26.0
+MENU_MARGIN_TOP = 34.0
+MENU_PADDING = 8.0
+MENU_HEADING = 4.0 + 12.0 + 6.0     # room above, the word, room below
+MENU_ROW_HEIGHT = 27.0
+MENU_ROW_GAP = 2.0
+MENU_RULE = 6.0 * 2                 # the margin either side of the divider
+
+# The one recorded shortcut standin-host.py serves, and the only kind of chip
+# that opens the edit screen.
+RECORDED = "My shortcut"
+
 # Anything that can be open while the rails are still showing. Each is the root
 # id of a panel that covers the pad rather than the screen.
 OVER_THE_PAD = {"quick_ring", "audio_panel", "profile_menu", "all_windows_panel"}
@@ -70,12 +87,11 @@ ANIMATED = {
 # whole failure this tool was corrected for was a coverage claim that was not
 # true, so what is *not* covered is stated as plainly as what is.
 UNREACHED = {
-    "editor": "only reachable through ProfileMenuView, which draws its rows "
-              "itself — there is no id to aim at and replicating its geometry "
-              "would be a third copy of numbers that live in the view",
-    "naming": "sits behind the editor, so it is unreachable for the same reason",
     "mismatch": "needs a host that answers in an older language than the client "
                 "speaks, which the stand-in does not yet do",
+    "recording": "reached by sending ACTION RECORD, which the stand-in accepts "
+                 "and does nothing with — the screen would draw, but a capture "
+                 "of it would prove nothing about a recorder that never ran",
 }
 
 
@@ -84,6 +100,25 @@ def adb(*args, binary=False):
         ["adb", "-s", SERIAL, *args], capture_output=True, check=False
     )
     return out.stdout if binary else out.stdout.decode("utf-8", "replace")
+
+
+def labelled():
+    """The live view hierarchy keyed by visible text, for things with no id.
+
+    A library chip has an id shared with every other chip, so the only way to
+    aim at one in particular is the word on it. Reading the word is honest;
+    guessing an offset from a neighbour is the tap-and-hope this file exists to
+    avoid, and I wrote one of those here before noticing.
+    """
+    xml = adb("shell", "cat", "/sdcard/ui.xml")
+    found = {}
+    for node in re.finditer(r"<node[^>]*>", xml):
+        text = node.group(0)
+        label = re.search(r'text="([^"]*)"', text)
+        box = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', text)
+        if label and box and label.group(1):
+            found[label.group(1)] = tuple(int(n) for n in box.groups())
+    return found
 
 
 def tree():
@@ -143,6 +178,21 @@ def slot(rail, index, views):
     left, top, right, bottom = views[rail]
     height = (bottom - top) / 5.0
     return (left + right) / 2.0, top + height * (index + 0.5)
+
+
+def back_to(marker, what):
+    """Presses back until [marker] is on screen.
+
+    Once is not enough from the naming screen: it opens the keyboard, and the
+    first back press closes the keyboard rather than the screen. Counting
+    presses would have to know that; looking for where it has arrived does not.
+    """
+    for _ in range(4):
+        if marker in tree():
+            return
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        time.sleep(0.9)
+    raise SystemExit("could not get back to %s" % what)
 
 
 def arrived(marker, what):
@@ -343,6 +393,18 @@ def screens(into):
         "settings": (cx - reach, cy),
     }
 
+    # The editor and the naming screen behind it, reached through the profile
+    # menu. Its rows are: the profiles, then a rule, then the ways out — so
+    # "Manage profiles" is the row after however many profiles there are.
+    def menu_row(index, profiles, surface, unit):
+        left = surface[2] - unit * (MENU_MARGIN_SIDE + MENU_WIDTH)
+        top = surface[1] + unit * MENU_MARGIN_TOP
+        y = top + unit * (MENU_PADDING + MENU_HEADING)
+        y += index * unit * (MENU_ROW_HEIGHT + MENU_ROW_GAP)
+        if index >= profiles:
+            y += unit * MENU_RULE
+        return left + unit * MENU_WIDTH / 2.0, y + unit * MENU_ROW_HEIGHT / 2.0
+
     markers = {
         "audio": "audio_panel",
         "profiles": "profile_menu",
@@ -362,6 +424,29 @@ def screens(into):
                 tap(*slot(far, index, views))
                 seen[page] = capture(page, into)
             tap(*slot(far, 0, views))   # Close
+        if name == "profiles":
+            # Three profiles ship by default, so "Manage profiles" is row three.
+            tap(*menu_row(3, profiles=3, surface=surface, unit=unit))
+            arrived("editor_library", "the profile editor")
+            seen["editor"] = capture("editor", into)
+
+            box = tree()["editor_duplicate"]
+            tap((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0)
+            arrived("name_field", "the naming screen")
+            seen["naming"] = capture("naming", into)
+
+            # Back to the editor, then the one chip that opens the edit screen.
+            # Only a recorded shortcut can be renamed or deleted, and the
+            # stand-in serves exactly one — aimed at by its word, since every
+            # chip shares the same id.
+            back_to("editor_library", "the profile editor")
+            chip = labelled().get(RECORDED)
+            if chip is None:
+                raise SystemExit("no chip named %r to open the edit screen" % RECORDED)
+            tap((chip[0] + chip[2]) / 2.0, (chip[1] + chip[3]) / 2.0)
+            arrived("edit_name", "the edit-shortcut screen")
+            seen["edit_shortcut"] = capture("edit_shortcut", into)
+
         views = pad()
 
     # All windows: slot five of the far rail, which is the windows rail.

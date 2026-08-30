@@ -52,6 +52,7 @@ class EditShortcutPanel(private val root: View) {
     private val keys: LinearLayout = root.findViewById(R.id.edit_keys)
     private val used: LinearLayout = root.findViewById(R.id.edit_used)
     private val usedNote: TextView = root.findViewById(R.id.edit_used_note)
+    private val usedEmpty: TextView = root.findViewById(R.id.edit_used_empty)
 
     private val artboard = Artboard.measure(
         root.resources.displayMetrics,
@@ -178,9 +179,11 @@ class EditShortcutPanel(private val root: View) {
                 )
             )
         }
-        usedNote.text = root.context.getString(
-            if (found == 0) R.string.edit_nowhere else R.string.edit_delete_note
-        )
+        // The note explains what deleting will empty, so with nothing to empty
+        // it is explaining a consequence that cannot happen. The empty state
+        // takes the column instead, at the top where the rails would be.
+        usedEmpty.visibility = if (found == 0) View.VISIBLE else View.GONE
+        usedNote.visibility = if (found == 0) View.GONE else View.VISIBLE
     }
 
     private fun usedRow(profile: String, where: String): View {
