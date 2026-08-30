@@ -46,6 +46,35 @@ use opentrackpadd::shortcuts::Shortcuts;
 /// cannot hold the desktop's own shortcuts hostage.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Whether to narrate what the window is doing, on stderr.
+///
+/// Off unless `OPENTRACKPAD_TRACE` is set, because the tray and the daemon both
+/// spawn this and neither has anywhere useful to put a running commentary — it
+/// would land in the journal every time somebody records a shortcut.
+///
+/// An environment variable rather than an argument, deliberately. This program
+/// takes no arguments, and that is what makes it safe for the daemon to spawn
+/// on a client's request: there is nowhere for anything of the client's to go.
+/// Adding a flag would put a hole in that for the sake of a diagnostic.
+///
+/// What it says is chosen for the two failures that look identical from
+/// outside: a window that never becomes active, and a timer that is dead rather
+/// than merely wrong. `idle 31s of 30s` followed by `closing` is a timer
+/// explaining itself; its absence is the answer to a different question.
+fn tracing() -> bool {
+    static TRACING: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *TRACING.get_or_init(|| std::env::var_os("OPENTRACKPAD_TRACE").is_some())
+}
+
+/// Says something on stderr, when asked to.
+macro_rules! trace {
+    ($($argument:tt)*) => {
+        if crate::tracing() {
+            eprintln!($($argument)*);
+        }
+    };
+}
+
 /// Everything the two states share, so the handlers can reach it.
 struct Recorder {
     chord: RefCell<Option<Chord>>,
@@ -61,6 +90,10 @@ struct Recorder {
 }
 
 fn main() -> glib::ExitCode {
+    // First line of the narration, and the one that answers "I clicked the menu
+    // item and nothing happened": it says the process started at all, before
+    // any window or display is involved.
+    trace!("recorder: starting");
     let application = Application::builder()
         .application_id("org.opentrackpad.Recorder")
         .build();
@@ -541,7 +574,7 @@ fn close_when_unfocused(window: &ApplicationWindow) {
             // Never fight for focus back. A window that inhibits the desktop's
             // shortcuts and insists on staying in front is the shape of thing
             // people have to log out to escape.
-            eprintln!("recorder: lost focus, closing");
+            trace!("recorder: lost focus, closing");
             window.close();
         }
     });
@@ -558,14 +591,14 @@ fn close_when_idle(window: &ApplicationWindow, state: &Rc<Recorder>) {
         // whether the timer is running at all and what it thinks the idle time
         // is — the two ways this can fail look identical from outside.
         if ticks.is_multiple_of(5) {
-            eprintln!(
+            trace!(
                 "recorder: idle {:.0}s of {:.0}s",
                 idle.as_secs_f64(),
                 IDLE_TIMEOUT.as_secs_f64()
             );
         }
         if idle >= IDLE_TIMEOUT {
-            eprintln!("recorder: idle for {:.0}s, closing", idle.as_secs_f64());
+            trace!("recorder: idle for {:.0}s, closing", idle.as_secs_f64());
             window.close();
             return glib::ControlFlow::Break;
         }
@@ -604,9 +637,9 @@ fn ask_to_inhibit(window: &ApplicationWindow, when: &str, asked: &Rc<std::cell::
         Some(toplevel) => {
             toplevel.inhibit_system_shortcuts(None::<&gdk::ButtonEvent>);
             asked.set(true);
-            eprintln!("recorder: asked to inhibit desktop shortcuts ({when})");
+            trace!("recorder: asked to inhibit desktop shortcuts ({when})");
         }
-        None => eprintln!("recorder: no toplevel to inhibit against yet ({when})"),
+        None => trace!("recorder: no toplevel to inhibit against yet ({when})"),
     }
 }
 
@@ -625,7 +658,7 @@ fn inhibit_desktop_shortcuts(window: &ApplicationWindow) {
     // wants, and the one a compositor will honour.
     let on_active = Rc::clone(&asked);
     window.connect_is_active_notify(move |window| {
-        eprintln!("recorder: is-active is now {}", window.is_active());
+        trace!("recorder: is-active is now {}", window.is_active());
         if window.is_active() {
             ask_to_inhibit(window, "on becoming active", &on_active);
         }
