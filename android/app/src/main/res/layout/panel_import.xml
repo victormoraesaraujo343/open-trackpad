@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The import offer, from ImportShortcuts.dc.html.
+
+  Seventy-five is too many to tick one by one and too many to accept blind, so
+  a useful set arrives already chosen — the host marks which — and the rest is
+  browsable by what it controls rather than dumped in one list.
+
+  Read at reading distance, so system sizing rather than millimetres. That is
+  the rule from Artboard, not an exception to it.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/import_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ground"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/import_back"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="@string/settings_back"
+            android:focusable="true"
+            android:src="@drawable/ic_back" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:fontFamily="@font/space_grotesk_semibold"
+            android:text="@string/import_title"
+            android:textColor="@color/ink"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/import_tally"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:fontFamily="@font/inter_regular"
+            android:textColor="@color/faint"
+            android:textSize="10sp"
+            tools:text="75 found · 12 chosen" />
+
+        <TextView
+            android:id="@+id/import_skip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="@font/inter_regular"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="5dp"
+            android:text="@string/import_skip"
+            android:textColor="@color/body"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/import_add"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/lime_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="@font/inter_medium"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="5dp"
+            android:textColor="@color/ground"
+            android:textSize="11sp"
+            tools:text="Add 12" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <!-- What they control. -->
+        <LinearLayout
+            style="@style/SettingsCard"
+            android:layout_width="224dp"
+            android:layout_height="match_parent"
+            android:padding="10dp">
+
+            <TextView style="@style/CardHeading" android:text="@string/import_groups" />
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/import_group_list"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
+        </LinearLayout>
+
+        <!-- What is in the chosen group. -->
+        <LinearLayout
+            style="@style/SettingsCard"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/import_group_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/space_grotesk_semibold"
+                    android:textColor="@color/ink"
+                    android:textSize="12sp"
+                    tools:text="Windows" />
+
+                <TextView
+                    android:id="@+id/import_group_tally"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:fontFamily="@font/inter_regular"
+                    android:textColor="@color/muted"
+                    android:textSize="10sp"
+                    tools:text="45 here · 3 chosen" />
+
+                <TextView
+                    android:id="@+id/import_choose_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:fontFamily="@font/inter_regular"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="4dp"
+                    android:textColor="@color/body"
+                    android:textSize="10sp"
+                    tools:text="Choose all" />
+            </LinearLayout>
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="8dp"
+                android:layout_weight="1"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/import_rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
+
+            <TextView
+                style="@style/CardNote"
+                android:text="@string/import_note" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

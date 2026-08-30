@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
 import android.util.Log
 import android.util.TypedValue
 import android.view.View
@@ -65,6 +66,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var audioEmpty: TextView
     private lateinit var audioFaders: AudioFadersView
     private lateinit var audioSettingsPage: View
+
+    private lateinit var importPanel: View
+    private lateinit var importScreen: ImportPanel
+
+    /** What the computer knows about shortcuts, and what it is offering. */
+    private val library = LibraryState()
+
+    /**
+     * Whether the offer has been shown without being asked for.
+     *
+     * Once per session, on the first snapshot that has anything in it. Somebody
+     * who skips it should not meet it again on the next reconnection, and it
+     * stays reachable from settings for the rest of time.
+     */
+    private var offeredThisSession = false
 
     /** Runs the "back to the trackpad" wait. Nothing else uses it. */
     private val idle = Handler(Looper.getMainLooper())
@@ -134,8 +150,25 @@ class MainActivity : AppCompatActivity() {
         audioSettingsPage = findViewById(R.id.audio_settings_page)
         bindAudio()
 
+        importPanel = findViewById(R.id.import_panel)
+        importScreen = ImportPanel(importPanel)
+        importScreen.onDismiss = { show(Panel.NONE) }
+        importScreen.onAccept = { generation, ids ->
+            ask(Library.accept(++requestSequence, generation, ids))
+            // No acknowledgement is sent for a success: the snapshot that
+            // follows is the acknowledgement, and it carries what actually
+            // happened rather than what was asked for.
+            show(Panel.NONE)
+        }
+
         settingsPanel = findViewById(R.id.settings_panel)
         findViewById<View>(R.id.settings_back).setOnClickListener { show(Panel.NONE) }
+        findViewById<View>(R.id.settings_import).setOnClickListener {
+            // Re-asked every time it opens rather than trusted: the offer is
+            // re-runnable, and what the computer has may have changed since.
+            ask(Library.refresh(++requestSequence, Library.IMPORT))
+            show(Panel.IMPORT)
+        }
         bindSettings()
 
         trouble = findViewById(R.id.trouble)
@@ -298,7 +331,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** What is over the trackpad, if anything. Only ever one thing. */
-    private enum class Panel { NONE, RING, PROFILES, SETTINGS, AUDIO }
+    private enum class Panel { NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT }
 
     private var panel = Panel.NONE
 
@@ -330,11 +363,13 @@ class MainActivity : AppCompatActivity() {
             profileMenu.hapticsEnabled = stored.settings.haptics
         }
         if (next == Panel.SETTINGS) showSettings()
+        if (next == Panel.IMPORT) importScreen.show(library)
 
         ring.visibility = if (next == Panel.RING) View.VISIBLE else View.GONE
         profileMenu.visibility = if (next == Panel.PROFILES) View.VISIBLE else View.GONE
         settingsPanel.visibility = if (next == Panel.SETTINGS) View.VISIBLE else View.GONE
         audioPanel.visibility = if (next == Panel.AUDIO) View.VISIBLE else View.GONE
+        importPanel.visibility = if (next == Panel.IMPORT) View.VISIBLE else View.GONE
         // The rail opposite the Quick Ring becomes the panel's pages while one
         // is open, and goes back to being shortcuts when it closes. The rail
         // with the ring on it never changes, so the way out never moves.
@@ -478,6 +513,12 @@ class MainActivity : AppCompatActivity() {
             packageManager.getPackageInfo(packageName, 0).versionName.orEmpty(),
             speaking ?: getString(R.string.settings_not_speaking),
         )
+        val waiting = library.candidates.size
+        findViewById<TextView>(R.id.settings_import_count).apply {
+            text = if (waiting == 0) getString(R.string.settings_import_none)
+            else getString(R.string.settings_import_count, waiting)
+            setTextColor(getColor(if (waiting == 0) R.color.muted else R.color.lime))
+        }
         showConnectionIn(settingsPanel)
     }
 
@@ -684,7 +725,13 @@ class MainActivity : AppCompatActivity() {
     private fun onGranted(granted: Set<String>) {
         audio.grant(Audio.CAPABILITY in granted)
         audio.reset()
+        library.reset()
+        offeredThisSession = false
         if (audio.granted) ask(Audio.refresh(++requestSequence))
+        if (Library.SHORTCUTS in granted) ask(Library.refresh(++requestSequence, Library.SHORTCUTS))
+        // Asked for every time the offer screen opens as well as here: it is
+        // re-runnable rather than first-run.
+        if (Library.IMPORT in granted) ask(Library.refresh(++requestSequence, Library.IMPORT))
         if (panel == Panel.RING) ring.wedges = ringWedges()
         Log.i(TAG, "host granted: " + granted.ifEmpty { setOf("nothing") }.joinToString(","))
     }
@@ -697,6 +744,13 @@ class MainActivity : AppCompatActivity() {
      * client has to be able to be older than the computer it is plugged into.
      */
     private fun onHostLine(line: String) {
+        Library.parse(line)?.let { message ->
+            library.apply(message)?.let { domain ->
+                ask(Library.refresh(++requestSequence, domain))
+            }
+            if (!library.settling) onLibraryChanged()
+            return
+        }
         val message = Audio.parse(line) ?: return
         if (message is AudioMessage.Refused) {
             // The fader springs back to whatever the host says is true, which
@@ -712,6 +766,22 @@ class MainActivity : AppCompatActivity() {
         if (panel == Panel.AUDIO && !audio.settling) showAudio()
     }
 
+    /**
+     * The library or the offer changed.
+     *
+     * The offer arrives on its own on the first connection that has one, and is
+     * reachable from settings afterwards — somebody who binds a new desktop
+     * shortcut next month should be able to pick it up, and a one-shot offer
+     * means the only chance to say yes is the moment they are least ready.
+     */
+    private fun onLibraryChanged() {
+        if (panel == Panel.IMPORT) importScreen.show(library)
+        if (!offeredThisSession && library.candidates.isNotEmpty() && panel == Panel.NONE) {
+            offeredThisSession = true
+            show(Panel.IMPORT)
+        }
+    }
+
     private fun ask(line: String?) {
         connection.send(HostConnection.Request(line ?: return))
     }
@@ -725,6 +795,25 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         screen.resume()
         waitBeforeReturning()
+    }
+
+    /**
+     * Any touch anywhere puts off the return to the trackpad.
+     *
+     * The design says *a panel left open stops being a trackpad*, and "left"
+     * is the word that matters: the wait is for a panel somebody walked away
+     * from, not one they are using. Timing from when it opened closed the
+     * import review out from under a reader partway down a list of
+     * seventy-five, which is the opposite of what the setting is for.
+     *
+     * Only the down and the up, because a drag is hundreds of moves and
+     * rescheduling on each is work for nothing.
+     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP -> waitBeforeReturning()
+        }
+        return super.dispatchTouchEvent(event)
     }
 
     override fun onBackPressed() {

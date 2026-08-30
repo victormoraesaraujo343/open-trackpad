@@ -188,6 +188,33 @@
                     tools:text="Desktop" />
             </LinearLayout>
 
+            <!--
+              The offer, reachable for the rest of time rather than once. Binding
+              a new desktop shortcut next month should be pickable up, and a
+              one-shot offer means the only chance to say yes is the moment
+              somebody is least ready to decide.
+            -->
+            <LinearLayout
+                android:id="@+id/settings_import"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingVertical="4dp">
+
+                <TextView style="@style/SettingLabel" android:text="@string/settings_import" />
+
+                <TextView
+                    android:id="@+id/settings_import_count"
+                    style="@style/SettingValue"
+                    android:textColor="@color/lime"
+                    tools:text="65 to review" />
+            </LinearLayout>
+
             <Space
                 android:layout_width="match_parent"
                 android:layout_height="0dp"

@@ -33,6 +33,9 @@
     <string name="settings_handedness">Handedness</string>
     <string name="settings_haptics">Haptics</string>
     <string name="settings_active_profile">Active profile</string>
+    <string name="settings_import">Shortcuts on your computer</string>
+    <string name="settings_import_count">%1$d to review</string>
+    <string name="settings_import_none">All brought over</string>
     <string name="settings_version">App %1$s · protocol %2$s</string>
     <string name="settings_hand_right">Right</string>
     <string name="settings_hand_left">Left</string>
@@ -85,6 +88,39 @@
     <string name="audio_boost_note">Rescues a quiet video. Distorts the sound, and at high volume can damage speakers and ears. Anything past 100% turns amber on the fader.</string>
     <string name="audio_opens_on">Opens on</string>
     <string name="audio_opens_on_note">The page this panel shows first, every time.</string>
+
+    <!-- Reviewing what the computer already has. -->
+    <string name="import_title">Shortcuts already on your computer</string>
+    <string name="import_tally">%1$d found · %2$d chosen</string>
+    <string name="import_here">%1$d here · %2$d chosen</string>
+    <string name="import_group_count">%1$d / %2$d</string>
+    <string name="import_groups">What they control</string>
+    <string name="import_skip">Skip</string>
+    <string name="import_add">Add %1$d</string>
+    <string name="import_choose_all">Choose all</string>
+    <string name="import_choose_none">Choose none</string>
+    <string name="import_note">Only the ticked ones become buttons. Nothing on your computer changes, and you can record more later.</string>
+    <string name="import_none">Nothing to bring over. Your computer has no shortcuts OpenTrackpad does not already know.</string>
+
+    <!--
+      The fixed vocabulary both desktops map into, in words rather than in the
+      names their own settings use. "Mine" is everything recorded here, which
+      has no group because nobody said what theirs is for.
+    -->
+    <string name="group_windows">Windows</string>
+    <string name="group_desktop">Desktop</string>
+    <string name="group_screenshot">Screenshot</string>
+    <string name="group_sound">Sound</string>
+    <string name="group_media">Media</string>
+    <string name="group_session">Session</string>
+    <string name="group_power">Power</string>
+    <string name="group_keyboard">Keyboard</string>
+    <string name="group_accessibility">Accessibility</string>
+    <string name="group_text">Text</string>
+    <string name="group_browser">Browser</string>
+    <string name="group_terminal">Terminal</string>
+    <string name="group_other">Other</string>
+    <string name="group_mine">Mine</string>
 
     <!-- The rails, for a screen reader. -->
     <string name="rail_shortcuts">Shortcuts</string>
