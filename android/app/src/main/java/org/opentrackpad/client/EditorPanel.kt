@@ -199,13 +199,35 @@ class EditorPanel(private val root: View) {
                     )
                 )
             }
+            // The same glyph the rail itself will draw. A preview that shows a
+            // word where the real thing shows a symbol is a preview of
+            // something else.
+            slot.findViewById<ImageView>(R.id.slot_icon).apply {
+                val ink = root.context.getColor(
+                    if (locked) R.color.muted else R.color.secondary
+                )
+                setImageDrawable(
+                    when {
+                        locked -> RailIcons.drawable(
+                            root.context, RailIcons.path("quick"), ink, artboard.px(SLOT_GLYPH)
+                        )
+                        entry != null -> RailIcons.drawable(
+                            root.context,
+                            RailIcons.path(RailIcons.forAction(entry.action)),
+                            ink,
+                            artboard.px(SLOT_GLYPH),
+                        )
+                        else -> null
+                    }
+                )
+            }
             slot.findViewById<ImageView>(R.id.slot_lock).visibility =
                 if (locked) View.VISIBLE else View.GONE
 
             val params = slot.layoutParams as LinearLayout.LayoutParams
             params.height = 0
             params.weight = 1f
-            params.topMargin = (6 * root.resources.displayMetrics.density).toInt()
+            params.topMargin = artboard.size(SLOT_GAP)
             slot.layoutParams = params
 
             if (!locked) {
@@ -470,6 +492,8 @@ class EditorPanel(private val root: View) {
         const val CHIP_GAP = 4f
         const val CHIP_STACK = 6f
         const val CHIP_GLYPH = 14f
+        const val SLOT_GLYPH = 15f
+        const val SLOT_GAP = 6f
         const val GLYPH_GAP = 7f
 
         /**

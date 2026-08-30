@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  One position on a rail, as the editor shows it: a small icon, the word, and a
+  One position on a rail, as the editor shows it: the glyph, the word, and a
   lock where the slot is not the person's to change.
+
+  The glyph is what this is a preview *of*. The real rail draws a symbol above
+  a label and nothing else identifies a slot at a glance, so a preview without
+  one shows something the person will never see — and the picker beside it is
+  teaching which glyph means which shortcut, which makes this the one place the
+  two ideas meet.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -13,6 +19,13 @@
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingHorizontal="8dp">
+
+    <ImageView
+        android:id="@+id/slot_icon"
+        android:layout_width="15dp"
+        android:layout_height="15dp"
+        android:layout_marginEnd="8dp"
+        android:importantForAccessibility="no" />
 
     <TextView
         android:id="@+id/slot_label"
