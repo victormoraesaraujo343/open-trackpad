@@ -311,10 +311,28 @@ one differs in depth, borders, shadows and key shape, not only in colour.
 Four recently used desktop windows on a rail, a fifth slot listing the rest, and
 tapping one switches to it.
 
-Deferred because Linux has no single way to do it. KDE exposes windows through
-`org_kde_plasma_window_management`, confirmed present on the development
-machine; wlroots compositors use a different protocol; GNOME needs an extension.
-X11 has EWMH, which works everywhere it applies.
+Linux has no single way to do it, and the way this file named for two months
+was wrong. `org_kde_plasma_window_management` is **not available**: KWin
+implements it and keeps it for privileged clients like its own shell, so an
+ordinary client is never offered it. Sixty-six interfaces are advertised and
+that is not one of them. "Confirmed present" was reading that KWin implements
+it, which it does, and is a different claim.
+
+The obvious fallback is worse, because it looks right. KWin's `WindowsRunner`
+over D-Bus gives an identifier, a title and activation, and **no recency at
+all** — activating a window leaves its list byte-identical. A recent-windows
+rail built on it would have shipped, worked, and been quietly wrong.
+
+What works on KDE is KWin's own scripting engine, driven the way everything else
+here is driven: a script loaded over D-Bus that prints a line whenever a window
+opens, closes or is switched to, read back from the journal. Events rather than
+polling, and no new dependency. Activation goes through the window runner, which
+is what KRunner uses.
+
+wlroots compositors and GNOME still need their own paths, and X11 has EWMH.
+Anywhere the host cannot answer, the capability is simply not granted and the
+phone draws no rail — absent rather than broken, as with audio and no sound
+daemon.
 
 - [ ] List open windows and their recent order, per desktop environment
 - [ ] Activate a window by request

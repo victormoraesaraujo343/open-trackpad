@@ -432,6 +432,47 @@ somebody looking at a screen that half agrees with the machine, with no way to
 tell which half — the worst outcome available here, and worth the strictness to
 make impossible.
 
+## The windows domain
+
+The desktop's recently used windows, most recent first, so the far rail can
+switch between them.
+
+```text
+ENTRY windows <generation> window <id> <application> <title>
+REQUEST <sequence> windows ACTIVATE <id>
+```
+
+- `id`: this host's own number, never reused. The compositor's identifiers are
+  UUIDs and never cross the wire — a stale rail button must not be able to
+  switch to whatever window inherited an identifier
+- `application`: what owns the window, which is what tells four browser windows
+  apart
+- `title`: percent-encoded
+
+**Switching is the only request.** Not close, not minimise, not move. The design
+is "tap one and switch to it", and anything more is a window manager on a phone.
+
+### Titles are the worst free text in this product
+
+An application name comes from an application. A window title comes from
+whatever a web page decided to call itself, and it is the string most directly
+under a stranger's control anywhere in this protocol. It is percent-encoded like
+every other name, and a title containing a newline cannot become a second line.
+
+### No icons
+
+The compositor offers them as raw 64×64 pixel data — sixteen kilobytes per
+window on a line-framed text protocol. Framing that stays inspectable is worth
+more than an icon, so the client draws generic glyphs and the application name
+carries the identification.
+
+### Recency is the whole point, and it is the part that lies
+
+An ordering that looks plausible and never changes is the failure this domain
+invites: it works for an hour and is wrong forever after. Whatever a desktop
+offers, establish that the list reorders when a window is actually used, by
+using one and watching it move — not by reading that the interface exists.
+
 ## Note for the audio panel
 
 Monitor sources are not listed. Every output has one and none of them is a
