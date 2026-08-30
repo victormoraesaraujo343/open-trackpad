@@ -321,6 +321,32 @@ the application converting a continuous gesture into discrete steps, not
 anything this project can fix: browsers commonly zoom a page in fixed
 increments regardless of how far the fingers travelled.
 
+### When the recorder does not appear
+
+The daemon spawns the recorder as a child, so it inherits the daemon own
+environment. If that environment has a poisoned library path — an AppImage or a
+bundled runtime supplying an older glib is the usual cause — the recorder dies
+at the dynamic-linking stage with an undefined symbol, before it ever draws
+anything.
+
+**The daemon cannot tell.** It logs that it opened the recorder either way,
+because the spawn succeeded and the death came afterwards. Nothing is wrong with
+the daemon, the recorder, or the machine.
+
+One line separates them:
+
+```bash
+OPENTRACKPAD_TRACE=1 opentrackpad-recorder
+```
+
+`recorder: starting` is printed before any window or display is involved. If it
+appears, the program ran and the problem is later. If it does not, it never got
+that far, and the environment is where to look.
+
+The systemd user manager on the development machine carries neither
+`LD_LIBRARY_PATH` nor `GTK_PATH`, so a recorder spawned by the service is safe.
+A daemon started by hand from a polluted shell is not.
+
 ### Testing the GNOME import without GNOME
 
 Import reads the desktop's own shortcut store, so testing the GNOME path
