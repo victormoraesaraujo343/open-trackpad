@@ -172,11 +172,23 @@
                 android:layout_weight="1"
                 android:scrollbars="none">
 
-                <LinearLayout
+                <!--
+                  Two columns, worked out from the shipped font rather than
+                  taken from the drawing: the artboard draws three, and was
+                  drawn when the type floor was ten units. At thirteen, three
+                  columns cut "Toggle Present Windows" and "Show Desktop Grid",
+                  which are ordinary names off a KDE desktop. See
+                  LibraryGridTest.
+
+                  It scrolls where the artboard clips. A drawing is one frame
+                  and cuts the last row to admit there are more; the app has to
+                  let somebody reach all fifty-four of them.
+                -->
+                <GridLayout
                     android:id="@+id/editor_library"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical" />
+                    android:columnCount="2" />
             </ScrollView>
         </LinearLayout>
     </LinearLayout>

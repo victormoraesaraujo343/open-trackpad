@@ -2,3 +2,6 @@
 # Captured for comparison during a run and rewritten every time. The baseline
 # beside it is committed; this one is the thing being judged.
 tools/pixel-current/
+
+# Screenshots taken for somebody to look at, not evidence of anything.
+tools/for-review/

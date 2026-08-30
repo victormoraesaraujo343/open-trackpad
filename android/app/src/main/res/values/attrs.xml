@@ -32,4 +32,5 @@
     <attr name="otpStroke" format="color" />
     <attr name="otpDots" format="color" />
     <attr name="otpVeil" format="color" />
+    <attr name="otpLimeEdge" format="color" />
 </resources>

@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
@@ -47,7 +48,7 @@ class EditorPanel(private val root: View) {
     private val inflater = LayoutInflater.from(root.context)
     private val shortcutRail: LinearLayout = root.findViewById(R.id.editor_rail_shortcuts)
     private val overflowRail: LinearLayout = root.findViewById(R.id.editor_rail_overflow)
-    private val library: LinearLayout = root.findViewById(R.id.editor_library)
+    private val library: GridLayout = root.findViewById(R.id.editor_library)
     private val groups: LinearLayout = root.findViewById(R.id.editor_groups)
     private val search: EditText = root.findViewById(R.id.editor_search)
     private val nameLabel: TextView = root.findViewById(R.id.editor_name)
@@ -322,21 +323,44 @@ class EditorPanel(private val root: View) {
             inBucket && matches
         }
 
-        for (offering in shown) addLibraryChip(offering)
-
-        // Last, and only where a new shortcut would actually arrive. The chip
-        // makes a shortcut rather than being one, which is why the artboard
-        // draws it dashed and unfilled, and why it is not draggable: there is
-        // nothing yet to drag.
+        // First, before everything, which is where the artboard puts it.
+        // Somebody opening this list to build a rail is at least as likely to
+        // want a new shortcut as an existing one, and burying the way to make
+        // something under fifty things you already have is the wrong order.
         if (canRecord && query.isEmpty() && bucket != Bucket.Mouse) addRecordChip()
+        for (offering in shown) addLibraryChip(offering)
     }
 
     private fun addLibraryChip(offering: Offering) {
         val chip = inflater.inflate(R.layout.row_library_chip, library, false)
+        // The drawing's own padding and the gap beside the glyph, in units,
+        // which a layout file cannot express.
+        chip.setPadding(
+            artboard.size(CHIP_H),
+            artboard.size(NEW_V),
+            artboard.size(CHIP_H),
+            artboard.size(NEW_V),
+        )
+        (chip.findViewById<View>(R.id.chip_icon).layoutParams as ViewGroup.MarginLayoutParams)
+            .marginEnd = artboard.size(GLYPH_GAP)
         chip.findViewById<TextView>(R.id.chip_name).text = offering.name
         chip.findViewById<TextView>(R.id.chip_chord).text = offering.detail
         chip.findViewById<View>(R.id.chip_mine).visibility =
             if (offering.mine) View.VISIBLE else View.INVISIBLE
+        // The same glyph the rail will draw. This is where somebody learns
+        // which symbol is which, and without it a name dragged onto a rail
+        // becomes a picture they have never seen.
+        chip.findViewById<ImageView>(R.id.chip_icon).setImageDrawable(
+            RailIcons.drawable(
+                root.context,
+                // `forAction` names a glyph; `path` turns a name into the
+                // drawing. Passing the name straight through crashed the parser
+                // on the first chip.
+                RailIcons.path(RailIcons.forAction(offering.action)),
+                Palette.of(root.context).secondary,
+                artboard.px(CHIP_GLYPH),
+            )
+        )
 
         chip.setOnLongClickListener { view ->
             // The id rather than the whole shortcut: a drag can outlive the
@@ -351,15 +375,54 @@ class EditorPanel(private val root: View) {
         stack(chip)
     }
 
+    /**
+     * The way to make a shortcut, which is not a shortcut.
+     *
+     * Lime rather than grey: it is the only creating thing on the screen, and
+     * grey says "disabled", which is the opposite. Dashed rather than filled,
+     * because an outline says it is a way to something rather than an object
+     * to pick up — and it is not draggable, since there is nothing yet to drag.
+     */
     private fun addRecordChip() {
-        val chip = TextView(root.context).apply {
-            text = context.getString(R.string.editor_new)
-            gravity = android.view.Gravity.CENTER
-            setPadding(artboard.size(CHIP_H), artboard.size(NEW_V), artboard.size(CHIP_H), artboard.size(NEW_V))
-            setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.text(NEW_TEXT))
-            setTextColor(context.getColor(R.color.muted))
+        val chip = LinearLayout(root.context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(
+                artboard.size(CHIP_H),
+                artboard.size(NEW_V),
+                artboard.size(CHIP_H),
+                artboard.size(NEW_V),
+            )
             setBackgroundResource(R.drawable.new_shortcut_chip)
-            typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
+            addView(
+                ImageView(context).apply {
+                    setImageDrawable(
+                        RailIcons.drawable(
+                            context,
+                            PLUS,
+                            context.getColor(R.color.lime),
+                            artboard.px(CHIP_GLYPH),
+                        )
+                    )
+                },
+                LinearLayout.LayoutParams(
+                    artboard.size(CHIP_GLYPH),
+                    artboard.size(CHIP_GLYPH),
+                ),
+            )
+            addView(
+                TextView(context).apply {
+                    text = context.getString(R.string.editor_new)
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.text(NEW_TEXT))
+                    setTextColor(context.getColor(R.color.lime))
+                    typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
+                    maxLines = 1
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = artboard.size(GLYPH_GAP) },
+            )
             setOnClickListener {
                 haptics?.press()
                 haptics?.release()
@@ -369,13 +432,17 @@ class EditorPanel(private val root: View) {
         stack(chip)
     }
 
-    /** Adds [chip] to the library with the gap the drawing puts between them. */
+    /** Adds [chip] to the grid, filling left to right. */
     private fun stack(chip: View) {
-        chip.layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+        val index = library.childCount
+        val column = index % COLUMNS
+        chip.layoutParams = GridLayout.LayoutParams(
+            GridLayout.spec(index / COLUMNS),
+            GridLayout.spec(column, 1f),
         ).apply {
-            topMargin = if (library.childCount == 0) 0 else artboard.size(CHIP_STACK)
+            width = 0
+            marginStart = if (column == 0) 0 else artboard.size(CHIP_STACK)
+            topMargin = if (index < COLUMNS) 0 else artboard.size(CHIP_STACK)
         }
         library.addView(chip)
     }
@@ -385,7 +452,19 @@ class EditorPanel(private val root: View) {
         const val CHIP_H = 9f
         const val CHIP_V = 3f
         const val CHIP_GAP = 4f
-        const val CHIP_STACK = 5f
+        const val CHIP_STACK = 6f
+        const val CHIP_GLYPH = 14f
+        const val GLYPH_GAP = 7f
+
+        /**
+         * Two, worked out rather than copied. The artboard draws three and was
+         * drawn at a ten-unit type floor; at thirteen, three columns cut
+         * ordinary desktop shortcut names. See `LibraryGridTest`.
+         */
+        const val COLUMNS = 2
+
+        /** A plus, on the same twenty-unit grid as every other glyph. */
+        const val PLUS = "M10 4.6v10.8M4.6 10h10.8"
         const val CHIP_TEXT = Artboard.MIN_READABLE_UNITS
         const val NEW_V = 7f
         const val NEW_TEXT = Artboard.MIN_READABLE_UNITS

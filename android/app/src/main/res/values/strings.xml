@@ -186,7 +186,7 @@
     <string name="ring_import_count">Import (%1$d)</string>
 
     <!-- Making a new shortcut: the chip in the editor, and the screen after it. -->
-    <string name="editor_new">+ New shortcut</string>
+    <string name="editor_new">New shortcut</string>
     <string name="recording_title">Look at your computer</string>
     <string name="recording_body">A window opened there. Press the keys you want on this button, and it will appear in your library.</string>
     <string name="recording_note">Nothing is waiting on this screen. Close it whenever you like — the shortcut arrives on its own.</string>

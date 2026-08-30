@@ -1,26 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  One shortcut in the library, ready to be dragged onto a rail.
+  One shortcut in the picker: a glyph, its name, and the chord under it.
 
-  Its chord under its name, because two shortcuts can easily share a name on a
-  machine that has both a desktop's and a person's own version of the same idea.
+  The glyph is not decoration. The rails draw glyphs and nothing else
+  identifies a slot at a glance, so this is where somebody learns which symbol
+  means which shortcut — without it you drag a name onto a rail and meet a
+  picture you have never seen.
+
+  The dot marks one somebody recorded themselves, which is the only kind that
+  can be renamed or deleted.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/row"
-    android:clickable="true"
-    android:focusable="true"
-    android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:paddingHorizontal="8dp"
-    android:paddingVertical="7dp">
+    android:gravity="center_vertical"
+    android:background="@drawable/chip">
+
+    <ImageView
+        android:id="@+id/chip_icon"
+        android:layout_width="14dp"
+        android:layout_height="14dp"
+        android:importantForAccessibility="no" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="7dp"
         android:layout_weight="1"
         android:orientation="vertical">
 
@@ -28,32 +33,28 @@
             android:id="@+id/chip_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:singleLine="true"
             android:ellipsize="end"
             android:fontFamily="@font/inter_medium"
-            android:singleLine="true"
             android:textColor="?attr/otpSecondary"
-            android:tag="12"
-            android:textSize="10sp"
-            tools:text="Show all windows" />
+            android:tag="13"
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/chip_chord"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:singleLine="true"
             android:ellipsize="end"
             android:fontFamily="@font/inter_regular"
-            android:singleLine="true"
-            android:textColor="?attr/otpFaint"
+            android:textColor="?attr/otpMuted"
             android:tag="12"
-            android:textSize="9sp"
-            tools:text="super+w" />
+            android:textSize="12sp" />
     </LinearLayout>
 
-    <!-- Only what the person made themselves is theirs to change. -->
     <View
         android:id="@+id/chip_mine"
         android:layout_width="5dp"
         android:layout_height="5dp"
-        android:layout_marginStart="6dp"
         android:background="@drawable/mine_dot" />
 </LinearLayout>

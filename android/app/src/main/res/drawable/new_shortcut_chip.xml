@@ -2,16 +2,18 @@
 <!--
   The chip that makes a shortcut rather than being one.
 
-  Dashed and unfilled on purpose, from the artboard: every other chip in this
-  list is a thing you can pick up and put somewhere, and this one is not. The
-  outline says so before anybody has to find out by pressing it.
+  Dashed, so it reads as an outline rather than an object: every other chip in
+  this list is a thing you pick up and put somewhere, and this one is not.
+
+  Lime, because it is the only creating thing on the screen. It was grey, which
+  says "disabled" — the opposite of what this is.
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <corners android:radius="8dp" />
     <stroke
         android:width="1dp"
-        android:color="?attr/otpHairline"
+        android:color="?attr/otpLimeEdge"
         android:dashWidth="4dp"
         android:dashGap="3dp" />
 </shape>

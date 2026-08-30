@@ -241,7 +241,11 @@ def settle():
         PACKAGE,
         "sh",
         "-c",
-        "printf 'setting\\tfade\\tfalse\\n' > files/settings.tsv",
+        # The directory does not exist until the app has saved something, and
+        # `>` into a missing directory fails silently as far as this is
+        # concerned — which would leave the fade on and every screen reporting
+        # as moved for a reason unrelated to any change.
+        "mkdir -p files && printf 'setting\\tfade\\tfalse\\n' > files/settings.tsv",
     )
     for key, value in (
         ("window_animation_scale", "0"),
