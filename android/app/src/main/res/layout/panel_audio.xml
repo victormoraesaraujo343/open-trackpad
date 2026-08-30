@@ -32,6 +32,7 @@
             android:layout_height="wrap_content"
             android:fontFamily="@font/space_grotesk_semibold"
             android:textColor="@color/ink"
+            android:tag="14"
             android:textSize="13sp"
             tools:text="Output" />
 
@@ -43,6 +44,7 @@
             android:fontFamily="@font/inter_regular"
             android:gravity="end"
             android:textColor="@color/faint"
+            android:tag="12"
             android:textSize="10sp"
             tools:text="Green = the one in use · tap a knob to mute" />
     </LinearLayout>
@@ -70,6 +72,7 @@
             android:lineSpacingMultiplier="1.5"
             android:paddingHorizontal="32dp"
             android:textColor="@color/muted"
+            android:tag="12"
             android:textSize="12sp"
             android:visibility="gone"
             tools:text="Nothing is playing" />

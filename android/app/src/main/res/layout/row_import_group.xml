@@ -21,6 +21,7 @@
         android:fontFamily="@font/inter_medium"
         android:singleLine="true"
         android:textColor="@color/secondary"
+        android:tag="13"
         android:textSize="11sp"
         tools:text="Windows" />
 
@@ -31,6 +32,7 @@
         android:layout_marginStart="8dp"
         android:fontFamily="@font/inter_regular"
         android:textColor="@color/muted"
+        android:tag="12"
         android:textSize="10sp"
         tools:text="3 / 45" />
 </LinearLayout>

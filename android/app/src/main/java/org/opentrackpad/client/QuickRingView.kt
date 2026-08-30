@@ -43,8 +43,8 @@ class QuickRingView @JvmOverloads constructor(
         private const val INNER = 46f
         private const val HUB = 45.5f
         private const val ICON = 20f
-        private const val LABEL = 10f
-        private const val HUB_LABEL = 10f
+        private const val LABEL = Artboard.MIN_READABLE_UNITS
+        private const val HUB_LABEL = Artboard.MIN_READABLE_UNITS
         private const val BORDER = 1f
 
         /** From the near edge of the pad, on the side the shortcut rail is. */
@@ -112,6 +112,7 @@ class QuickRingView @JvmOverloads constructor(
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
+        resources.configuration.fontScale,
     )
 
     private val scrim = Paint().apply { color = SCRIM }
@@ -128,7 +129,7 @@ class QuickRingView @JvmOverloads constructor(
     }
     private val label = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        textSize = artboard.px(LABEL)
+        textSize = artboard.text(LABEL)
         typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
             ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
@@ -319,7 +320,7 @@ class QuickRingView @JvmOverloads constructor(
         canvas.restore()
 
         label.color = ink
-        label.textSize = px(LABEL)
+        label.textSize = artboard.text(LABEL)
         val room = px(OUTER - INNER)
         val text = TextUtils.ellipsize(slot.label, label, room, TextUtils.TruncateAt.END)
         canvas.drawText(text, 0, text.length, x, y + px(LABEL_BELOW), label)
@@ -332,7 +333,7 @@ class QuickRingView @JvmOverloads constructor(
         canvas.drawCircle(centreX, centreY, px(HUB), border)
 
         label.color = MUTED
-        label.textSize = px(HUB_LABEL)
+        label.textSize = artboard.text(HUB_LABEL)
         // Two lines, from the drawing: the hub says what it is and doubles as
         // the way out, so it is never blank.
         canvas.drawText(hubTop, centreX, centreY - px(3f), label)

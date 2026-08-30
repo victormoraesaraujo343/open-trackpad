@@ -48,6 +48,7 @@
             android:fontFamily="@font/space_grotesk_semibold"
             android:text="@string/settings_title"
             android:textColor="@color/ink"
+            android:tag="14"
             android:textSize="13sp" />
     </LinearLayout>
 

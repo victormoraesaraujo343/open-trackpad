@@ -46,10 +46,10 @@ class PillToggle @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private companion object {
-        const val WIDTH_DP = 28f
-        const val HEIGHT_DP = 16f
-        const val KNOB_DP = 12f
-        const val INSET_DP = 2f
+        const val WIDTH = 28f
+        const val HEIGHT = 16f
+        const val KNOB = 12f
+        const val INSET = 2f
     }
 
     var onChange: ((Boolean) -> Unit)? = null
@@ -61,7 +61,11 @@ class PillToggle @JvmOverloads constructor(
             invalidate()
         }
 
-    private val density = resources.displayMetrics.density
+    private val artboard = Artboard.measure(
+        resources.displayMetrics,
+        resources.displayMetrics.widthPixels,
+        resources.configuration.fontScale,
+    )
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val track = RectF()
 
@@ -77,8 +81,8 @@ class PillToggle @JvmOverloads constructor(
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         setMeasuredDimension(
-            resolveSize((WIDTH_DP * density).roundToInt(), widthSpec),
-            resolveSize((HEIGHT_DP * density).roundToInt(), heightSpec),
+            resolveSize(artboard.size(WIDTH), widthSpec),
+            resolveSize(artboard.size(HEIGHT), heightSpec),
         )
     }
 
@@ -88,8 +92,8 @@ class PillToggle @JvmOverloads constructor(
         paint.color = if (checked) Palette.LIME else Palette.HAIRLINE
         canvas.drawRoundRect(track, radius, radius, paint)
 
-        val knob = KNOB_DP * density
-        val inset = INSET_DP * density
+        val knob = artboard.px(KNOB)
+        val inset = artboard.px(INSET)
         val x = if (checked) width - inset - knob / 2f else inset + knob / 2f
         // The knob is the ground colour when the track is lit and a grey when
         // it is not, so "on" reads as a hole punched in the lime rather than as
@@ -113,14 +117,14 @@ class SegmentedView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private companion object {
-        const val RADIUS_DP = 12f
-        const val CHIP_RADIUS_DP = 8f
-        const val PADDING_DP = 4f
-        const val CHIP_H_DP = 9f
-        const val CHIP_V_DP = 4f
-        const val GAP_DP = 4f
-        const val TEXT_DP = 10f
-        const val BORDER_DP = 1f
+        const val RADIUS = 12f
+        const val CHIP_RADIUS = 8f
+        const val PADDING = 4f
+        const val CHIP_H = 9f
+        const val CHIP_V = 4f
+        const val GAP = 4f
+        const val TEXT = Artboard.MIN_READABLE_UNITS
+        const val BORDER = 1f
     }
 
     var onChoose: ((Int) -> Unit)? = null
@@ -140,17 +144,23 @@ class SegmentedView @JvmOverloads constructor(
             invalidate()
         }
 
-    private val density = resources.displayMetrics.density
-    private fun dp(value: Float) = value * density
+    private val artboard = Artboard.measure(
+        resources.displayMetrics,
+        resources.displayMetrics.widthPixels,
+        resources.configuration.fontScale,
+    )
+
+    // Named `dp` no longer; these are artboard units, like everything else.
+    private fun px(value: Float) = artboard.px(value)
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(BORDER_DP)
+        strokeWidth = px(BORDER)
         color = Palette.HAIRLINE
     }
     private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = dp(TEXT_DP)
+        textSize = artboard.text(TEXT)
         typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
             ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
@@ -163,33 +173,33 @@ class SegmentedView @JvmOverloads constructor(
         isClickable = true
     }
 
-    private fun chipWidth(option: String) = text.measureText(option) + dp(CHIP_H_DP) * 2f
-    private fun chipHeight() = text.fontMetrics.let { it.descent - it.ascent } + dp(CHIP_V_DP) * 2f
+    private fun chipWidth(option: String) = text.measureText(option) + px(CHIP_H) * 2f
+    private fun chipHeight() = text.fontMetrics.let { it.descent - it.ascent } + px(CHIP_V) * 2f
 
     /** Lays the chips out inside [available] and returns the height needed. */
     private fun arrange(available: Float): Float {
         chips.clear()
-        val inner = available - dp(PADDING_DP) * 2f
-        var x = dp(PADDING_DP)
-        var y = dp(PADDING_DP)
+        val inner = available - px(PADDING) * 2f
+        var x = px(PADDING)
+        var y = px(PADDING)
         val height = chipHeight()
         for (option in options) {
             val width = chipWidth(option)
-            if (x > dp(PADDING_DP) && x + width - dp(PADDING_DP) > inner) {
-                x = dp(PADDING_DP)
-                y += height + dp(GAP_DP)
+            if (x > px(PADDING) && x + width - px(PADDING) > inner) {
+                x = px(PADDING)
+                y += height + px(GAP)
             }
             chips += RectF(x, y, x + width, y + height)
-            x += width + dp(GAP_DP)
+            x += width + px(GAP)
         }
-        return y + height + dp(PADDING_DP)
+        return y + height + px(PADDING)
     }
 
     /** The width this would like if nothing constrained it: one row of chips. */
     private fun naturalWidth(): Float =
         options.sumOf { chipWidth(it).toDouble() }.toFloat() +
-            dp(GAP_DP) * (options.size - 1).coerceAtLeast(0) +
-            dp(PADDING_DP) * 2f
+            px(GAP) * (options.size - 1).coerceAtLeast(0) +
+            px(PADDING) * 2f
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         // The measure mode has to be honoured rather than the size taken at
@@ -232,16 +242,16 @@ class SegmentedView @JvmOverloads constructor(
         if (chips.isEmpty()) return
         container.set(0f, 0f, width.toFloat(), height.toFloat())
         fill.color = Palette.INSET
-        canvas.drawRoundRect(container, dp(RADIUS_DP), dp(RADIUS_DP), fill)
+        canvas.drawRoundRect(container, px(RADIUS), px(RADIUS), fill)
         val half = border.strokeWidth / 2f
         container.inset(half, half)
-        canvas.drawRoundRect(container, dp(RADIUS_DP), dp(RADIUS_DP), border)
+        canvas.drawRoundRect(container, px(RADIUS), px(RADIUS), border)
 
         val metrics = text.fontMetrics
         for ((index, chip) in chips.withIndex()) {
             if (index == chosen) {
                 fill.color = Palette.HAIRLINE
-                canvas.drawRoundRect(chip, dp(CHIP_RADIUS_DP), dp(CHIP_RADIUS_DP), fill)
+                canvas.drawRoundRect(chip, px(CHIP_RADIUS), px(CHIP_RADIUS), fill)
             }
             text.color = if (index == chosen) Palette.INK else Palette.MUTED
             text.textAlign = Paint.Align.CENTER

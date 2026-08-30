@@ -73,6 +73,7 @@
                 android:text="@string/pad_hint"
                 android:fontFamily="@font/inter_regular"
                 android:textColor="@color/faint"
+                android:tag="12"
                 android:textSize="10dp"
                 tools:ignore="SpUsage" />
 
@@ -159,6 +160,7 @@
                 android:gravity="center"
                 android:fontFamily="@font/space_grotesk_semibold"
                 android:textColor="@color/ink"
+                android:tag="19"
                 android:textSize="19dp"
                 tools:ignore="SpUsage" />
 
@@ -171,6 +173,7 @@
                 android:lineSpacingMultiplier="1.5"
                 android:fontFamily="@font/inter_regular"
                 android:textColor="@color/body"
+                android:tag="14"
                 android:textSize="13dp"
                 tools:ignore="SpUsage" />
 
@@ -199,6 +202,7 @@
                         android:text="@string/mismatch_phone_label"
                         android:fontFamily="@font/inter_regular"
                         android:textColor="@color/muted"
+                        android:tag="12"
                         android:textSize="10dp"
                         tools:ignore="SpUsage" />
 
@@ -209,6 +213,7 @@
                         android:layout_marginTop="3dp"
                         android:fontFamily="@font/inter_medium"
                         android:textColor="@color/ink"
+                        android:tag="14"
                         android:textSize="13dp"
                         tools:ignore="SpUsage" />
                 </LinearLayout>
@@ -229,6 +234,7 @@
                         android:text="@string/mismatch_host_label"
                         android:fontFamily="@font/inter_regular"
                         android:textColor="@color/muted"
+                        android:tag="12"
                         android:textSize="10dp"
                         tools:ignore="SpUsage" />
 
@@ -239,6 +245,7 @@
                         android:layout_marginTop="3dp"
                         android:fontFamily="@font/inter_medium"
                         android:textColor="@color/amber"
+                        android:tag="14"
                         android:textSize="13dp"
                         tools:ignore="SpUsage" />
                 </LinearLayout>
@@ -266,6 +273,7 @@
                     android:text="@string/trouble_seeking"
                     android:fontFamily="@font/inter_regular"
                         android:textColor="@color/muted"
+                    android:tag="13"
                     android:textSize="11dp"
                     tools:ignore="SpUsage" />
             </LinearLayout>
@@ -279,6 +287,7 @@
                 android:lineSpacingMultiplier="1.45"
                 android:fontFamily="@font/inter_regular"
                 android:textColor="@color/faint"
+                android:tag="12"
                 android:textSize="10dp"
                 tools:ignore="SpUsage" />
 

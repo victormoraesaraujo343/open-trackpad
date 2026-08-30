@@ -43,6 +43,7 @@
             android:fontFamily="@font/space_grotesk_semibold"
             android:text="@string/name_title"
             android:textColor="@color/ink"
+            android:tag="14"
             android:textSize="13sp" />
 
         <Space
@@ -62,6 +63,7 @@
             android:paddingVertical="5dp"
             android:text="@string/editor_save"
             android:textColor="@color/ground"
+            android:tag="13"
             android:textSize="11sp" />
     </LinearLayout>
 
@@ -91,6 +93,7 @@
                 android:layout_marginStart="8dp"
                 android:fontFamily="@font/inter_regular"
                 android:textColor="@color/faint"
+                android:tag="12"
                 android:textSize="10sp"
                 tools:text="copied from Desktop · same nine shortcuts" />
         </LinearLayout>
@@ -111,6 +114,7 @@
             android:paddingVertical="10dp"
             android:textColor="@color/ink"
             android:textCursorDrawable="@null"
+            android:tag="15"
             android:textSize="15sp"
             tools:text="Desktop copy" />
 
@@ -134,5 +138,6 @@
         android:paddingBottom="4dp"
         android:text="@string/name_keyboard"
         android:textColor="#FF34383D"
+        android:tag="12"
         android:textSize="10sp" />
 </LinearLayout>

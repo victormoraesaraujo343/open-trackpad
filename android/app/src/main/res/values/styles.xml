@@ -18,6 +18,7 @@
         <item name="android:layout_marginBottom">8dp</item>
         <item name="android:fontFamily">@font/inter_medium</item>
         <item name="android:textColor">@color/muted</item>
+        <item name="android:tag">12</item>
         <item name="android:textSize">10sp</item>
     </style>
 
@@ -36,6 +37,7 @@
         <item name="android:layout_weight">1</item>
         <item name="android:fontFamily">@font/inter_regular</item>
         <item name="android:textColor">@color/secondary</item>
+        <item name="android:tag">13</item>
         <item name="android:textSize">11sp</item>
     </style>
 
@@ -56,6 +58,7 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:fontFamily">@font/inter_medium</item>
         <item name="android:textColor">@color/ink</item>
+        <item name="android:tag">13</item>
         <item name="android:textSize">11sp</item>
     </style>
 
@@ -67,6 +70,7 @@
         <item name="android:fontFamily">@font/inter_regular</item>
         <item name="android:lineSpacingMultiplier">1.4</item>
         <item name="android:textColor">@color/faint</item>
+        <item name="android:tag">12</item>
         <item name="android:textSize">10sp</item>
     </style>
 </resources>

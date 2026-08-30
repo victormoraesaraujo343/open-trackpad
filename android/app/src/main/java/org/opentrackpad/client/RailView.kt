@@ -106,6 +106,7 @@ class RailView @JvmOverloads constructor(
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
+        resources.configuration.fontScale,
     )
     private val gap = artboard.px(GAP)
     private val radius = artboard.px(RADIUS)
@@ -129,7 +130,7 @@ class RailView @JvmOverloads constructor(
     }
     private val label = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        textSize = artboard.px(LABEL)
+        textSize = artboard.text(LABEL)
         // Inter Medium, the weight the design draws rail labels at. Falls back
         // to the system's own medium if the face cannot be loaded, so a missing
         // font costs the look and not the button.
@@ -303,6 +304,26 @@ class RailView @JvmOverloads constructor(
 
         label.color = ink
         val room = (bounds.width() - labelInset * 2f).coerceAtLeast(0f)
+
+        /*
+         * The one place the font scale is allowed to be overruled, and only
+         * downwards.
+         *
+         * A rail slot is a fixed physical size — that is the whole argument for
+         * millimetres — so it cannot grow to hold a label somebody has scaled
+         * up. The choice is between a word cut to "Screensh…" and a word a
+         * little smaller than asked for, and for a label whose job is to be
+         * recognised at a glance the whole word wins. Never scaled *up* past
+         * what was asked for, so this can only ever give back less than the
+         * request, never more.
+         */
+        label.textSize = artboard.text(LABEL)
+        val natural = label.measureText(slot.label)
+        if (natural > room && room > 0f) {
+            label.textSize = (label.textSize * room / natural)
+                .coerceAtLeast(artboard.px(LABEL))
+        }
+
         val text = TextUtils.ellipsize(slot.label, label, room, TextUtils.TruncateAt.END)
         canvas.drawText(
             text,

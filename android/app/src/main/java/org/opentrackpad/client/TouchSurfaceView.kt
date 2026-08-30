@@ -55,6 +55,7 @@ class TouchSurfaceView @JvmOverloads constructor(
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
+        resources.configuration.fontScale,
     )
     private val radius = artboard.px(RADIUS)
 

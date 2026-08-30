@@ -43,9 +43,15 @@ class AudioFadersView @JvmOverloads constructor(
         const val KNOB_BORDER = 1f
         const val KNOB_ICON = 14f
         const val ROW_GAP = 7f
-        const val VALUE = 11f
-        const val NAME = 11f
-        const val PORT = 9f
+        const val VALUE = 13f
+        const val NAME = 13f
+
+        /**
+         * The port, which is the smallest thing on this screen and still
+         * at the floor. Nothing anybody has to read goes below what a rail
+         * label measures.
+         */
+        const val PORT = Artboard.MIN_READABLE_UNITS
 
         val TRACK_BED = Color.parseColor("#24272A")
         val GREY = Color.parseColor("#6B7178")
@@ -115,6 +121,7 @@ class AudioFadersView @JvmOverloads constructor(
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
+        resources.configuration.fontScale,
     )
 
     private fun px(units: Float) = artboard.px(units)
@@ -187,11 +194,11 @@ class AudioFadersView @JvmOverloads constructor(
 
     /** How tall the block under every track is. One height, so the tracks line up. */
     private fun labelBlockHeight(): Float {
-        text.textSize = px(VALUE)
+        text.textSize = artboard.text(VALUE)
         val valueLine = text.fontMetrics.let { it.descent - it.ascent }
-        text.textSize = px(NAME)
+        text.textSize = artboard.text(NAME)
         val nameLine = text.fontMetrics.let { it.descent - it.ascent }
-        text.textSize = px(PORT)
+        text.textSize = artboard.text(PORT)
         val portLine = text.fontMetrics.let { it.descent - it.ascent }
 
         val room = columnWidth() - px(4f)
@@ -211,7 +218,7 @@ class AudioFadersView @JvmOverloads constructor(
      * instead. The second line is cut short if even two will not hold it.
      */
     private fun wrapName(name: String, room: Float): List<String> {
-        text.textSize = px(NAME)
+        text.textSize = artboard.text(NAME)
         if (text.measureText(name) <= room) return listOf(name)
         val fits = text.breakText(name, true, room, null)
         // Break at a space if there is one to break at, so a word is not split
@@ -389,7 +396,7 @@ class AudioFadersView @JvmOverloads constructor(
         from: Float,
         boosted: Boolean,
     ) {
-        text.textSize = px(VALUE)
+        text.textSize = artboard.text(VALUE)
         val metrics = text.fontMetrics
         var y = from - metrics.ascent
 
@@ -405,7 +412,7 @@ class AudioFadersView @JvmOverloads constructor(
         }
         canvas.drawText(value, centre, y, text)
 
-        text.textSize = px(NAME)
+        text.textSize = artboard.text(NAME)
         val nameLine = text.fontMetrics.let { it.descent - it.ascent }
         text.color = when {
             entity.muted -> MUTED
@@ -423,7 +430,7 @@ class AudioFadersView @JvmOverloads constructor(
         // redundant most of the time teaches people to stop reading it.
         val port = entity.port ?: return
         if (entity.name !in duplicated()) return
-        text.textSize = px(PORT)
+        text.textSize = artboard.text(PORT)
         y += text.fontMetrics.let { it.descent - it.ascent } + px(ROW_GAP)
         text.color = FAINT
         canvas.drawText(context.getString(port.label()), centre, y, text)

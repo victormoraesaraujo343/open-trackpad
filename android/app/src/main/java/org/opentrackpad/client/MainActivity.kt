@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
         const val EDGE_UNITS = 12f
 
         /** The line on the pad, and how far it sits above the bottom edge. */
-        const val HINT_UNITS = 10f
+        const val HINT_UNITS = 12f
         const val HINT_GAP_UNITS = 13f
 
         /** What the rails fade to while the ring is over them, from the drawing. */
@@ -283,8 +283,15 @@ class MainActivity : AppCompatActivity() {
         val artboard = Artboard.measure(
             resources.displayMetrics,
             resources.displayMetrics.widthPixels,
+            resources.configuration.fontScale,
         )
         val edge = artboard.size(EDGE_UNITS)
+
+        // Every screen built from XML declares its type in artboard units and
+        // has them applied here, once. Nothing is sized by the system alone any
+        // more; the font scale multiplies the physical size rather than
+        // replacing it.
+        Typography.apply(findViewById(R.id.root), artboard)
 
         findViewById<View>(R.id.frame).setPadding(edge, edge, edge, edge)
         for (rail in listOf(railStart, railEnd)) {
@@ -295,7 +302,7 @@ class MainActivity : AppCompatActivity() {
             marginEnd = edge
         }
         padHint.apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.px(HINT_UNITS))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.text(HINT_UNITS))
             updateLayoutParams<MarginLayoutParams> { bottomMargin = artboard.size(HINT_GAP_UNITS) }
         }
 
@@ -965,9 +972,40 @@ class MainActivity : AppCompatActivity() {
      */
     private fun takeTheWholeScreen() {
         val root = findViewById<View>(R.id.root)
-        // Consume nothing and inset nothing: the listener exists only so that
-        // no ancestor quietly applies the insets on our behalf.
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets -> insets }
+
+        /*
+         * Edge to edge is what the rails bought. A rail is buttons with
+         * generous padding around their middles, so a camera cutout landing in
+         * one costs nothing — which is why the control surface takes the whole
+         * glass.
+         *
+         * A screen without rails has none of that. Its content runs to the
+         * edge with nothing to absorb a punch-hole, and Victor found items on
+         * the settings screens being cut by his. So those screens, and only
+         * those, are inset to the cutout's safe area. Not the whole app, and
+         * not by giving them fake rails to hide behind.
+         */
+        val railless = listOf(
+            findViewById<View>(R.id.settings_panel),
+            findViewById(R.id.import_panel),
+            findViewById(R.id.editor_panel),
+            findViewById(R.id.name_panel),
+        )
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            for (screen in railless) {
+                // Added to each screen's own padding rather than replacing it,
+                // the same mistake as the first time this was written.
+                val edge = resources.getDimensionPixelSize(R.dimen.edge)
+                screen.setPadding(
+                    edge + cutout.left,
+                    edge + cutout.top,
+                    edge + cutout.right,
+                    edge + cutout.bottom,
+                )
+            }
+            insets
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             root.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->

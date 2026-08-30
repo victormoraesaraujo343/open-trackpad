@@ -32,6 +32,7 @@
             android:fontFamily="@font/inter_medium"
             android:singleLine="true"
             android:textColor="@color/secondary"
+            android:tag="12"
             android:textSize="10sp"
             tools:text="Show all windows" />
 
@@ -43,6 +44,7 @@
             android:fontFamily="@font/inter_regular"
             android:singleLine="true"
             android:textColor="@color/faint"
+            android:tag="12"
             android:textSize="9sp"
             tools:text="super+w" />
     </LinearLayout>

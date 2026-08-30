@@ -42,6 +42,7 @@
             android:fontFamily="@font/space_grotesk_semibold"
             android:text="@string/import_title"
             android:textColor="@color/ink"
+            android:tag="14"
             android:textSize="13sp" />
 
         <TextView
@@ -52,6 +53,7 @@
             android:layout_weight="1"
             android:fontFamily="@font/inter_regular"
             android:textColor="@color/faint"
+            android:tag="12"
             android:textSize="10sp"
             tools:text="75 found · 12 chosen" />
 
@@ -67,6 +69,7 @@
             android:paddingVertical="5dp"
             android:text="@string/import_skip"
             android:textColor="@color/body"
+            android:tag="13"
             android:textSize="11sp" />
 
         <TextView
@@ -81,6 +84,7 @@
             android:paddingHorizontal="14dp"
             android:paddingVertical="5dp"
             android:textColor="@color/ground"
+            android:tag="13"
             android:textSize="11sp"
             tools:text="Add 12" />
     </LinearLayout>
@@ -137,6 +141,7 @@
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/space_grotesk_semibold"
                     android:textColor="@color/ink"
+                    android:tag="12"
                     android:textSize="12sp"
                     tools:text="Windows" />
 
@@ -148,6 +153,7 @@
                     android:layout_weight="1"
                     android:fontFamily="@font/inter_regular"
                     android:textColor="@color/muted"
+                    android:tag="12"
                     android:textSize="10sp"
                     tools:text="45 here · 3 chosen" />
 
@@ -162,6 +168,7 @@
                     android:paddingHorizontal="6dp"
                     android:paddingVertical="4dp"
                     android:textColor="@color/body"
+                    android:tag="12"
                     android:textSize="10sp"
                     tools:text="Choose all" />
             </LinearLayout>

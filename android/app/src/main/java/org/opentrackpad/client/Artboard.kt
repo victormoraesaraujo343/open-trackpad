@@ -12,24 +12,25 @@ import kotlin.math.roundToInt
  * landscape, so one unit is a fixed fraction of a millimetre and this class is
  * the only place that conversion happens.
  *
- * ## Which things are measured this way, and which are not
+ * ## Everything is millimetres, and the font scale multiplies on top
  *
- * **Millimetres are for what a hand aims at without looking. System sizing is
- * for what eyes read at reading distance.** That is the whole rule, and it
- * decides every case in this app:
+ * There was a rule here that some screens followed the system instead, on the
+ * grounds that text somebody reads should honour the size they asked for. It
+ * was withdrawn, because the two things were never in conflict.
  *
- * | measured in millimetres | left to the system |
- * | --- | --- |
- * | the rails and their slots | the card that explains a broken session |
- * | the glyphs and labels on them | anything with a paragraph in it |
- * | the pad, and the margins around it | |
- * | the Quick Ring's wedges | |
+ * **Size in millimetres so the default is physically right, then multiply by
+ * [android.content.res.Configuration.fontScale] so somebody who asked for
+ * larger text still gets it.** `fontScale` is the setting that carries the
+ * accessibility argument; `densityDpi`, which the old rule was actually
+ * reading, is a display-size preference and carries none of it.
  *
- * A rail label is not reading; it is the word under a key, recognised at a
- * glance in a slot that cannot grow to hold it. The card is read, from wherever
- * the person happens to be sitting, and there the system's own sizing — which
- * the person may well have turned up because they need it — is the right
- * answer. Following it there costs nothing, because a card can grow.
+ * The measured cost of getting that wrong, on the phone this is drawn for:
+ * substituting the system's sizing for millimetres shrank every piece of text
+ * by **24%**, flat, at every size. His display-size setting cost a further 11%
+ * on top. Sorting every element in the product by physical cap height put
+ * every system-sized one below every millimetre-sized one with no interleaving
+ * at all — two stacks rather than one range, which is what a systematic error
+ * looks like from the outside.
  *
  * dp is relative to a display density the person can change: Android's
  * display-size slider alters `densityDpi` and every dp on the screen with it.
@@ -67,11 +68,22 @@ class Artboard private constructor(
 
     private val pixelsPerMillimetre: Float,
 
+    /** What the person asked text to be multiplied by. 1 unless they changed it. */
+    val fontScale: Float,
+
     /** Whether a limit changed the size, which is worth saying out loud in a report. */
     val clamped: Boolean,
 ) {
     /** [units] of the drawing, in pixels on this screen. */
     fun px(units: Float): Float = units * pixelsPerUnit
+
+    /**
+     * The same, for anything with words in it.
+     *
+     * Identical to [px] until somebody turns their text size up, which is the
+     * one system preference that is about reading rather than about layout.
+     */
+    fun text(units: Float): Float = px(units) * fontScale
 
     /** The same, rounded to a whole pixel, for anything that sets a view's size. */
     fun size(units: Float): Int = (units * pixelsPerUnit).roundToInt()
@@ -116,6 +128,16 @@ class Artboard private constructor(
         const val LABEL_INSET_UNITS = 5f
 
         /**
+         * The smallest anything anybody has to read may be.
+         *
+         * Twelve units, which is what a rail label measures — the one piece of
+         * type in this product confirmed readable on glass by the person who
+         * owns the phone. Nothing somebody must read should be smaller than
+         * what they read without looking.
+         */
+        const val MIN_READABLE_UNITS = 12f
+
+        /**
          * How wide a rail label may be before it is cut short.
          *
          * Public, and free of Android, so `LabelWidthTest` can hold every
@@ -138,7 +160,11 @@ class Artboard private constructor(
          * [screenWidthPixels] is the whole display in the orientation being
          * drawn, which is what the ceiling is a fraction of.
          */
-        fun measure(metrics: DisplayMetrics, screenWidthPixels: Int): Artboard {
+        fun measure(
+            metrics: DisplayMetrics,
+            screenWidthPixels: Int,
+            fontScale: Float = 1f,
+        ): Artboard {
             val pixelsPerMm = SurfaceMetrics.pixelsPerMillimetre(metrics).toFloat()
             val ideal = MM_PER_UNIT * pixelsPerMm
 
@@ -151,7 +177,7 @@ class Artboard private constructor(
             // Floor first, ceiling last: on a screen too small to honour both,
             // the rails give way rather than the pad.
             val scaled = ideal.coerceAtLeast(floor).coerceAtMost(ceiling)
-            return Artboard(scaled, pixelsPerMm, clamped = scaled != ideal)
+            return Artboard(scaled, pixelsPerMm, fontScale, clamped = scaled != ideal)
         }
     }
 }

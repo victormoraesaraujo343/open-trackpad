@@ -23,6 +23,7 @@
         android:fontFamily="@font/inter_medium"
         android:singleLine="true"
         android:textColor="@color/secondary"
+        android:tag="12"
         android:textSize="10sp"
         tools:text="Switch" />
 

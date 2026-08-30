@@ -39,12 +39,12 @@ class ProfileMenuView @JvmOverloads constructor(
         private const val ROW_RADIUS = 12f
         private const val BORDER = 1f
 
-        private const val HEADING = 10f
+        private const val HEADING = Artboard.MIN_READABLE_UNITS
         private const val HEADING_TOP = 4f
         private const val HEADING_BOTTOM = 6f
         private const val HEADING_INSET = 10f
 
-        private const val ROW_TEXT = 11f
+        private const val ROW_TEXT = 13f
         private const val ROW_HEIGHT = 27f
         private const val ROW_INSET = 10f
         private const val ROW_GAP = 2f
@@ -99,6 +99,7 @@ class ProfileMenuView @JvmOverloads constructor(
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
+        resources.configuration.fontScale,
     )
 
     private fun px(units: Float) = artboard.px(units)
@@ -223,7 +224,7 @@ class ProfileMenuView @JvmOverloads constructor(
         canvas.drawRoundRect(panel, px(RADIUS), px(RADIUS), border)
 
         text.textAlign = Paint.Align.LEFT
-        text.textSize = px(HEADING)
+        text.textSize = artboard.text(HEADING)
         text.color = MUTED
         val headingBaseline = panel.top + px(PADDING) + px(HEADING_TOP) - text.fontMetrics.ascent
         canvas.drawText(
@@ -262,7 +263,7 @@ class ProfileMenuView @JvmOverloads constructor(
         }
 
         text.textAlign = Paint.Align.LEFT
-        text.textSize = px(ROW_TEXT)
+        text.textSize = artboard.text(ROW_TEXT)
         text.color = when {
             entry is Row.Destination -> BODY
             active -> INK

@@ -39,6 +39,7 @@
             android:layout_marginStart="10dp"
             android:fontFamily="@font/space_grotesk_semibold"
             android:textColor="@color/ink"
+            android:tag="14"
             android:textSize="13sp"
             tools:text="Desktop" />
 
@@ -49,6 +50,7 @@
             android:fontFamily="@font/inter_regular"
             android:text="@string/editor_profile"
             android:textColor="@color/faint"
+            android:tag="12"
             android:textSize="10sp" />
 
         <Space
@@ -68,6 +70,7 @@
             android:paddingVertical="5dp"
             android:text="@string/editor_duplicate"
             android:textColor="@color/body"
+            android:tag="13"
             android:textSize="11sp" />
 
         <TextView
@@ -82,6 +85,7 @@
             android:paddingVertical="5dp"
             android:text="@string/editor_reset"
             android:textColor="@color/body"
+            android:tag="13"
             android:textSize="11sp" />
 
         <TextView
@@ -97,6 +101,7 @@
             android:paddingVertical="5dp"
             android:text="@string/editor_save"
             android:textColor="@color/ground"
+            android:tag="13"
             android:textSize="11sp" />
     </LinearLayout>
 
@@ -143,6 +148,7 @@
                 android:paddingVertical="6dp"
                 android:textColor="@color/secondary"
                 android:textColorHint="@color/faint"
+                android:tag="13"
                 android:textSize="11sp"
                 tools:hint="Search 54 shortcuts" />
 
