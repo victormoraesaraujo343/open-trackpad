@@ -10,7 +10,6 @@ import android.text.TextPaint
 import android.text.TextUtils
 import android.util.AttributeSet
 import android.util.SparseIntArray
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
@@ -76,6 +75,20 @@ class AudioFadersView @JvmOverloads constructor(
 
         /** Past this much movement a press is a drag, and no longer a mute. */
         const val SLOP = 6f
+
+        /**
+         * How far apart the notches are, in per-mille of full volume.
+         *
+         * Every tenth. Fine enough that a slow drag feels textured rather than
+         * empty, coarse enough that a fast one is a run of ticks rather than a
+         * buzz.
+         */
+        const val DETENT = 100
+
+        /** The notch at 100%, above which the level is boosted past the source. */
+        const val FULL_DETENT = Audio.REFERENCE / DETENT
+
+        const val NO_DETENT = -1
     }
 
     /** A level was dragged to [level] per mille. Sent as it moves. */
@@ -95,7 +108,13 @@ class AudioFadersView @JvmOverloads constructor(
      */
     var onMakeDefault: ((AudioEntity) -> Unit)? = null
 
-    var hapticsEnabled: Boolean = true
+    /**
+     * How this feels under a finger. Null until the activity supplies it.
+     *
+     * The switch in settings lives on the object itself, so every view either
+     * feels right or feels like nothing, and no view can forget to check.
+     */
+    var haptics: Haptics? = null
 
     /**
      * Whether the scale runs past 100%.
@@ -151,6 +170,9 @@ class AudioFadersView @JvmOverloads constructor(
     /** Where each finger started, so a tap can be told from a drag. */
     private val startY = SparseIntArray(4)
     private val moved = SparseIntArray(4)
+
+    /** Which detent each finger was last in, so a crossing can be noticed. */
+    private val lastDetent = SparseIntArray(4)
 
     /** Whether each finger landed on the name rather than on the fader. */
     private val onName = SparseIntArray(4)
@@ -247,6 +269,30 @@ class AudioFadersView @JvmOverloads constructor(
         return (fraction * ceiling()).roundToInt().coerceIn(0, ceiling())
     }
 
+    /**
+     * Ticks as the finger crosses a marked position.
+     *
+     * A fader with no detents is a smooth surface: nothing tells a finger where
+     * it is, so setting a level means looking. Detents are what make a
+     * continuous control feel like an object — the eye can leave and the hand
+     * still knows.
+     *
+     * Two weights, because two different things are being said. Every tenth is
+     * a light [Haptics.cross], the same shape as a wedge passing. **Full volume
+     * is a [Haptics.land]**, heavier and distinct, because it is the one place
+     * on this fader where crossing means something rather than merely counting:
+     * above it the level is boosted past what the source asked for, and that is
+     * worth feeling rather than reading.
+     */
+    private fun feelDetent(pointer: Int, level: Int) {
+        val notch = level / DETENT
+        val was = lastDetent.get(pointer, NO_DETENT)
+        lastDetent.put(pointer, notch)
+        if (was == NO_DETENT || notch == was) return
+        val crossedFull = (was < FULL_DETENT) != (notch < FULL_DETENT)
+        if (crossedFull) haptics?.land() else haptics?.cross()
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
@@ -274,11 +320,13 @@ class AudioFadersView @JvmOverloads constructor(
                     val travelled = abs(event.getY(index) - startY.get(pointer))
                     if (travelled < px(SLOP)) continue
                     moved.put(pointer, 1)
+                    val level = levelAt(event.getY(index))
+                    feelDetent(pointer, level)
                     // Sent as it moves rather than on release. The host gathers
                     // requests for 50 ms and drops any a later one overtook, so
                     // a drag across the screen costs one change rather than
                     // forty — and the fader follows the finger meanwhile.
-                    onLevel?.invoke(entity, levelAt(event.getY(index)))
+                    onLevel?.invoke(entity, level)
                 }
             }
 
@@ -297,9 +345,7 @@ class AudioFadersView @JvmOverloads constructor(
                         // nothing rather than doing something else.
                         val switching = name && entity.kind != AudioKind.STREAM
                         if (!name || switching) {
-                            if (hapticsEnabled) {
-                                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            }
+                            haptics?.click()
                             if (switching) onMakeDefault?.invoke(entity)
                             else if (!name) onMute?.invoke(entity, !entity.muted)
                         }
@@ -308,6 +354,7 @@ class AudioFadersView @JvmOverloads constructor(
                 }
                 startY.delete(pointer)
                 moved.delete(pointer)
+                lastDetent.delete(pointer)
                 onName.delete(pointer)
             }
 

@@ -10,7 +10,6 @@ import android.graphics.Typeface
 import android.text.TextPaint
 import android.text.TextUtils
 import android.util.AttributeSet
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
@@ -78,7 +77,13 @@ class QuickRingView @JvmOverloads constructor(
     /** Asked to go away — the hub, or anywhere outside the ring. */
     var onDismiss: (() -> Unit)? = null
 
-    var hapticsEnabled: Boolean = true
+    /**
+     * How this feels under a finger. Null until the activity supplies it.
+     *
+     * The switch in settings lives on the object itself, so every view either
+     * feels right or feels like nothing, and no view can forget to check.
+     */
+    var haptics: Haptics? = null
 
     /**
      * Which side of the pad the ring sits on.
@@ -226,8 +231,11 @@ class QuickRingView @JvmOverloads constructor(
                             // would make the ring feel like it collapsed.
                             return true
                         }
-                        if (hapticsEnabled) {
-                            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        run {
+                            // Passing a wedge, not choosing one. Light, because
+                            // a slow sweep crosses several and anything heavier
+                            // would turn the gesture into a rattle.
+                            haptics?.cross()
                         }
                         onChoose?.invoke(slot.press)
                     }
@@ -253,7 +261,9 @@ class QuickRingView @JvmOverloads constructor(
      * all.
      */
     private fun tick() {
-        if (hapticsEnabled) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        // The whole click at once. A ring chooses on release, so there was no
+        // earlier moment to put the press half at, and both halves go here.
+        haptics?.click()
     }
 
     // -- drawing -------------------------------------------------------------

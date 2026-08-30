@@ -10,7 +10,6 @@ import android.text.TextPaint
 import android.text.TextUtils
 import android.util.AttributeSet
 import android.util.SparseIntArray
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
@@ -87,7 +86,13 @@ class RailView @JvmOverloads constructor(
     var onPress: ((SlotPress) -> Unit)? = null
 
     /** Whether a press should also be felt. Follows the user's setting. */
-    var hapticsEnabled: Boolean = true
+    /**
+     * How this feels under a finger. Null until the activity supplies it.
+     *
+     * The switch in settings lives on the object itself, so every view either
+     * feels right or feels like nothing, and no view can forget to check.
+     */
+    var haptics: Haptics? = null
 
     /**
      * The five slots, top to bottom. A null is a hole kept open on purpose.
@@ -225,15 +230,29 @@ class RailView @JvmOverloads constructor(
         val target = slots.getOrNull(slot) ?: return
         if (target.style == SlotStyle.DEAD) return
         if (target.press == SlotPress.None) return
-        if (hapticsEnabled) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        // Down here, at the touch, and never after the computer answers. A
+        // tick that waits for a reply arrives past the window where it still
+        // reads as caused by the press.
+        haptics?.press()
         onPress?.invoke(target.press)
     }
 
+    /**
+     * The finger came off. The other half of the click.
+     *
+     * Softer than the press and only where there was a press to answer: a
+     * release tick on a dead slot would be a mechanism releasing something it
+     * never took hold of.
+     */
     private fun release(pointer: Int) {
         val at = held.indexOfKey(pointer)
         if (at < 0) return
+        val slot = slots.getOrNull(held.valueAt(at))
         held.removeAt(at)
         invalidate()
+        if (slot != null && slot.style != SlotStyle.DEAD && slot.press != SlotPress.None) {
+            haptics?.release()
+        }
     }
 
     private fun isHeld(slot: Int): Boolean {

@@ -9,7 +9,6 @@ import android.graphics.Typeface
 import android.text.TextPaint
 import android.text.TextUtils
 import android.util.AttributeSet
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
@@ -79,7 +78,13 @@ class ProfileMenuView @JvmOverloads constructor(
     var onChooseProfile: ((String) -> Unit)? = null
     var onChooseDestination: ((SlotPress) -> Unit)? = null
     var onDismiss: (() -> Unit)? = null
-    var hapticsEnabled: Boolean = true
+    /**
+     * How this feels under a finger. Null until the activity supplies it.
+     *
+     * The switch in settings lives on the object itself, so every view either
+     * feels right or feels like nothing, and no view can forget to check.
+     */
+    var haptics: Haptics? = null
 
     /** Which side of the pad it sits on. Follows the shortcut rail, as the ring does. */
     var side: Side = Side.RIGHT
@@ -198,7 +203,8 @@ class ProfileMenuView @JvmOverloads constructor(
                     onDismiss?.invoke()
                     return true
                 }
-                if (hapticsEnabled) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                // Chosen on release, like the ring: both halves here.
+                haptics?.click()
                 when (val picked = rows[chosen]) {
                     is Row.Profile -> onChooseProfile?.invoke(picked.name)
                     is Row.Destination -> onChooseDestination?.invoke(picked.press)

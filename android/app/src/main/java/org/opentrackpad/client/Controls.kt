@@ -8,7 +8,6 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.TextPaint
 import android.util.AttributeSet
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.content.res.ResourcesCompat
@@ -67,6 +66,9 @@ class PillToggle @JvmOverloads constructor(
         resources.configuration.fontScale,
     )
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    /** How this feels under a finger. Set by whoever builds the screen. */
+    var haptics: Haptics? = null
+
     private val track = RectF()
 
     init {
@@ -74,7 +76,9 @@ class PillToggle @JvmOverloads constructor(
         isFocusable = true
         setOnClickListener {
             checked = !checked
-            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            // A switch is a mechanism too: down and let go.
+            haptics?.press()
+            haptics?.release()
             onChange?.invoke(checked)
         }
     }
@@ -173,6 +177,9 @@ class SegmentedView @JvmOverloads constructor(
         isClickable = true
     }
 
+    /** How this feels under a finger. Set by whoever builds the screen. */
+    var haptics: Haptics? = null
+
     private fun chipWidth(option: String) = text.measureText(option) + px(CHIP_H) * 2f
     private fun chipHeight() = text.fontMetrics.let { it.descent - it.ascent } + px(CHIP_V) * 2f
 
@@ -231,7 +238,8 @@ class SegmentedView @JvmOverloads constructor(
             val index = chips.indexOfFirst { it.contains(event.x, event.y) }
             if (index >= 0 && index != chosen) {
                 chosen = index
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                // Chosen on release, so the whole click lands here.
+                haptics?.click()
                 onChoose?.invoke(index)
             }
         }

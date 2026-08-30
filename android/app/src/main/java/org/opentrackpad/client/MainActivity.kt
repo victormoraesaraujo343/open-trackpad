@@ -73,6 +73,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var editorScreen: EditorPanel
     private lateinit var namePanel: View
     private lateinit var recordingPanel: View
+
+    /**
+     * One of these for the whole app.
+     *
+     * A single object rather than one per view, because the Haptics switch has
+     * to mean the same thing everywhere and a view that kept its own copy would
+     * be a view that could be missed when the switch moves.
+     */
+    private val haptics by lazy { Haptics(this) }
     private lateinit var nameScreen: NamePanel
 
     /** The profile being copied, while its name is being chosen. */
@@ -190,6 +199,7 @@ class MainActivity : AppCompatActivity() {
         nameScreen.onSave = ::saveCopy
         nameScreen.onTyping = ::waitBeforeReturning
 
+        editorScreen.haptics = haptics
         editorScreen.onRecord = {
             // Sent and forgotten, which is the whole shape of this verb. The
             // recorder is a window on the computer and the shortcut it produces
@@ -300,6 +310,7 @@ class MainActivity : AppCompatActivity() {
         // more; the font scale multiplies the physical size rather than
         // replacing it.
         Typography.apply(findViewById(R.id.root), artboard)
+        haptics.reach(findViewById(R.id.root))
 
         findViewById<View>(R.id.frame).setPadding(edge, edge, edge, edge)
         for (rail in listOf(railStart, railEnd)) {
@@ -356,8 +367,9 @@ class MainActivity : AppCompatActivity() {
         railEnd.contentDescription =
             getString(if (onLeft) R.string.rail_overflow else R.string.rail_shortcuts)
 
-        railStart.hapticsEnabled = stored.settings.haptics
-        railEnd.hapticsEnabled = stored.settings.haptics
+        haptics.enabled = stored.settings.haptics
+        railStart.haptics = haptics
+        railEnd.haptics = haptics
     }
 
     /** Greys both rails out, or brings them back. */
@@ -418,12 +430,12 @@ class MainActivity : AppCompatActivity() {
         if (next == Panel.RING) {
             ring.wedges = ringWedges()
             ring.side = stored.settings.shortcutSide
-            ring.hapticsEnabled = stored.settings.haptics
+            ring.haptics = haptics
         }
         if (next == Panel.PROFILES) {
             profileMenu.rows = profileRows()
             profileMenu.side = stored.settings.shortcutSide
-            profileMenu.hapticsEnabled = stored.settings.haptics
+            profileMenu.haptics = haptics
         }
         if (next == Panel.SETTINGS) showSettings()
         if (next == Panel.IMPORT) importScreen.show(library)
@@ -553,7 +565,9 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<PillToggle>(R.id.settings_haptics).onChange = { on ->
             update { it.copy(haptics = on) }
-            layOutRails()
+            // One object, one switch. Nothing has to be told again, which is
+            // what stops a view being missed the next time one is added.
+            haptics.enabled = on
         }
         findViewById<PillToggle>(R.id.settings_awake).onChange = { on ->
             update { it.copy(keepScreenAwake = on) }
@@ -811,7 +825,7 @@ class MainActivity : AppCompatActivity() {
             stored.settings.audioShowIdle || it.paused != true
         }
         audioFaders.allowBoost = stored.settings.audioBoost
-        audioFaders.hapticsEnabled = stored.settings.haptics
+        audioFaders.haptics = haptics
         audioFaders.faders = shown
         audioFaders.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
         audioEmpty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
@@ -876,6 +890,20 @@ class MainActivity : AppCompatActivity() {
         // than a domain, so no domain can claim it and asking one to parse it
         // means the reasons only another domain can produce are dropped.
         Wire.refusal(line)?.let { refusal ->
+            /*
+             * The one place feedback carries information rather than
+             * confirmation, so it gets its own shape and must never be mistaken
+             * for a success.
+             *
+             * This is also the one place that fires on a reply rather than on
+             * the touch, and that is not a contradiction of the rule — the rule
+             * says a *confirmation* must not wait for the computer, because a
+             * late tick stops reading as caused by the press. A refusal has
+             * nothing to confirm and could not be known any earlier: the phone
+             * finds out that a fader would not move when the computer says so.
+             * Arriving late is what it is.
+             */
+            haptics.refused()
             if (refusal.sequence == accepting) {
                 accepting = -1
                 importScreen.refused(refusal.reason)

@@ -41,6 +41,9 @@ class EditorPanel(private val root: View) {
     /** Ask the computer to open its recorder, so there is something new to place. */
     var onRecord: (() -> Unit)? = null
 
+    /** How this feels under a finger. Set by the activity. */
+    var haptics: Haptics? = null
+
     private val inflater = LayoutInflater.from(root.context)
     private val shortcutRail: LinearLayout = root.findViewById(R.id.editor_rail_shortcuts)
     private val overflowRail: LinearLayout = root.findViewById(R.id.editor_rail_overflow)
@@ -199,6 +202,10 @@ class EditorPanel(private val root: View) {
                 // drag, and an empty slot is a real state rather than an error.
                 slot.setOnClickListener {
                     if (draft.shortcuts.getOrNull(index) != null) {
+                        // The same shape as a drop landing, because the same
+                        // thing happened to the rail: something is now
+                        // somewhere it was not.
+                        haptics?.land()
                         draft = draft.clear(index)
                         drawRails()
                     }
@@ -238,8 +245,16 @@ class EditorPanel(private val root: View) {
             val id = event.clipData?.getItemAt(0)?.text?.toString()?.toIntOrNull()
             val dropped = offerings.firstOrNull { it.id == id }
             if (dropped != null) {
+                haptics?.land()
                 draft = draft.put(index, dropped.asSlot())
                 drawRails()
+            } else {
+                // Dropped on a slot and nothing arrived — the thing being
+                // dragged is gone from the library, because the host sent a new
+                // one mid-gesture. A refusal rather than silence: the finger did
+                // something and nothing happened, which without an answer looks
+                // like the app missing the gesture.
+                haptics?.refused()
             }
             dropped != null
         }
@@ -326,6 +341,7 @@ class EditorPanel(private val root: View) {
             // and looking the id up at the drop is how the dropped thing
             // stays the thing that still exists.
             val data = ClipData.newPlainText("shortcut", offering.id.toString())
+            haptics?.lift()
             view.startDragAndDrop(data, View.DragShadowBuilder(view), null, 0)
             true
         }
@@ -341,7 +357,11 @@ class EditorPanel(private val root: View) {
             setTextColor(context.getColor(R.color.muted))
             setBackgroundResource(R.drawable.new_shortcut_chip)
             typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
-            setOnClickListener { onRecord?.invoke() }
+            setOnClickListener {
+                haptics?.press()
+                haptics?.release()
+                onRecord?.invoke()
+            }
         }
         stack(chip)
     }
