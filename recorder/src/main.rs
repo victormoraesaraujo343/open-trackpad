@@ -37,7 +37,7 @@ use gtk4::{
     EventControllerKey, Label, Orientation,
 };
 
-use opentrackpadd::keys::{name_of, Chord, ChordError, KeyCode};
+use opentrackpadd::keys::{is_modifier, name_of, Chord, ChordError, KeyCode};
 use opentrackpadd::shortcuts::Shortcuts;
 
 /// How long the window may sit with nothing pressed before it closes itself.
@@ -78,14 +78,32 @@ macro_rules! trace {
 /// Everything the two states share, so the handlers can reach it.
 struct Recorder {
     chord: RefCell<Option<Chord>>,
-    /// The hardware codes currently held down.
+    /// The hardware codes currently held down, in the order the fingers landed.
     ///
     /// A chord is finished when this empties, not when its first key lands.
     /// Focus moving on the first key is what made `ctrl+shift+t` impossible:
     /// `ctrl` was captured, the name field took the caret, and `shift` and `t`
-    /// were typed into it. A set rather than a count because key repeat sends
+    /// were typed into it. A list rather than a count because key repeat sends
     /// press after press with no release in between.
-    held: RefCell<std::collections::HashSet<u32>>,
+    ///
+    /// Ordered rather than a set, because this is also what the chord is built
+    /// from: `ctrl+a+s` and `ctrl+s+a` are the same keys and different words,
+    /// and the one worth showing somebody is the one they played.
+    held: RefCell<Vec<u32>>,
+    /// Whether keys are being typed into the name rather than recorded.
+    ///
+    /// Held here rather than asked of GTK, and that is the fix for a real
+    /// failure: a `GtkEntry` delegates the caret to a text widget inside it, so
+    /// the entry itself can report no focus while the caret is plainly blinking
+    /// in it. Asking the wrong widget returned "not focused" for a field being
+    /// typed into, and every key went to the chord instead — which is exactly
+    /// what naming a shortcut looked like from outside: the name would not take
+    /// and the combination changed under it.
+    ///
+    /// Two targets, one bit, set only by clicking one of them. What the lime
+    /// outline says and what the keys do are now read from the same place, so
+    /// they cannot disagree the way they did.
+    typing: RefCell<bool>,
     last_activity: RefCell<Instant>,
 }
 
@@ -123,7 +141,8 @@ fn build(application: &Application) {
 
     let state = Rc::new(Recorder {
         chord: RefCell::new(None),
-        held: RefCell::new(std::collections::HashSet::new()),
+        held: RefCell::new(Vec::new()),
+        typing: RefCell::new(false),
         last_activity: RefCell::new(Instant::now()),
     });
 
@@ -165,8 +184,8 @@ fn build(application: &Application) {
     window.set_child(Some(&panel));
 
     watch_keys(&window, &state, &capture, &hint, &name, &save);
-    record_again_on_click(&window, &state, &capture, &save);
-    follow_the_active_box(&name, &capture);
+    record_again_on_click(&window, &state, &capture, &name, &save);
+    follow_the_active_box(&state, &name, &capture);
     save_on_click(&window, &state, &name, &save);
     close_when_unfocused(&window);
     close_when_idle(&window, &state);
@@ -237,7 +256,12 @@ fn footer(save: &Button) -> GtkBox {
 /// rather than the symbol is deliberate: the symbol depends on the layout, so on
 /// a French keyboard `ctrl+a` by symbol is a different physical key from the one
 /// that was pressed, and the shortcut would fire somewhere else.
-fn keys_from(state: gdk::ModifierType, keycode: u32) -> Option<Vec<KeyCode>> {
+fn keys_from(state: gdk::ModifierType, keycode: u32, held: &[u32]) -> Option<Vec<KeyCode>> {
+    // The key that has just arrived has to have a name, or there is no chord to
+    // speak of and the window says so. Keys already held are read more kindly:
+    // one of them being unnameable is not a reason to refuse the press.
+    let arrived = evdev_from_hardware(keycode)?;
+
     let mut keys = Vec::new();
     if state.contains(gdk::ModifierType::CONTROL_MASK) {
         keys.push(KeyCode::KEY_LEFTCTRL);
@@ -251,7 +275,41 @@ fn keys_from(state: gdk::ModifierType, keycode: u32) -> Option<Vec<KeyCode>> {
     if state.contains(gdk::ModifierType::SUPER_MASK) {
         keys.push(KeyCode::KEY_LEFTMETA);
     }
-    keys.push(evdev_from_hardware(keycode)?);
+
+    // A modifier reports itself through `state` only once it is *being* held,
+    // so the first press of Ctrl arrives with an empty state and has to be read
+    // from the key itself. Every modifier is collected before any of the keys
+    // it modifies, whatever order the hand chose, so `a` then Ctrl still reads
+    // `ctrl+a` rather than `a+ctrl`.
+    for code in held.iter().copied().chain(std::iter::once(keycode)) {
+        let Some(key) = evdev_from_hardware(code) else {
+            continue;
+        };
+        if is_modifier(key) && !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+
+    // Then everything else, in the order the fingers landed.
+    //
+    // This is the line that decides a chord is *what is down*, rather than the
+    // last thing pressed. Building it from one keycode meant a second letter
+    // replaced the first instead of joining it, so `ctrl+a+s` could not be
+    // recorded here — silently, showing `ctrl+s`, which reads as the `a` having
+    // been ignored. The daemon has always accepted it: `Chord::from_keys` caps
+    // a chord at five keys and has never cared how many of them are letters.
+    for code in held.iter().copied().chain(std::iter::once(keycode)) {
+        let Some(key) = evdev_from_hardware(code) else {
+            continue;
+        };
+        if !is_modifier(key) && !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+
+    if keys.is_empty() {
+        keys.push(arrived);
+    }
     Some(keys)
 }
 
@@ -326,13 +384,20 @@ fn watch_keys(
         // captured, so getting one wrong is corrected by pressing the right one
         // rather than by reaching for the mouse. On a window whose whole point
         // is that the keys are here, that trip is the thing to avoid.
-        if pressed_name.has_focus() {
+        if *pressed_state.typing.borrow() || pressed_name.has_focus() {
             return glib::Propagation::Proceed;
         }
 
-        pressed_state.held.borrow_mut().insert(keycode);
+        {
+            // Held down and repeating is still one finger.
+            let mut held = pressed_state.held.borrow_mut();
+            if !held.contains(&keycode) {
+                held.push(keycode);
+            }
+        }
 
-        let Some(keys) = keys_from(modifiers, keycode) else {
+        let held = pressed_state.held.borrow().clone();
+        let Some(keys) = keys_from(modifiers, keycode, &held) else {
             pressed_hint.set_text("That key has no name here yet, so it cannot be recorded.");
             pressed_hint.add_css_class("refused");
             return glib::Propagation::Stop;
@@ -366,7 +431,7 @@ fn watch_keys(
     let released_name = name.clone();
     let released_save = save.clone();
     controller.connect_key_released(move |_, _, keycode, _| {
-        released_state.held.borrow_mut().remove(&keycode);
+        released_state.held.borrow_mut().retain(|code| *code != keycode);
         if !released_state.held.borrow().is_empty() {
             return;
         }
@@ -394,17 +459,34 @@ fn watch_keys(
 /// Nothing here changes what a key press means without saying so first — which
 /// is the defect this replaces: the caret moved on its own, twice, and both
 /// times there was no way to tell it had.
-fn follow_the_active_box(name: &Entry, capture: &GtkBox) {
-    let capture = capture.clone();
-    name.connect_has_focus_notify(move |name| {
-        if name.has_focus() {
-            name.add_css_class("active");
-            capture.remove_css_class("active");
-        } else {
-            name.remove_css_class("active");
-            capture.add_css_class("active");
+fn follow_the_active_box(state: &Rc<Recorder>, name: &Entry, capture: &GtkBox) {
+    // Clicking the name is the one thing that hands the keys to it. Driven by
+    // the click rather than by a focus notification, because the notification
+    // is about the entry and the caret is not: GTK puts it in a text widget
+    // inside, so the entry can report itself unfocused while somebody is typing
+    // into it. A click is unambiguous and is what the model is written in —
+    // "nothing takes the caret automatically".
+    let gesture = gtk4::GestureClick::new();
+    let clicked_state = Rc::clone(state);
+    let clicked_name = name.clone();
+    let clicked_capture = capture.clone();
+    gesture.connect_pressed(move |_, _, _, _| {
+        *clicked_state.last_activity.borrow_mut() = Instant::now();
+        if !clicked_name.is_sensitive() {
+            // Nothing recorded yet, so there is nothing to name and the keys
+            // stay where they are.
+            return;
         }
+        *clicked_state.typing.borrow_mut() = true;
+        // Fingers still down belong to the chord that was just recorded, not to
+        // the next one; forgetting them here stops a release arriving later and
+        // being read as the end of something.
+        clicked_state.held.borrow_mut().clear();
+        clicked_name.add_css_class("active");
+        clicked_capture.remove_css_class("active");
+        trace!("recorder: typing a name");
     });
+    name.add_controller(gesture);
 }
 
 /// Clicking the capture box throws the chord away and listens again.
@@ -415,24 +497,30 @@ fn record_again_on_click(
     window: &ApplicationWindow,
     state: &Rc<Recorder>,
     capture: &GtkBox,
+    name: &Entry,
     save: &Button,
 ) {
     let gesture = gtk4::GestureClick::new();
     let state = Rc::clone(state);
     let window = window.clone();
     let box_for_handler = capture.clone();
+    let name = name.clone();
     let save = save.clone();
 
     gesture.connect_pressed(move |_, _, _, _| {
         *state.last_activity.borrow_mut() = Instant::now();
         *state.chord.borrow_mut() = None;
         state.held.borrow_mut().clear();
+        // The keys come back here. This is the other half of the two-target
+        // model, and the only way back from naming.
+        *state.typing.borrow_mut() = false;
 
         // Nothing to save until a new chord lands: the old one is gone and
         // saving it would be saving something no longer on screen.
         save.set_sensitive(false);
         show_waiting(&box_for_handler);
         box_for_handler.add_css_class("active");
+        name.remove_css_class("active");
         // The caret has to leave the name field or the next key press would be
         // typed rather than captured.
         gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
@@ -721,16 +809,60 @@ mod tests {
             gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK,
             // `t` is evdev 20, so X11 reports 28.
             20 + 8,
+            &[20 + 8],
         )
         .expect("a chord");
         let chord = Chord::from_keys(&pressed).expect("valid");
         assert_eq!(chord.to_string(), "ctrl+shift+t");
     }
 
+    /// `a` is evdev 30, `s` is 31, `ctrl` is 29 — X11 reports each plus eight.
+    const A: u32 = 30 + 8;
+    const S: u32 = 31 + 8;
+    const CTRL: u32 = 29 + 8;
+
+    #[test]
+    fn a_chord_can_hold_two_letters() {
+        // Ctrl down, then `a`, then `s` without letting go of either. This was
+        // unrecordable: the chord was built from the modifier state plus the one
+        // key that had just arrived, so `s` replaced `a` rather than joining it,
+        // and the box showed `ctrl+s` as though the `a` had never happened.
+        let pressed = keys_from(gdk::ModifierType::CONTROL_MASK, S, &[CTRL, A, S]).expect("keys");
+        let chord = Chord::from_keys(&pressed).expect("valid");
+        assert_eq!(chord.to_string(), "ctrl+a+s");
+    }
+
+    #[test]
+    fn the_letters_keep_the_order_they_were_played_in() {
+        // Same keys, other way round. They are different words and the one to
+        // show somebody is the one their fingers made.
+        let pressed = keys_from(gdk::ModifierType::CONTROL_MASK, A, &[CTRL, S, A]).expect("keys");
+        assert_eq!(
+            Chord::from_keys(&pressed).unwrap().to_string(),
+            "ctrl+s+a"
+        );
+    }
+
+    #[test]
+    fn a_modifier_leads_even_when_it_arrives_last() {
+        // `a` held, then Ctrl. A modifier reports itself through the state only
+        // once it is already held, so this one is read from the key itself —
+        // and still sorts ahead of the letter it modifies.
+        let pressed = keys_from(gdk::ModifierType::empty(), CTRL, &[A, CTRL]).expect("keys");
+        assert_eq!(Chord::from_keys(&pressed).unwrap().to_string(), "ctrl+a");
+    }
+
+    #[test]
+    fn key_repeat_does_not_lengthen_a_chord() {
+        // Holding a key sends press after press with no release between them.
+        let pressed = keys_from(gdk::ModifierType::CONTROL_MASK, A, &[CTRL, A, A, A]).expect("keys");
+        assert_eq!(Chord::from_keys(&pressed).unwrap().to_string(), "ctrl+a");
+    }
+
     #[test]
     fn a_lone_modifier_records() {
         // Pressing Ctrl reports the Ctrl key with no modifier state yet.
-        let pressed = keys_from(gdk::ModifierType::empty(), 29 + 8).expect("a chord");
+        let pressed = keys_from(gdk::ModifierType::empty(), 29 + 8, &[29 + 8]).expect("a chord");
         assert_eq!(Chord::from_keys(&pressed).unwrap().to_string(), "ctrl");
     }
 
@@ -739,7 +871,7 @@ mod tests {
         // alt+print is the kernel's magic SysRq sequence. It is turned down
         // here by the same function that turns it down on the socket, rather
         // than being saved and then never firing.
-        let pressed = keys_from(gdk::ModifierType::ALT_MASK, 99 + 8).expect("keys");
+        let pressed = keys_from(gdk::ModifierType::ALT_MASK, 99 + 8, &[99 + 8]).expect("keys");
         assert!(Chord::from_keys(&pressed).is_err());
     }
 

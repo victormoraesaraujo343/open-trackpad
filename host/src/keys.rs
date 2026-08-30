@@ -247,6 +247,22 @@ fn normalise(code: KeyCode) -> KeyCode {
     }
 }
 
+/// Whether a key is one of the four this vocabulary treats as a modifier.
+///
+/// Right-hand twins answer yes too, since they normalise onto the left. This
+/// exists so a chord can be assembled in the order a hand builds it — every
+/// modifier first, then the keys they modify — without the recorder having to
+/// keep its own copy of which is which.
+pub fn is_modifier(code: KeyCode) -> bool {
+    matches!(
+        normalise(code),
+        KeyCode::KEY_LEFTCTRL
+            | KeyCode::KEY_LEFTSHIFT
+            | KeyCode::KEY_LEFTALT
+            | KeyCode::KEY_LEFTMETA
+    )
+}
+
 /// The one combination this host will not press, however it is asked.
 ///
 /// Alt with SysRq is not a shortcut; it is the kernel's escape hatch. On a

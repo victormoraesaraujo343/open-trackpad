@@ -23,7 +23,7 @@ PartOf=graphical-session.target
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/opentrackpad-connect-usb --watch
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 # adb needs to reach USB devices and its own server; nothing else.
