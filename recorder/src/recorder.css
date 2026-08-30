@@ -40,8 +40,12 @@
   padding: 16px;
 }
 
-/* The one border that changes: something has been caught. */
-.capture.captured {
+/* Lime marks whichever box is taking keys — "this one, now", the same as
+ * everywhere else in this product. Exactly one of the two carries it, and the
+ * border is what tells somebody where a key press will land before they press
+ * one. */
+.capture.active,
+.name.active {
   border-color: #a3e635;
 }
 

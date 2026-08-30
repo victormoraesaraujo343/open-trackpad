@@ -26,7 +26,16 @@ command -v adb >/dev/null 2>&1 || {
 }
 
 forward() {
-  if adb reverse "tcp:$PORT" "tcp:$PORT" >/dev/null 2>&1; then
+  # `-d` means the single USB device, and it ignores emulators entirely — so a
+  # running emulator alongside the phone stops being ambiguous rather than
+  # blocking the bridge. Two real phones still error, which is the case where
+  # refusing to guess is right.
+  #
+  # This script has always meant "the USB device": `adb wait-for-usb-device`
+  # below says so. Only the reverse forgot to, and the cost of that was a phone
+  # reporting "The cable came out" with the cable plainly in — honest about what
+  # it knew and wrong about the world, which is the worst shape a message has.
+  if adb -d reverse "tcp:$PORT" "tcp:$PORT" >/dev/null 2>&1; then
     echo "USB forwarding active: phone localhost:$PORT -> this computer's localhost:$PORT"
     return 0
   fi

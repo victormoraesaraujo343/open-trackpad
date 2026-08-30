@@ -104,6 +104,8 @@ fn build(application: &Application) {
 
     let capture = GtkBox::new(Orientation::Vertical, 0);
     capture.add_css_class("capture");
+    // The capture box holds the keys from the start, and says so.
+    capture.add_css_class("active");
     capture.set_size_request(-1, 96);
     capture.set_valign(Align::Center);
     let waiting = waiting_prompt();
@@ -131,6 +133,7 @@ fn build(application: &Application) {
 
     watch_keys(&window, &state, &capture, &hint, &name, &save);
     record_again_on_click(&window, &state, &capture, &save);
+    follow_the_active_box(&name, &capture);
     save_on_click(&window, &state, &name, &save);
     close_when_unfocused(&window);
     close_when_idle(&window, &state);
@@ -272,6 +275,7 @@ fn watch_keys(
     let pressed_window = window.clone();
     let pressed_capture = capture.clone();
     let pressed_hint = hint.clone();
+    let pressed_name = name.clone();
 
     controller.connect_key_pressed(move |_, key, keycode, modifiers| {
         *pressed_state.last_activity.borrow_mut() = Instant::now();
@@ -284,10 +288,12 @@ fn watch_keys(
             return glib::Propagation::Stop;
         }
 
-        // A chord already caught and every key let go: the name field has the
-        // caret and these keys are somebody typing a name. Recording another is
-        // done by clicking the box, which is what the line under it says.
-        if pressed_state.chord.borrow().is_some() && pressed_state.held.borrow().is_empty() {
+        // Keys are typed only when somebody has clicked into the name field.
+        // Nothing focuses it for them: after a chord lands the keys keep being
+        // captured, so getting one wrong is corrected by pressing the right one
+        // rather than by reaching for the mouse. On a window whose whole point
+        // is that the keys are here, that trip is the thing to avoid.
+        if pressed_name.has_focus() {
             return glib::Propagation::Proceed;
         }
 
@@ -331,20 +337,41 @@ fn watch_keys(
         if !released_state.held.borrow().is_empty() {
             return;
         }
-        // Every finger is off and there is something to save. Only now does the
-        // name field wake and take the caret, so a name can be typed without
-        // reaching for the mouse — and so that nothing on the way to the chord
-        // was typed into it.
-        if released_state.chord.borrow().is_some() {
+        // Every finger is off and there is something to save.
+        if let Some(chord) = released_state.chord.borrow().as_ref() {
+            // Woken so it can be clicked, and deliberately not focused.
             released_name.set_sensitive(true);
             released_save.set_sensitive(true);
-            if released_name.text().is_empty() {
-                released_name.grab_focus();
-            }
+            // The suggestion is a placeholder rather than text, so clicking to
+            // type starts clean instead of needing it deleted — and saving
+            // without touching it lands the same words.
+            released_name.set_placeholder_text(Some(&spelled_chord(chord)));
+            // A pencil rather than a caret: editable without pretending to
+            // already have the keys.
+            released_name.set_secondary_icon_name(Some("document-edit-symbolic"));
         }
     });
 
     window.add_controller(controller);
+}
+
+/// Moves the lime border to whichever box is taking keys.
+///
+/// Exactly one of the two carries it, and it moves only when somebody clicks.
+/// Nothing here changes what a key press means without saying so first — which
+/// is the defect this replaces: the caret moved on its own, twice, and both
+/// times there was no way to tell it had.
+fn follow_the_active_box(name: &Entry, capture: &GtkBox) {
+    let capture = capture.clone();
+    name.connect_has_focus_notify(move |name| {
+        if name.has_focus() {
+            name.add_css_class("active");
+            capture.remove_css_class("active");
+        } else {
+            name.remove_css_class("active");
+            capture.add_css_class("active");
+        }
+    });
 }
 
 /// Clicking the capture box throws the chord away and listens again.
@@ -372,6 +399,7 @@ fn record_again_on_click(
         // saving it would be saving something no longer on screen.
         save.set_sensitive(false);
         show_waiting(&box_for_handler);
+        box_for_handler.add_css_class("active");
         // The caret has to leave the name field or the next key press would be
         // typed rather than captured.
         gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
@@ -384,7 +412,6 @@ fn show_waiting(capture: &GtkBox) {
     while let Some(child) = capture.first_child() {
         capture.remove(&child);
     }
-    capture.remove_css_class("captured");
     capture.append(&waiting_prompt());
 }
 
@@ -393,7 +420,6 @@ fn show_captured(capture: &GtkBox, chord: &Chord) {
     while let Some(child) = capture.first_child() {
         capture.remove(&child);
     }
-    capture.add_css_class("captured");
 
     let row = GtkBox::new(Orientation::Horizontal, 8);
     row.set_halign(Align::Center);
@@ -410,12 +436,25 @@ fn show_captured(capture: &GtkBox, chord: &Chord) {
     }
     capture.append(&row);
 
-    // Not "press another combination": once a chord is caught the keys belong
-    // to the name field, so pressing more would type them.
-    let again = Label::new(Some("Click the box to record another"));
+    let again = Label::new(Some(
+        "Press another combination to replace it. Click the name to type instead.",
+    ));
     again.add_css_class("where");
     again.set_halign(Align::Center);
     capture.append(&again);
+}
+
+/// The chord as somebody would write it: `Ctrl+Shift+T`.
+///
+/// Used as the name when nobody typed one. The wire spelling — `ctrl+shift+t` —
+/// is for the protocol; this is for a person reading a list.
+fn spelled_chord(chord: &Chord) -> String {
+    chord
+        .keys()
+        .iter()
+        .map(|key| cap_text(name_of(*key).unwrap_or("?")))
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 /// How a key name is drawn on a cap.
@@ -471,9 +510,12 @@ fn save_on_click(window: &ApplicationWindow, state: &Rc<Recorder>, name: &Entry,
         };
         let typed = name.text();
         let typed = if typed.trim().is_empty() {
-            // A chord with no name is still worth keeping; the chord itself is
-            // a serviceable label until somebody renames it.
-            chord.to_string()
+            // Naming is optional, because nothing focuses the field for them —
+            // so somebody will record a chord and press Save. Refusing that,
+            // over a field nobody said was required, would be the worst of the
+            // options available. The chord is what they would have typed
+            // anyway, it is never blank, and it is honest.
+            spelled_chord(&chord)
         } else {
             typed.to_string()
         };
@@ -631,5 +673,31 @@ mod tests {
         // A single key is a shortcut on its own, and somebody who does not know
         // that will try a combination and give up.
         assert!(HINT.contains("single key"));
+    }
+
+    #[test]
+    fn a_chord_saved_without_a_name_reads_like_somebody_wrote_it() {
+        // Naming is optional, so this is what lands in the list. The wire
+        // spelling is for the protocol; a person reading a list gets this.
+        let chord = Chord::parse("ctrl+shift+t").unwrap();
+        assert_eq!(spelled_chord(&chord), "Ctrl+Shift+T");
+        assert_eq!(chord.to_string(), "ctrl+shift+t");
+
+        assert_eq!(spelled_chord(&Chord::parse("print").unwrap()), "Print");
+        assert_eq!(spelled_chord(&Chord::parse("super").unwrap()), "Super");
+        assert_eq!(
+            spelled_chord(&Chord::parse("ctrl+pageup").unwrap()),
+            "Ctrl+Page Up"
+        );
+    }
+
+    #[test]
+    fn a_name_from_a_chord_is_never_blank() {
+        // The whole point of the fallback: Save can never be pressed on a
+        // shortcut that then has nothing to call it.
+        for text in ["ctrl+c", "f11", "super", "playpause", "leftbracket"] {
+            let spelled = spelled_chord(&Chord::parse(text).unwrap());
+            assert!(!spelled.trim().is_empty(), "{text} spelled to nothing");
+        }
     }
 }
