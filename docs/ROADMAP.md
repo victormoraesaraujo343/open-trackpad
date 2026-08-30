@@ -295,6 +295,37 @@ the import offer and the keyboard, and its wedge count follows what exists
 rather than being padded to fill a circle. The far rail keeps the overflow
 shortcuts until recent applications replace it whole.
 
+
+### The Android keyboard was never buildable
+
+Removed from the design on 2026-08-30, and not for want of space. The original
+control list says in its own words that running commands and typing arbitrary
+text are out, "hoje nem depois" — not now and not later — because that is what
+stops a control surface being a remote shell. The same list carries "Android
+keyboard, for typing on the computer using the phone's keyboard" as a Quick
+item. Both were written the same day and nobody noticed they cannot both hold.
+
+A phone that can send arbitrary text can type a command into a terminal. That is
+precisely the failure the closed key vocabulary, the recorded-set gate and the
+host-side recorder were all built to make impossible, and no version of a text
+verb is safe enough to be worth the feature. So it leaves the drawings rather
+than entering the protocol.
+
+It survived this long because it was a line in a list rather than a thing
+anybody tried to build. It surfaced the moment somebody asked which message it
+would send — which is the sixth principle again, arriving from the other side.
+
+### The ring keeps its positions, dimmed rather than absent
+
+Four destinations, always in the same order: audio, import, profiles, settings.
+Where a capability is not granted the wedge is dimmed rather than removed.
+
+This is a deliberate exception to "absent rather than broken", and the exception
+is that the ring is navigation. A panel that cannot work should not be drawn; a
+door to it should, because the ring is the only way in to anything and a door
+that moves is worse than a door that is closed. It is the same language the
+dead rails already speak.
+
 ### A second visual identity, as a theme
 
 A skeuomorphic look was drawn in parallel and is good enough to keep — physical
