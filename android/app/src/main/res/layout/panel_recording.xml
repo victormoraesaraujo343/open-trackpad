@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The computer's recorder is open, and this says so.
+
+  It is a message rather than a wait. Nothing here polls, counts down or
+  cancels: `RECORD` has no reply, and the shortcut it produces arrives through
+  the library whether this screen is open or not. So the close button is not
+  "give up" — it is just the way out, and the note says as much, because a
+  screen that looks like it is waiting makes people afraid to leave it.
+
+  No rails, so it insets to the display cutout in MainActivity.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/recording_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ground"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:visibility="gone"
+    android:padding="@dimen/edge">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:maxWidth="420dp"
+        android:background="@drawable/card"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:tag="19"
+            android:textSize="19sp"
+            android:textColor="@color/ink"
+            android:fontFamily="@font/space_grotesk_semibold"
+            android:text="@string/recording_title" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:tag="14"
+            android:textSize="13sp"
+            android:textColor="@color/body"
+            android:fontFamily="@font/inter_regular"
+            android:text="@string/recording_body" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:tag="12"
+            android:textSize="10sp"
+            android:textColor="@color/muted"
+            android:fontFamily="@font/inter_regular"
+            android:text="@string/recording_note" />
+
+        <TextView
+            android:id="@+id/recording_close"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:paddingHorizontal="18dp"
+            android:paddingVertical="9dp"
+            android:tag="13"
+            android:textSize="11sp"
+            android:textColor="@color/ink"
+            android:fontFamily="@font/inter_medium"
+            android:background="@drawable/group_chip"
+            android:text="@string/recording_close" />
+    </LinearLayout>
+</LinearLayout>

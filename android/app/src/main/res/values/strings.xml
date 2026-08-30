@@ -180,4 +180,22 @@
     <string name="incompatible_body">Something is listening on the port but it is not the OpenTrackpad host. Check what else is using it on the computer.</string>
 
     <string name="setup_hint">Run adb reverse tcp:4242 tcp:4242 on the computer</string>
+
+    <!-- The Quick Ring's import wedge. The count is the reason to press it. -->
+    <string name="ring_import">Import</string>
+    <string name="ring_import_count">Import (%1$d)</string>
+
+    <!-- Making a new shortcut: the chip in the editor, and the screen after it. -->
+    <string name="editor_new">+ New shortcut</string>
+    <string name="recording_title">Look at your computer</string>
+    <string name="recording_body">A window opened there. Press the keys you want on this button, and it will appear in your library.</string>
+    <string name="recording_note">Nothing is waiting on this screen. Close it whenever you like — the shortcut arrives on its own.</string>
+    <string name="recording_close">Close</string>
+
+    <!-- The three mouse buttons, which are the client's own and not the host's. -->
+    <string name="group_mouse">Mouse</string>
+    <string name="button_right">Right click</string>
+    <string name="button_middle">Middle click</string>
+    <string name="button_left">Left click</string>
+    <string name="button_chord">mouse</string>
 </resources>

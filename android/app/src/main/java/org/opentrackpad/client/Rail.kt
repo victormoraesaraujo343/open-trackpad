@@ -39,6 +39,10 @@ sealed interface SlotPress {
     /** The screen for choosing which shortcuts sit where. */
     data object Editor : SlotPress
 
+    /** What the computer found lying around and is offering. */
+    data object Import : SlotPress
+
+
     /** The audio panel, on one of its pages. */
     data class Audio(val page: AudioPage) : SlotPress
 
@@ -106,7 +110,7 @@ object Rails {
      * anything the interface has no room for, and there is only one of those.
      */
     fun overflow(profile: Profile): List<RailSlot?> =
-        List(SLOTS) { index -> profile.ring.getOrNull(index)?.let(::slotFor) }
+        List(SLOTS) { index -> profile.overflow.getOrNull(index)?.let(::slotFor) }
 
     /**
      * The rail a panel takes over while it is open: the way out, then its pages.

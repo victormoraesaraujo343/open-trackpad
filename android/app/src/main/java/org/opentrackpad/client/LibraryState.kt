@@ -19,6 +19,27 @@ class LibraryState {
     var candidates: List<Candidate> = emptyList()
         private set
 
+    /**
+     * Whether this host offers imports at all.
+     *
+     * Separate from [candidates] being empty, and the difference is the whole
+     * point: a host that grants the domain and has nothing to offer today is a
+     * screen worth opening, and a host that does not grant it is a door that
+     * should not be drawn.
+     */
+    var offers: Boolean = false
+        private set
+
+    /** Whether the shortcut library is available: what a rail may be filled from. */
+    var lists: Boolean = false
+        private set
+
+    /** Records what the host granted. Clears what it no longer serves. */
+    fun grant(shortcuts: Boolean, imports: Boolean) {
+        lists = shortcuts
+        offers = imports
+    }
+
     /** Which offer [candidates] belongs to. `ACCEPT` has to carry this back. */
     var offerGeneration: Long = -1
         private set

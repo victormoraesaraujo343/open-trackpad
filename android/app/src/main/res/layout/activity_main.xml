@@ -119,6 +119,7 @@
     <include layout="@layout/panel_import" />
     <include layout="@layout/panel_editor" />
     <include layout="@layout/panel_name" />
+    <include layout="@layout/panel_recording" />
 
     <!--
       Clickable on purpose: while it is up, nothing behind it can be pressed.

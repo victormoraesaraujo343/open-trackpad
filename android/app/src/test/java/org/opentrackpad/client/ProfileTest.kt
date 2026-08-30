@@ -10,17 +10,21 @@ class ProfileTest {
     private val profile = DefaultProfiles.desktop
 
     @Test
-    fun `the first four sit on the rail and the rest in the ring`() {
+    fun `the first four sit on the rail and the rest on the rail opposite`() {
         assertEquals(Profile.RAIL_SLOTS, profile.rail.size)
-        assertEquals(profile.shortcuts.size - Profile.RAIL_SLOTS, profile.ring.size)
-        assertEquals(profile.shortcuts, profile.rail + profile.ring)
+        assertEquals(profile.shortcuts.size - Profile.RAIL_SLOTS, profile.overflow.size)
+        assertEquals(profile.shortcuts, profile.rail + profile.overflow)
     }
 
     @Test
-    fun `promoting from the ring puts it on the rail`() {
+    // Nothing calls `reorder` — the Quick Ring holds destinations, so there is
+    // nothing in it to promote. Kept because it is still the correct operation
+    // on this list, and tested so that it still is if a second way to rearrange
+    // ever arrives.
+    fun `moving a shortcut forward puts it on the rail`() {
         val promoted = profile.reorder(from = 5, to = 0)
         assertEquals(profile.shortcuts[5], promoted.rail.first())
-        assertTrue(profile.shortcuts[5] !in promoted.ring)
+        assertTrue(profile.shortcuts[5] !in promoted.overflow)
     }
 
     @Test
@@ -41,7 +45,7 @@ class ProfileTest {
     fun `a profile shorter than the rail still works`() {
         val small = Profile("Small", listOf(Slot("Copy", Action.KeyChord("ctrl+c"))))
         assertEquals(1, small.rail.size)
-        assertTrue(small.ring.isEmpty())
+        assertTrue(small.overflow.isEmpty())
     }
 
     @Test

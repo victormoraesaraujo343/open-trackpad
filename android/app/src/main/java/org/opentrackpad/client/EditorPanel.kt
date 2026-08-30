@@ -2,6 +2,7 @@ package org.opentrackpad.client
 
 import android.content.ClipData
 import android.text.Editable
+import android.util.TypedValue
 import android.text.TextWatcher
 import android.view.DragEvent
 import android.view.LayoutInflater
@@ -11,6 +12,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.res.ResourcesCompat
 
 /**
  * The profile editor: both rails and the library they are filled from, on one
@@ -36,6 +38,9 @@ class EditorPanel(private val root: View) {
     /** Make a copy of what is being edited, which needs a name first. */
     var onDuplicate: ((Profile) -> Unit)? = null
 
+    /** Ask the computer to open its recorder, so there is something new to place. */
+    var onRecord: (() -> Unit)? = null
+
     private val inflater = LayoutInflater.from(root.context)
     private val shortcutRail: LinearLayout = root.findViewById(R.id.editor_rail_shortcuts)
     private val overflowRail: LinearLayout = root.findViewById(R.id.editor_rail_overflow)
@@ -47,9 +52,29 @@ class EditorPanel(private val root: View) {
     /** The profile being edited, as it stands. Never the saved one until Save. */
     private var draft: Profile = Profile("", emptyList())
     private var original: Profile = draft
-    private var entries: List<LibraryEntry> = emptyList()
-    private var group: ShortcutGroup? = null
-    private var anyGroup = true
+    /** Everything draggable: the host's shortcuts and the phone's own buttons. */
+    private var offerings: List<Offering> = emptyList()
+
+    private var bucket: Bucket = Bucket.All
+
+    private val artboard = Artboard.measure(
+        root.resources.displayMetrics,
+        root.resources.displayMetrics.widthPixels,
+        root.resources.configuration.fontScale,
+    )
+
+    /**
+     * Which chip along the top is chosen.
+     *
+     * Three shapes rather than a nullable group, because null already means
+     * something here — a shortcut somebody recorded, which is its own bucket.
+     * A second meaning for null is how the Quick Ring lost its contents.
+     */
+    private sealed interface Bucket {
+        data object All : Bucket
+        data object Mouse : Bucket
+        data class Desktop(val group: ShortcutGroup?) : Bucket
+    }
 
     init {
         root.findViewById<View>(R.id.editor_back).setOnClickListener { onDismiss?.invoke() }
@@ -71,14 +96,39 @@ class EditorPanel(private val root: View) {
         })
     }
 
-    fun show(profile: Profile, entries: List<LibraryEntry>) {
+    /**
+     * Whether making a new shortcut is possible at all right now.
+     *
+     * Drawn only when it is. The chip is the one control here that needs a live
+     * computer — everything else on this screen rearranges what already exists,
+     * and works with the cable out. A dashed outline that did nothing when
+     * pressed would be worse than no outline, because there would be no way to
+     * tell it from a shortcut that failed.
+     */
+    private var canRecord = false
+
+    fun show(profile: Profile, entries: List<LibraryEntry>, canRecord: Boolean) {
+        this.canRecord = canRecord
         draft = profile
         original = profile
-        this.entries = entries
+        // The buttons first: they are three fixed things, and burying them under
+        // however many shortcuts a desktop happens to have would make the one
+        // feature somebody arrives looking for the hardest to find.
+        offerings = Offering.buttons(
+            name = {
+                root.context.getString(
+                    when (it) {
+                        Action.Button.RIGHT -> R.string.button_right
+                        Action.Button.MIDDLE -> R.string.button_middle
+                        Action.Button.LEFT -> R.string.button_left
+                    }
+                )
+            },
+            detail = root.context.getString(R.string.button_chord),
+        ) + entries.map(Offering::of)
         nameLabel.text = profile.name
         search.hint = root.context.getString(R.string.editor_search, entries.size)
-        anyGroup = true
-        group = null
+        bucket = Bucket.All
         drawRails()
         drawGroups()
         drawLibrary()
@@ -103,9 +153,8 @@ class EditorPanel(private val root: View) {
         val title = TextView(root.context).apply {
             text = root.context.getString(heading)
             setTextColor(root.context.getColor(R.color.muted))
-            textSize = 10f
-            typeface = androidx.core.content.res.ResourcesCompat
-                .getFont(root.context, R.font.inter_medium)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.text(RAIL_HEADING))
+            typeface = ResourcesCompat.getFont(root.context, R.font.inter_medium)
         }
         into.addView(title)
 
@@ -187,12 +236,12 @@ class EditorPanel(private val root: View) {
         DragEvent.ACTION_DROP -> {
             view.isActivated = false
             val id = event.clipData?.getItemAt(0)?.text?.toString()?.toIntOrNull()
-            val entry = entries.firstOrNull { it.id == id }
-            if (entry != null) {
-                draft = draft.put(index, entry.asSlot())
+            val dropped = offerings.firstOrNull { it.id == id }
+            if (dropped != null) {
+                draft = draft.put(index, dropped.asSlot())
                 drawRails()
             }
-            entry != null
+            dropped != null
         }
 
         else -> true
@@ -202,28 +251,29 @@ class EditorPanel(private val root: View) {
 
     private fun drawGroups() {
         groups.removeAllViews()
-        val present = entries.map { if (it.origin == Origin.RECORDED) null else it.group }
-            .distinct()
-        addGroupChip(null, all = true)
-        for (candidate in present) addGroupChip(candidate, all = false)
+        addGroupChip(Bucket.All, root.context.getString(R.string.editor_all))
+        addGroupChip(Bucket.Mouse, root.context.getString(R.string.group_mouse))
+        val present = offerings.filterNot { it.builtIn }.map { it.group }.distinct()
+        for (candidate in present) {
+            addGroupChip(Bucket.Desktop(candidate), nameOf(candidate))
+        }
     }
 
-    private fun addGroupChip(which: ShortcutGroup?, all: Boolean) {
+    private fun addGroupChip(which: Bucket, label: String) {
         val chip = TextView(root.context).apply {
-            text = if (all) context.getString(R.string.editor_all) else nameOf(which)
+            text = label
             setPadding(
-                (9 * resources.displayMetrics.density).toInt(),
-                (3 * resources.displayMetrics.density).toInt(),
-                (9 * resources.displayMetrics.density).toInt(),
-                (3 * resources.displayMetrics.density).toInt(),
+                artboard.size(CHIP_H),
+                artboard.size(CHIP_V),
+                artboard.size(CHIP_H),
+                artboard.size(CHIP_V),
             )
-            textSize = 10f
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.text(CHIP_TEXT))
             setBackgroundResource(R.drawable.group_chip)
-            isActivated = if (all) anyGroup else !anyGroup && group == which
+            isActivated = which == bucket
             setTextColor(context.getColor(if (isActivated) R.color.ink else R.color.muted))
             setOnClickListener {
-                anyGroup = all
-                group = which
+                bucket = which
                 drawGroups()
                 drawLibrary()
             }
@@ -232,46 +282,91 @@ class EditorPanel(private val root: View) {
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         )
-        params.marginEnd = (4 * root.resources.displayMetrics.density).toInt()
+        params.marginEnd = artboard.size(CHIP_GAP)
         groups.addView(chip, params)
     }
 
     private fun drawLibrary() {
         library.removeAllViews()
         val query = search.text.toString().trim().lowercase()
-        val shown = entries.filter { entry ->
-            val itsGroup = if (entry.origin == Origin.RECORDED) null else entry.group
-            val inGroup = anyGroup || itsGroup == group
-            // Searched by name and by chord, because somebody looking for the
+        val shown = offerings.filter { offering ->
+            val inBucket = when (val where = bucket) {
+                Bucket.All -> true
+                Bucket.Mouse -> offering.builtIn
+                is Bucket.Desktop -> !offering.builtIn && offering.group == where.group
+            }
+            // Searched by name and by detail, because somebody looking for the
             // key combination they already know is at least as likely as
             // somebody looking for the word.
             val matches = query.isEmpty() ||
-                entry.name.lowercase().contains(query) ||
-                entry.chord.lowercase().contains(query)
-            inGroup && matches
+                offering.name.lowercase().contains(query) ||
+                offering.detail.lowercase().contains(query)
+            inBucket && matches
         }
 
-        for (entry in shown) {
-            val chip = inflater.inflate(R.layout.row_library_chip, library, false)
-            chip.findViewById<TextView>(R.id.chip_name).text = entry.name
-            chip.findViewById<TextView>(R.id.chip_chord).text = entry.chord
-            chip.findViewById<View>(R.id.chip_mine).visibility =
-                if (entry.origin == Origin.RECORDED) View.VISIBLE else View.INVISIBLE
+        for (offering in shown) addLibraryChip(offering)
 
-            chip.setOnLongClickListener { view ->
-                // The id rather than the whole shortcut: a drag can outlive the
-                // list it started from if the host sends a new one mid-gesture,
-                // and looking the id up at the drop is how the dropped thing
-                // stays the thing that still exists.
-                val data = ClipData.newPlainText("shortcut", entry.id.toString())
-                view.startDragAndDrop(data, View.DragShadowBuilder(view), null, 0)
-                true
-            }
-            (chip.layoutParams as ViewGroup.MarginLayoutParams).topMargin =
-                if (library.childCount == 0) 0
-                else (5 * root.resources.displayMetrics.density).toInt()
-            library.addView(chip)
+        // Last, and only where a new shortcut would actually arrive. The chip
+        // makes a shortcut rather than being one, which is why the artboard
+        // draws it dashed and unfilled, and why it is not draggable: there is
+        // nothing yet to drag.
+        if (canRecord && query.isEmpty() && bucket != Bucket.Mouse) addRecordChip()
+    }
+
+    private fun addLibraryChip(offering: Offering) {
+        val chip = inflater.inflate(R.layout.row_library_chip, library, false)
+        chip.findViewById<TextView>(R.id.chip_name).text = offering.name
+        chip.findViewById<TextView>(R.id.chip_chord).text = offering.detail
+        chip.findViewById<View>(R.id.chip_mine).visibility =
+            if (offering.mine) View.VISIBLE else View.INVISIBLE
+
+        chip.setOnLongClickListener { view ->
+            // The id rather than the whole shortcut: a drag can outlive the
+            // list it started from if the host sends a new one mid-gesture,
+            // and looking the id up at the drop is how the dropped thing
+            // stays the thing that still exists.
+            val data = ClipData.newPlainText("shortcut", offering.id.toString())
+            view.startDragAndDrop(data, View.DragShadowBuilder(view), null, 0)
+            true
         }
+        stack(chip)
+    }
+
+    private fun addRecordChip() {
+        val chip = TextView(root.context).apply {
+            text = context.getString(R.string.editor_new)
+            gravity = android.view.Gravity.CENTER
+            setPadding(artboard.size(CHIP_H), artboard.size(NEW_V), artboard.size(CHIP_H), artboard.size(NEW_V))
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.text(NEW_TEXT))
+            setTextColor(context.getColor(R.color.muted))
+            setBackgroundResource(R.drawable.new_shortcut_chip)
+            typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
+            setOnClickListener { onRecord?.invoke() }
+        }
+        stack(chip)
+    }
+
+    /** Adds [chip] to the library with the gap the drawing puts between them. */
+    private fun stack(chip: View) {
+        chip.layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            topMargin = if (library.childCount == 0) 0 else artboard.size(CHIP_STACK)
+        }
+        library.addView(chip)
+    }
+
+    private companion object {
+        // Artboard units, like everything else on the phone.
+        const val CHIP_H = 9f
+        const val CHIP_V = 3f
+        const val CHIP_GAP = 4f
+        const val CHIP_STACK = 5f
+        const val CHIP_TEXT = Artboard.MIN_READABLE_UNITS
+        const val NEW_V = 7f
+        const val NEW_TEXT = Artboard.MIN_READABLE_UNITS
+        const val RAIL_HEADING = Artboard.MIN_READABLE_UNITS
     }
 
     private fun nameOf(group: ShortcutGroup?): String = root.context.getString(
@@ -294,5 +389,4 @@ class EditorPanel(private val root: View) {
     )
 }
 
-/** The rail entry a library shortcut becomes. */
-private fun LibraryEntry.asSlot() = Slot(name, action)
+

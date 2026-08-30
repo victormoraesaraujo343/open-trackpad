@@ -26,6 +26,13 @@ object RailIcons {
         "back" to "M16 10H4M9 5 4 10l5 5",
         "click" to "M10 3.4a5.4 5.4 0 0 1 5.4 5.4v2.6A5.4 5.4 0 0 1 10 16.8a5.4 5.4 0 0 1-5.4-5.4V8.8A5.4 5.4 0 0 1 10 3.4z" +
             "M10 3.6v5.2M10 8.8h5.4",
+        // The same mouse, with a different quarter of it closed off. The body is
+        // symmetric about the middle, so only the divider changes — which is
+        // also the only part anybody is reading.
+        "clickleft" to "M10 3.4a5.4 5.4 0 0 1 5.4 5.4v2.6A5.4 5.4 0 0 1 10 16.8a5.4 5.4 0 0 1-5.4-5.4V8.8A5.4 5.4 0 0 1 10 3.4z" +
+            "M10 3.6v5.2M10 8.8H4.6",
+        "clickmiddle" to "M10 3.4a5.4 5.4 0 0 1 5.4 5.4v2.6A5.4 5.4 0 0 1 10 16.8a5.4 5.4 0 0 1-5.4-5.4V8.8A5.4 5.4 0 0 1 10 3.4z" +
+            "M8.7 4.2h2.6v4.6H8.7z",
         "copy" to "M7.4 7.4h8v8h-8zM12.6 5.2V4.6a.6.6 0 0 0-.6-.6H5.2a.6.6 0 0 0-.6.6v6.8a.6.6 0 0 0 .6.6h.6",
         "esc" to "M9 4.6H5.6a1 1 0 0 0-1 1v8.8a1 1 0 0 0 1 1H9M11.8 7.4 8.4 10.8l3.4 3.4M8.4 10.8h7",
         "find" to "M12.6 12.6 16.4 16.4M8.8 14.2a5.4 5.4 0 1 0 0-10.8 5.4 5.4 0 0 0 0 10.8z",
@@ -127,5 +134,17 @@ object RailIcons {
     /** The glyph name for an action, which today is always a chord. */
     fun forAction(action: Action): String = when (action) {
         is Action.KeyChord -> BY_CHORD[action.chord.lowercase()] ?: FALLBACK
+
+        is Action.Click -> when (action.button) {
+            Action.Button.RIGHT -> "click"
+            Action.Button.LEFT -> "clickleft"
+            Action.Button.MIDDLE -> "clickmiddle"
+        }
+
+        // Never drawn on a rail: the recorder is reached from a chip in the
+        // editor, not from a slot somebody could fill with it. Answered anyway,
+        // so that adding a way to put it on one is a decision rather than a
+        // crash.
+        Action.Record -> "keys"
     }
 }

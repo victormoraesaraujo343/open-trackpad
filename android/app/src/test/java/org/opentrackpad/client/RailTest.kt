@@ -69,7 +69,7 @@ class RailTest {
         assertEquals(Rails.SLOTS, rail.size)
         assertTrue(rail.all { it != null })
         for (index in 0 until Rails.SLOTS) {
-            assertEquals(profile.ring[index]!!.label, rail[index]?.label)
+            assertEquals(profile.overflow[index]!!.label, rail[index]?.label)
         }
     }
 

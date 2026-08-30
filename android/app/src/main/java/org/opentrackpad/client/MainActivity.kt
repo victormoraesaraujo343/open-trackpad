@@ -72,6 +72,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var editorPanel: View
     private lateinit var editorScreen: EditorPanel
     private lateinit var namePanel: View
+    private lateinit var recordingPanel: View
     private lateinit var nameScreen: NamePanel
 
     /** The profile being copied, while its name is being chosen. */
@@ -189,6 +190,18 @@ class MainActivity : AppCompatActivity() {
         nameScreen.onSave = ::saveCopy
         nameScreen.onTyping = ::waitBeforeReturning
 
+        editorScreen.onRecord = {
+            // Sent and forgotten, which is the whole shape of this verb. The
+            // recorder is a window on the computer and the shortcut it produces
+            // arrives through the library like any other — so there is nothing
+            // to hold open, nothing to time out, and nothing to cancel.
+            connection.send(Action.Record)
+            show(Panel.RECORDING)
+        }
+
+        recordingPanel = findViewById(R.id.recording_panel)
+        findViewById<View>(R.id.recording_close).setOnClickListener { show(Panel.EDITOR) }
+
         editorScreen.onDuplicate = { draft ->
             copying = draft
             nameScreen.show(draft, NamePanel.suggest(this, draft, stored.profiles.map { it.name }))
@@ -197,12 +210,7 @@ class MainActivity : AppCompatActivity() {
 
         settingsPanel = findViewById(R.id.settings_panel)
         findViewById<View>(R.id.settings_back).setOnClickListener { show(Panel.NONE) }
-        findViewById<View>(R.id.settings_import).setOnClickListener {
-            // Re-asked every time it opens rather than trusted: the offer is
-            // re-runnable, and what the computer has may have changed since.
-            ask(Library.refresh(++requestSequence, Library.IMPORT))
-            show(Panel.IMPORT)
-        }
+        findViewById<View>(R.id.settings_import).setOnClickListener { openImport() }
         bindSettings()
 
         trouble = findViewById(R.id.trouble)
@@ -366,6 +374,7 @@ class MainActivity : AppCompatActivity() {
             SlotPress.Profiles -> show(Panel.PROFILES)
             SlotPress.Settings -> show(Panel.SETTINGS)
             SlotPress.Editor -> show(Panel.EDITOR)
+            SlotPress.Import -> openImport()
             is SlotPress.Audio -> openAudio(press.page)
             SlotPress.Close -> show(Panel.NONE)
             SlotPress.None -> Unit
@@ -373,7 +382,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** What is over the trackpad, if anything. Only ever one thing. */
-    private enum class Panel { NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT, EDITOR, NAME }
+    private enum class Panel {
+        NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT, EDITOR, NAME,
+
+        /**
+         * The computer's recorder is open and this phone is telling somebody so.
+         *
+         * Not a wait. Nothing on this screen is listening for a reply, because
+         * `RECORD` has none: what comes back is a new entry in the shortcuts
+         * domain, minutes later or never, and it arrives whether this screen is
+         * open or closed.
+         */
+        RECORDING,
+    }
 
     private var panel = Panel.NONE
 
@@ -406,7 +427,9 @@ class MainActivity : AppCompatActivity() {
         }
         if (next == Panel.SETTINGS) showSettings()
         if (next == Panel.IMPORT) importScreen.show(library)
-        if (next == Panel.EDITOR) editorScreen.show(activeProfile, library.entries)
+        if (next == Panel.EDITOR) {
+            editorScreen.show(activeProfile, library.entries, canRecord = canRecord())
+        }
 
         ring.visibility = if (next == Panel.RING) View.VISIBLE else View.GONE
         profileMenu.visibility = if (next == Panel.PROFILES) View.VISIBLE else View.GONE
@@ -415,6 +438,7 @@ class MainActivity : AppCompatActivity() {
         importPanel.visibility = if (next == Panel.IMPORT) View.VISIBLE else View.GONE
         editorPanel.visibility = if (next == Panel.EDITOR) View.VISIBLE else View.GONE
         namePanel.visibility = if (next == Panel.NAME) View.VISIBLE else View.GONE
+        recordingPanel.visibility = if (next == Panel.RECORDING) View.VISIBLE else View.GONE
         // The keyboard belongs to one screen and must not outlive it.
         if (next != Panel.NAME) nameScreen.hideKeyboard()
         // The rail opposite the Quick Ring becomes the panel's pages while one
@@ -612,7 +636,7 @@ class MainActivity : AppCompatActivity() {
         )
         ProfileStore.save(settingsFile, stored)
         layOutRails()
-        editorScreen.show(copy, library.entries)
+        editorScreen.show(copy, library.entries, canRecord = canRecord())
         show(Panel.EDITOR)
     }
 
@@ -656,11 +680,21 @@ class MainActivity : AppCompatActivity() {
      * the artboard draws shortcuts in it. Those cannot both be right, and the
      * mechanism is the same either way.
      */
+    /**
+     * What the Quick Ring holds: destinations, and never shortcuts.
+     *
+     * From `docs/ROADMAP.md` — "the ring is therefore not a shortcut menu but
+     * the app's only way in to anything at all". It reads as a shortcut menu,
+     * which is how this was built as one and then quietly showed nothing: the
+     * shortcuts it would have drawn were already on the rail opposite, so the
+     * ring came out holding its three destinations and looking broken.
+     *
+     * There is no attempt to fill eight. Fewer destinations leave wedges empty,
+     * the same rule the rails follow, and they are anchored at the last wedge so
+     * that Settings is in the same place whether or not this host granted audio.
+     * A way out that moved would have to be looked for every time.
+     */
     private fun ringWedges(): List<RailSlot?> {
-        // The last two wedges are the ways out of the surface and into the rest
-        // of the app. They are fixed positions for the same reason slot five of
-        // a rail is: a destination that moved when a profile gained a shortcut
-        // would have to be looked for every time.
         val destinations = buildList {
             // Only when the host said it could serve it. A wedge that opened a
             // panel with nothing behind it would be the "broken" that the
@@ -671,6 +705,22 @@ class MainActivity : AppCompatActivity() {
                         label = getString(R.string.audio_sound),
                         icon = RailIcons.path("vol"),
                         press = SlotPress.Audio(stored.settings.audioOpensOn),
+                    )
+                )
+            }
+            // Carries the count, because the number is the reason to press it.
+            // Present whenever the host offers the domain, including at zero:
+            // the screen that says there is nothing new to import is a better
+            // answer than a wedge that comes and goes.
+            if (library.offers) {
+                val waiting = library.candidates.size
+                add(
+                    RailSlot(
+                        label =
+                            if (waiting > 0) getString(R.string.ring_import_count, waiting)
+                            else getString(R.string.ring_import),
+                        icon = RailIcons.path("app"),
+                        press = SlotPress.Import,
                     )
                 )
             }
@@ -689,19 +739,9 @@ class MainActivity : AppCompatActivity() {
                 )
             )
         }
-        // Empty positions are dropped here rather than carried through: the
-        // ring's wedges are its own five-and-eight arrangement, and a hole left
-        // on a rail has no meaning once the shortcuts have moved into a circle.
-        val shortcuts = activeProfile.ring.drop(Rails.SLOTS).filterNotNull().map { slot ->
-            RailSlot(
-                label = slot.label,
-                icon = RailIcons.path(RailIcons.forAction(slot.action)),
-                press = SlotPress.Send(slot.action),
-            )
-        }
         val first = RingGeometry.WEDGES - destinations.size
         return List(RingGeometry.WEDGES) { index ->
-            if (index >= first) destinations[index - first] else shortcuts.getOrNull(index)
+            destinations.getOrNull(index - first)
         }
     }
 
@@ -806,6 +846,10 @@ class MainActivity : AppCompatActivity() {
         audio.grant(Audio.CAPABILITY in granted)
         audio.reset()
         library.reset()
+        library.grant(
+            shortcuts = Library.SHORTCUTS in granted,
+            imports = Library.IMPORT in granted,
+        )
         offeredThisSession = false
         // A request from the previous session can never be answered now, and
         // leaving its number here would let a refusal from this one land on a
@@ -874,6 +918,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Opens the import review, from settings or from the ring.
+     *
+     * Re-asks the host every time rather than trusting what it already had: the
+     * offer is re-runnable, and what the computer has may have changed since.
+     */
+    /**
+     * Whether asking the computer to record something could work right now.
+     *
+     * Both halves are needed and they fail differently: a version 3 host would
+     * hang up over the message, and a host that never granted the shortcuts
+     * domain would run the recorder and have nowhere to put the result.
+     */
+    private fun canRecord(): Boolean =
+        library.lists && lastState == ConnectionState.CONNECTED
+
+    private fun openImport() {
+        ask(Library.refresh(++requestSequence, Library.IMPORT))
+        show(Panel.IMPORT)
+    }
+
     private fun ask(line: String?) {
         connection.send(HostConnection.Request(line ?: return))
     }
@@ -915,7 +980,7 @@ class MainActivity : AppCompatActivity() {
         // two things lost for one press.
         when (panel) {
             Panel.NONE -> @Suppress("DEPRECATION") super.onBackPressed()
-            Panel.NAME -> show(Panel.EDITOR)
+            Panel.NAME, Panel.RECORDING -> show(Panel.EDITOR)
             else -> show(Panel.NONE)
         }
     }

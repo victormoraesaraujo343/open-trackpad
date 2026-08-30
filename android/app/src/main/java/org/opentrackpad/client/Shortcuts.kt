@@ -8,11 +8,14 @@ data class Slot(val label: String, val action: Action)
 /**
  * A named set of shortcuts, ordered.
  *
- * There is one list rather than a rail list and a ring list. The first
- * [RAIL_SLOTS] appear on the rail; everything after them lives in the Quick
- * Ring. Promoting a shortcut to the rail is therefore moving it up the list,
- * which is exactly what reordering from inside the ring does — and it means the
- * two views can never disagree about what exists.
+ * One list rather than one per rail. The first [RAIL_SLOTS] are the shortcut
+ * rail; everything after them is the rail opposite. Moving a shortcut between
+ * the two is therefore a change of position and nothing else, and the two views
+ * can never disagree about what exists.
+ *
+ * The Quick Ring is not in this list and never was, though the names here said
+ * it was until the ring was pinned down. It holds destinations — settings,
+ * profiles, the audio panel — and no shortcuts at all.
  */
 data class Profile(val name: String, val shortcuts: List<Slot?>) {
 
@@ -28,21 +31,21 @@ data class Profile(val name: String, val shortcuts: List<Slot?>) {
     val rail: List<Slot?> get() = shortcuts.take(RAIL_SLOTS)
 
     /**
-     * Everything after the shortcut rail.
+     * Everything after the shortcut rail: the rail opposite it.
      *
-     * The first five fill the rail opposite; anything past those is reachable
-     * only through the Quick Ring. One list rather than three, so the views can
-     * never disagree about what exists.
+     * This was called `ring`, and the name cost an evening. The rail opposite
+     * read it as "not on the shortcut rail" and the Quick Ring read it as "not
+     * on either rail" — one property, two meanings, forty lines apart, and the
+     * arithmetic that followed was correct in both places. What Victor saw was
+     * a ring with three items in it, which is what nine shortcuts minus four
+     * minus five comes to.
+     *
+     * Nothing past the tenth shortcut is reachable today. That is honest and it
+     * is a limit worth knowing about: it used to be hidden behind a ring that
+     * was never going to show them.
      */
-    val ring: List<Slot?> get() = shortcuts.drop(RAIL_SLOTS)
+    val overflow: List<Slot?> get() = shortcuts.drop(RAIL_SLOTS)
 
-    /**
-     * Moves the shortcut at [from] to [to], which is how the ring promotes one
-     * onto the rail and demotes another.
-     *
-     * Out-of-range positions are ignored rather than throwing: this is driven
-     * by dragging, and a drag that ends somewhere unexpected should do nothing.
-     */
     /** The same profile with [index] emptied, every other position untouched. */
     fun clear(index: Int): Profile {
         if (index !in shortcuts.indices) return this
@@ -58,6 +61,24 @@ data class Profile(val name: String, val shortcuts: List<Slot?>) {
         return copy(shortcuts = out)
     }
 
+    /**
+     * Moves the shortcut at [from] to [to].
+     *
+     * **Nothing calls this, and that is correct rather than unfinished.** It was
+     * written for promoting a shortcut out of the Quick Ring onto the rail, back
+     * when the ring was believed to hold shortcuts. It does not: it holds
+     * destinations, so there is nothing in it to promote. Rearranging happens by
+     * dragging in the editor, where both rails are visible at once and you can
+     * see what a move displaces.
+     *
+     * Kept because it is the correct operation on this list if a second way to
+     * rearrange ever arrives, and tested so that it still is. Do not wire it to
+     * the ring.
+     *
+     * Out-of-range positions are ignored rather than throwing: any caller would
+     * be driven by dragging, and a drag that ends somewhere unexpected should do
+     * nothing.
+     */
     fun reorder(from: Int, to: Int): Profile {
         if (from !in shortcuts.indices || to !in shortcuts.indices || from == to) return this
         val moved = shortcuts.toMutableList()

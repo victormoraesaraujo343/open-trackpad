@@ -142,6 +142,16 @@ class HostConnection(
     private var worker: Thread? = null
     private var sequence = 0L
 
+    /**
+     * The language this session actually settled on.
+     *
+     * Not what we opened with: a host that refuses version 4 gets asked again in
+     * version 3, and from then until the socket dies there are things the client
+     * knows how to say that this host would hang up over.
+     */
+    @Volatile
+    private var speaks = Protocol.VERSION
+
     fun start(metrics: SurfaceMetrics) {
         synchronized(lock) {
             surface = metrics
@@ -250,6 +260,7 @@ class HostConnection(
                     // backlog. Only a completed handshake counts as connected,
                     // which is also what stops a failed one from being reported
                     // afterwards as "reconnecting" to something we never had.
+                    speaks = version
                     when (openSession(socket, writer, version)) {
                         Handshake.ACCEPTED -> {
                             everConnected = true
@@ -424,7 +435,15 @@ class HostConnection(
         }
         while (true) {
             when (val next = nextMessage() ?: break) {
-                is Outgoing.Shortcut -> writer.write(next.action.encode(++sequence))
+                is Outgoing.Shortcut -> {
+                    // Dropped here rather than refused at the button, because
+                    // this is the only place that knows which language the
+                    // session settled on. Silently: a version 3 session already
+                    // says so on its own card and in settings, and a second
+                    // complaint per press would say nothing the first did not.
+                    if (next.action.afterVersionThree && speaks != Protocol.VERSION) continue
+                    writer.write(next.action.encode(++sequence))
+                }
                 // Requests carry their own numbering, which the host echoes
                 // back only when refusing, so it is not the frame sequence.
                 is Outgoing.Ask -> writer.write(next.request.line)
