@@ -321,6 +321,37 @@ the application converting a continuous gesture into discrete steps, not
 anything this project can fix: browsers commonly zoom a page in fixed
 increments regardless of how far the fingers travelled.
 
+### With mouse buttons, on OTP/4
+
+`sudo OPENTRACKPAD_PORT=4344 ./scripts/validate-touchpad.sh`, run by the owner
+on 2026-08-30. Kernel 7.2.2-1-cachyos, libinput 1.31.3, KDE on Wayland.
+
+```text
+evdev events the kernel saw        1807
+pointer motion (one finger)          60
+scroll (two fingers)                 39
+swipe gestures (three, four)         78
+pinch updates (zoom)                 86
+contacts discarded as palms           0
+button presses (left, right, middle)  3 of 3
+button releases                       3 of 3
+PASS: pointer motion works.
+```
+
+**Three of three settles an open question.** A button is pressed and released as
+two reports with nothing between them, and this project had already measured
+identical chords microseconds apart collapsing downstream — so a zero-duration
+click might have arrived without its release, leaving a mouse button held on
+somebody's desktop with nothing clickable to escape it. It survives. No
+deliberate hold is needed, and the expectation is now a measurement.
+
+The run also re-answers the touch path, which had been unable to answer at all
+between OTP/3 and 2026-08-29 for the reasons above.
+
+**The port matters.** The script defaults to 4343, which is also where a
+development stand-in host commonly runs; `Address already in use` is that
+collision rather than a fault. `OPENTRACKPAD_PORT` moves it.
+
 ### Synthetic validation
 
 `sudo ./scripts/validate-touchpad.sh`, after removing the pressure axes:
