@@ -100,6 +100,10 @@
     <string name="import_choose_all">Choose all</string>
     <string name="import_choose_none">Choose none</string>
     <string name="import_note">Only the ticked ones become buttons. Nothing on your computer changes, and you can record more later.</string>
+    <string name="import_adding">Adding…</string>
+    <string name="import_refused_stale">That list changed while you were choosing. It has been reloaded — check your ticks and try again.</string>
+    <string name="import_refused_full">That is more than the shortcut list can hold. Untick a few and try again.</string>
+    <string name="import_refused_other">Your computer could not add those. Nothing changed.</string>
     <string name="import_none">Nothing to bring over. Your computer has no shortcuts OpenTrackpad does not already know.</string>
 
     <!--

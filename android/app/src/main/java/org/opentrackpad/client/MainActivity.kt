@@ -154,12 +154,14 @@ class MainActivity : AppCompatActivity() {
         importScreen = ImportPanel(importPanel)
         importScreen.onDismiss = { show(Panel.NONE) }
         importScreen.onAccept = { generation, ids ->
-            ask(Library.accept(++requestSequence, generation, ids))
-            // No acknowledgement is sent for a success: the snapshot that
-            // follows is the acknowledgement, and it carries what actually
-            // happened rather than what was asked for.
-            show(Panel.NONE)
+            accepting = ++requestSequence
+            ask(Library.accept(accepting, generation, ids))
         }
+        // The screen closes when the host sends the picture that resulted,
+        // which is the only acknowledgement the protocol has. Closing on the
+        // request instead would leave somebody believing thirty shortcuts had
+        // been added when the answer was a refusal.
+        importScreen.onAccepted = { show(Panel.NONE) }
 
         settingsPanel = findViewById(R.id.settings_panel)
         findViewById<View>(R.id.settings_back).setOnClickListener { show(Panel.NONE) }
@@ -722,6 +724,9 @@ class MainActivity : AppCompatActivity() {
 
     private var requestSequence = 0L
 
+    /** The sequence of an accept still waiting for an answer, or -1. */
+    private var accepting = -1L
+
     private fun onGranted(granted: Set<String>) {
         audio.grant(Audio.CAPABILITY in granted)
         audio.reset()
@@ -744,6 +749,20 @@ class MainActivity : AppCompatActivity() {
      * client has to be able to be older than the computer it is plugged into.
      */
     private fun onHostLine(line: String) {
+        // Refusals first, and by themselves. The line names a sequence rather
+        // than a domain, so no domain can claim it and asking one to parse it
+        // means the reasons only another domain can produce are dropped.
+        Wire.refusal(line)?.let { refusal ->
+            if (refusal.sequence == accepting) {
+                accepting = -1
+                importScreen.refused(refusal.reason)
+            } else {
+                // Everything else springs a control back to whatever the host
+                // says is true, which the picture already holds.
+                Log.i(TAG, "refused " + refusal.sequence + ": " + refusal.reason)
+            }
+            return
+        }
         Library.parse(line)?.let { message ->
             library.apply(message)?.let { domain ->
                 ask(Library.refresh(++requestSequence, domain))
@@ -752,12 +771,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val message = Audio.parse(line) ?: return
-        if (message is AudioMessage.Refused) {
-            // The fader springs back to whatever the host says is true, which
-            // the picture already holds. Saying why is the panel's job.
-            Log.i(TAG, "refused " + message.sequence + ": " + message.reason.wire)
-            return
-        }
         // True means we hold a picture that was superseded by one we never saw,
         // so patching it would be guesswork. Ask for the whole thing instead.
         if (audio.apply(message)) ask(Audio.refresh(++requestSequence))

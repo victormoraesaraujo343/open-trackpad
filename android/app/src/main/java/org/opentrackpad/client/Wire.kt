@@ -62,6 +62,27 @@ object Wire {
         return String(bytes.toByteArray(), Charsets.UTF_8)
     }
 
+    /**
+     * Why a request that was legal could not be done.
+     *
+     * One line shared by every domain — `REFUSED <sequence> <reason>` — so it
+     * is parsed here rather than by whichever panel happens to look first.
+     * Reading it in the audio module meant `stale` and `full`, which only the
+     * import offer can produce, were silently unparseable and the screen that
+     * asked never heard the answer.
+     *
+     * The sequence is the only thing that says which request this answers,
+     * because the line does not name a domain.
+     */
+    data class Refusal(val sequence: Long, val reason: String)
+
+    fun refusal(line: String): Refusal? {
+        val parts = line.trim().split(' ')
+        if (parts.size != 3 || parts[0] != "REFUSED") return null
+        val sequence = parts[1].toLongOrNull() ?: return null
+        return Refusal(sequence, parts[2])
+    }
+
     /** What an update naming a generation means for the picture being held. */
     enum class Verdict {
         /** It belongs to the picture we hold. */

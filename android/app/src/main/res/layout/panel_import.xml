@@ -180,6 +180,14 @@
                     android:orientation="vertical" />
             </ScrollView>
 
+            <!-- Why the last attempt did not work. Absent until it happens. -->
+            <TextView
+                android:id="@+id/import_problem"
+                style="@style/CardNote"
+                android:textColor="@color/amber"
+                android:visibility="gone"
+                tools:text="That offer is out of date." />
+
             <TextView
                 style="@style/CardNote"
                 android:text="@string/import_note" />

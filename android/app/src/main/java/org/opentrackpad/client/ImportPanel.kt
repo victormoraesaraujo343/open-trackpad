@@ -22,8 +22,14 @@ class ImportPanel(private val root: View) {
     /** Accept these, in this offer. */
     var onAccept: ((generation: Long, ids: List<Int>) -> Unit)? = null
 
+    /** The host sent the picture that resulted, which is how it says yes. */
+    var onAccepted: (() -> Unit)? = null
+
     /** Leave without taking any. */
     var onDismiss: (() -> Unit)? = null
+
+    /** True from pressing Add until the host answers, one way or the other. */
+    private var waiting = false
 
     private val inflater = LayoutInflater.from(root.context)
     private val groupList: LinearLayout = root.findViewById(R.id.import_group_list)
@@ -33,6 +39,7 @@ class ImportPanel(private val root: View) {
     private val groupTally: TextView = root.findViewById(R.id.import_group_tally)
     private val chooseAll: TextView = root.findViewById(R.id.import_choose_all)
     private val add: TextView = root.findViewById(R.id.import_add)
+    private val problem: TextView = root.findViewById(R.id.import_problem)
 
     private var offer: List<Pair<ShortcutGroup?, List<Candidate>>> = emptyList()
     private var generation = -1L
@@ -53,7 +60,14 @@ class ImportPanel(private val root: View) {
         root.findViewById<View>(R.id.import_skip).setOnClickListener { onDismiss?.invoke() }
         add.setOnClickListener {
             val ids = chosen.toList()
-            if (ids.isNotEmpty()) onAccept?.invoke(generation, ids)
+            if (ids.isEmpty() || waiting) return@setOnClickListener
+            // Sent whole, never split. Accepting bumps the offer's generation,
+            // so a second request carrying the original one is refused `stale`
+            // by construction — splitting cannot work and would land the first
+            // batch and bounce the rest.
+            waiting = true
+            draw()
+            onAccept?.invoke(generation, ids)
         }
         chooseAll.setOnClickListener {
             val here = offer.getOrNull(showing)?.second.orEmpty()
@@ -74,8 +88,36 @@ class ImportPanel(private val root: View) {
      * on Victor's machine — because deciding which dozen is worth having is
      * knowledge the host has and the phone does not.
      */
+    /**
+     * The host refused what was asked for.
+     *
+     * The screen stays where it is and says why. Closing on a refusal would
+     * leave somebody believing thirty shortcuts had been added when none had,
+     * which is the one outcome worse than the request failing.
+     */
+    fun refused(reason: String) {
+        waiting = false
+        problem.text = root.context.getString(
+            when (reason) {
+                "stale" -> R.string.import_refused_stale
+                "full" -> R.string.import_refused_full
+                else -> R.string.import_refused_other
+            }
+        )
+        problem.visibility = View.VISIBLE
+        draw()
+    }
+
     fun show(state: LibraryState) {
         val fresh = state.offerGeneration != generation
+        // A new offer after a wait is the acknowledgement: the protocol never
+        // says yes, it just sends the picture that resulted.
+        if (waiting && fresh) {
+            waiting = false
+            problem.visibility = View.GONE
+            onAccepted?.invoke()
+            return
+        }
         generation = state.offerGeneration
         offer = state.offerByGroup()
         val offered = state.candidates.map { it.id }.toSet()
@@ -95,8 +137,9 @@ class ImportPanel(private val root: View) {
         add.text = root.context.getString(R.string.import_add, chosen.size)
         // Nothing ticked is not a state the button can act on, and a lime
         // button that does nothing is worse than a dim one that says so.
-        add.isEnabled = chosen.isNotEmpty()
-        add.alpha = if (chosen.isEmpty()) 0.4f else 1f
+        add.isEnabled = chosen.isNotEmpty() && !waiting
+        add.alpha = if (add.isEnabled) 1f else 0.4f
+        if (waiting) add.text = root.context.getString(R.string.import_adding)
 
         drawGroups()
         drawRows()
