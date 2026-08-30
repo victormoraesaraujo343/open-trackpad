@@ -169,7 +169,7 @@ object DefaultProfiles {
             key("Cut", "ctrl+x"),
             key("Undo", "ctrl+z"),
             key("Redo", "ctrl+shift+z"),
-            key("Escape", "escape"),
+            key("Esc", "escape"),
             key("Screenshot", "print"),
         ),
     )
@@ -199,7 +199,7 @@ object DefaultProfiles {
             key("Next", "nexttrack"),
             key("Previous", "previoustrack"),
             key("Full screen", "f11"),
-            key("Escape", "escape"),
+            key("Esc", "escape"),
             key("Mic mute", "micmute"),
         ),
     )
