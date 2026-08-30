@@ -754,71 +754,84 @@ class MainActivity : AppCompatActivity() {
      * mechanism is the same either way.
      */
     /**
-     * What the Quick Ring holds: destinations, and never shortcuts.
+     * What the Quick Ring holds: four destinations, always, in this order.
      *
      * From `docs/ROADMAP.md` — "the ring is therefore not a shortcut menu but
      * the app's only way in to anything at all". It reads as a shortcut menu,
-     * which is how this was built as one and then quietly showed nothing: the
-     * shortcuts it would have drawn were already on the rail opposite, so the
-     * ring came out holding its three destinations and looking broken.
+     * which is how it was built as one and then quietly showed nothing.
      *
-     * The ring is built to fit them rather than the other way round: four
-     * wedges with a computer attached, two without. Padding to a fixed eight
-     * was tried first and looked like an app that had failed to load — six
-     * empty wedges do not read as room for later.
+     * ## Why the positions are fixed, when nothing else in the app works this way
      *
-     * A destination therefore moves when the host grants a domain, which is the
-     * one thing a fixed count bought. It is worth the trade here and would not
-     * be on a rail: this list changes only when a cable is plugged in, a rail's
-     * changes every time somebody edits a profile.
+     * Everywhere else, a thing the computer cannot serve is **absent** rather
+     * than broken — no audio daemon, no audio panel. The ring is the deliberate
+     * exception, and the reason is that it is navigation rather than a feature:
+     * a rail slot that moves is annoying, a door that moves is disorienting, and
+     * this is the one surface the entire app is reached through.
+     *
+     * That a cable comes out more rarely than a profile is edited makes it worse
+     * rather than better. A thing that moves twice a month is a thing nobody
+     * builds a habit against, because the habit never survives long enough to
+     * form.
+     *
+     * So an unavailable destination is **dimmed, not gone** — the vocabulary the
+     * dead rails already use, and more informative than a gap: "Audio is dim"
+     * says there is no computer, an empty quarter of a circle says nothing. The
+     * rule is that a panel which cannot work should not be drawn, and a door to
+     * it should.
+     *
+     * Two of these are always live. Profiles and Settings need no computer, so
+     * the ring is never a circle of dead ends.
      */
-    private fun ringWedges(): List<RailSlot?> {
-        val destinations = buildList {
-            // Only when the host said it could serve it. A wedge that opened a
-            // panel with nothing behind it would be the "broken" that the
-            // capability handshake exists to avoid — absent is the honest shape.
-            if (audio.granted) {
-                add(
-                    RailSlot(
-                        label = getString(R.string.audio_sound),
-                        icon = RailIcons.path("vol"),
-                        press = SlotPress.Audio(stored.settings.audioOpensOn),
-                    )
-                )
-            }
-            // Carries the count, because the number is the reason to press it.
-            // Present whenever the host offers the domain, including at zero:
-            // the screen that says there is nothing new to import is a better
-            // answer than a wedge that comes and goes.
-            if (library.offers) {
-                val waiting = library.candidates.size
-                add(
-                    RailSlot(
-                        label =
-                            if (waiting > 0) getString(R.string.ring_import_count, waiting)
-                            else getString(R.string.ring_import),
-                        icon = RailIcons.path("app"),
-                        press = SlotPress.Import,
-                    )
-                )
-            }
-            add(
-                RailSlot(
-                    label = getString(R.string.profile_heading),
-                    icon = RailIcons.path("profiles"),
-                    press = SlotPress.Profiles,
-                )
-            )
-            add(
-                RailSlot(
-                    label = getString(R.string.profile_settings),
-                    icon = RailIcons.path("gear"),
-                    press = SlotPress.Settings,
-                )
-            )
-        }
-        return destinations
-    }
+    private fun ringWedges(): List<RailSlot?> = listOf(
+        destination(
+            available = audio.granted,
+            label = getString(R.string.audio_sound),
+            icon = "vol",
+            press = SlotPress.Audio(stored.settings.audioOpensOn),
+        ),
+        destination(
+            available = library.offers,
+            // The count is the reason to press it, so it is only there when
+            // there is something to count.
+            label = library.candidates.size.let { waiting ->
+                if (library.offers && waiting > 0) getString(R.string.ring_import_count, waiting)
+                else getString(R.string.ring_import)
+            },
+            icon = "app",
+            press = SlotPress.Import,
+        ),
+        destination(
+            available = true,
+            label = getString(R.string.profile_heading),
+            icon = "profiles",
+            press = SlotPress.Profiles,
+        ),
+        destination(
+            available = true,
+            label = getString(R.string.profile_settings),
+            icon = "gear",
+            press = SlotPress.Settings,
+        ),
+    )
+
+    /**
+     * One wedge, drawn either way.
+     *
+     * A destination that cannot be reached keeps its place and its word and
+     * loses only its press, which is the same shape [deadened] gives a shortcut
+     * with no session behind it.
+     */
+    private fun destination(
+        available: Boolean,
+        label: String,
+        icon: String,
+        press: SlotPress,
+    ) = RailSlot(
+        label = label,
+        icon = RailIcons.path(icon),
+        press = if (available) press else SlotPress.None,
+        style = if (available) SlotStyle.PLAIN else SlotStyle.DEAD,
+    )
 
     private var started = false
 

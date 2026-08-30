@@ -154,4 +154,17 @@ class RingGeometryTest {
         assertEquals(2, RingGeometry.of(1).wedges)
         assertEquals(2, RingGeometry.of(0).wedges)
     }
+
+    @Test
+    fun `four quarters, and straight up is the middle of one`() {
+        // What the ring actually is now: four destinations, always, at ninety
+        // degrees each. The family of sizes above still holds because the
+        // geometry is general, but this is the one the app builds, and a
+        // regression here moves every door in the product.
+        val ring = RingGeometry.of(4)
+        assertEquals(4, ring.wedges)
+        assertEquals(90f, ring.sweep, 0.01f)
+        val up = ring.at(0f, -79f, inner, outer)
+        assertEquals(-90f, ring.middleOf(up), 0.01f)
+    }
 }

@@ -209,6 +209,9 @@ class QuickRingView @JvmOverloads constructor(
                 val now = wedgeAt(event.x, event.y).takeIf { it >= 0 } ?: NOTHING_HELD
                 if (now != held) {
                     held = now
+                    // Crossing a wedge you cannot choose still ticks: you did
+                    // pass something, and [Haptics.cross] means passing rather
+                    // than choosing. What it must not do is light up.
                     if (held >= 0 && wedges.getOrNull(held) != null) tick()
                     invalidate()
                 }
@@ -231,6 +234,13 @@ class QuickRingView @JvmOverloads constructor(
                             // An empty wedge is a hole, not a button. It does
                             // not close the ring either: closing on a miss
                             // would make the ring feel like it collapsed.
+                            //
+                            // A *dimmed* wedge is not a hole — it is a door to
+                            // something this computer cannot do — so letting go
+                            // on one answers rather than saying nothing. Silence
+                            // there would be indistinguishable from the ring
+                            // having missed the finger.
+                            if (slot != null) haptics?.refused()
                             return true
                         }
                         run {
@@ -293,7 +303,10 @@ class QuickRingView @JvmOverloads constructor(
 
     private fun drawWedge(canvas: Canvas, index: Int) {
         val slot = wedges.getOrNull(index)
-        val on = index == held && slot != null
+
+        // Lime means "this one, now" and nothing else, so a wedge that cannot
+        // be chosen never takes it — not even under a finger.
+        val on = index == held && slot != null && slot.style != SlotStyle.DEAD
 
         val ring = geometry()
         val start = ring.startOf(index)
