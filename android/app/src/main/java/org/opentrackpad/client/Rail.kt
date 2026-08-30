@@ -175,7 +175,15 @@ object Rails {
  */
 fun List<RailSlot?>.deadened(): List<RailSlot?> = map { slot ->
     when (slot?.press) {
+        // Only this one. A shortcut is the sole kind of slot that has anywhere
+        // to go, so it is the sole kind that can be prevented from going there.
         is SlotPress.Send -> slot.copy(press = SlotPress.None, style = SlotStyle.DEAD)
+
+        // Everything else stays live, and this branch is not an oversight to be
+        // tidied into consistency. The Quick Ring, the panels and the way back
+        // are all reachable without a host, and greying them would be a dead
+        // button *and* a closed door at the moment somebody needs the door —
+        // they could not even open the screen that says the cable is out.
         else -> slot
     }
 }

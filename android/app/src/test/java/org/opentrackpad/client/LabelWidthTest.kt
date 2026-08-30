@@ -76,6 +76,16 @@ class LabelWidthTest {
      * for the advances themselves, and `cmap` to turn characters into the
      * glyphs those advances belong to.
      */
+    /**
+     * Measured from the file rather than estimated, and the margin is why.
+     *
+     * "Screenshot" fills 97% of the room a rail label has. Any approximation —
+     * an average advance, a character count, a per-character constant — carries
+     * an error comfortably larger than the 3% that separates fitting from
+     * clipped, so it would have to be tuned generous enough to pass everything
+     * or strict enough to fail things that fit. Either way it stops being a
+     * test of anything. Reading `hmtx` costs a hundred lines once and is exact.
+     */
     private class Metrics(
         private val unitsPerEm: Int,
         private val advances: IntArray,
