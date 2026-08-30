@@ -4,6 +4,6 @@
     android:width="16dp" android:height="16dp"
     android:viewportWidth="20" android:viewportHeight="20">
     <path android:pathData="M16 10H4M9 5 4 10l5 5"
-        android:strokeColor="@color/secondary" android:strokeWidth="1.5"
+        android:strokeColor="?attr/otpSecondary" android:strokeWidth="1.5"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
 </vector>

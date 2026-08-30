@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every colour the app draws with, as a theme attribute.
+
+  An attribute rather than a direct `@color` reference because a theme can
+  override an attribute and cannot override a colour. Victor has approved a
+  second visual identity that ships as a theme rather than a second app, and
+  this is what makes that a data change instead of an edit at four hundred
+  call sites.
+
+  Night is a separate axis and stays one: `values-night` swaps the colours a
+  theme points at, so a theme does not have to know which mode it is in.
+-->
+<resources>
+    <attr name="otpGround" format="color" />
+    <attr name="otpPanel" format="color" />
+    <attr name="otpInset" format="color" />
+    <attr name="otpHairline" format="color" />
+    <attr name="otpInk" format="color" />
+    <attr name="otpBody" format="color" />
+    <attr name="otpSecondary" format="color" />
+    <attr name="otpMuted" format="color" />
+    <attr name="otpFaint" format="color" />
+    <attr name="otpLime" format="color" />
+    <attr name="otpAmber" format="color" />
+    <attr name="otpScrim" format="color" />
+    <attr name="otpLimeBright" format="color" />
+    <attr name="otpLimeDim" format="color" />
+    <attr name="otpAmberDim" format="color" />
+    <attr name="otpRaised" format="color" />
+    <attr name="otpRaisedEdge" format="color" />
+    <attr name="otpStroke" format="color" />
+    <attr name="otpDots" format="color" />
+    <attr name="otpVeil" format="color" />
+</resources>

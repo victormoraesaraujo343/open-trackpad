@@ -72,14 +72,6 @@ class RailView @JvmOverloads constructor(
 
         /** Left and right of the label before it is cut short. */
         const val LABEL_INSET = Artboard.LABEL_INSET_UNITS
-
-        val GROUND = Color.parseColor("#0E0F10")
-        val INSET = Color.parseColor("#1B1D1F")
-        val HAIRLINE = Color.parseColor("#2A2D30")
-        val SECONDARY = Color.parseColor("#C6CBD1")
-        val FAINT = Color.parseColor("#4E545B")
-        val LIME = Color.parseColor("#A3E635")
-        val LIME_BRIGHT = Color.parseColor("#BBEF6B")
     }
 
     /** What a press asks for. Set by the activity; never called for a dead slot. */
@@ -107,6 +99,9 @@ class RailView @JvmOverloads constructor(
             field = value
             invalidate()
         }
+
+    /** Every colour this draws with, from the theme. See [Palette]. */
+    private val palette = Palette.of(context)
 
     private val artboard = Artboard.measure(
         resources.displayMetrics,
@@ -282,24 +277,24 @@ class RailView @JvmOverloads constructor(
         // is drawn as the hole it is — the shape stays so the ones around it
         // cannot move, but nothing is offered inside it.
         fill.color = when {
-            slot == null -> GROUND
-            filled && pressed -> LIME_BRIGHT
-            filled -> LIME
-            pressed -> HAIRLINE
-            else -> INSET
+            slot == null -> palette.ground
+            filled && pressed -> palette.limeBright
+            filled -> palette.lime
+            pressed -> palette.hairline
+            else -> palette.inset
         }
         border.color = when {
-            slot == null -> HAIRLINE
-            filled && pressed -> LIME_BRIGHT
-            filled -> LIME
-            style == SlotStyle.ACTIVE -> LIME
-            else -> HAIRLINE
+            slot == null -> palette.hairline
+            filled && pressed -> palette.limeBright
+            filled -> palette.lime
+            style == SlotStyle.ACTIVE -> palette.lime
+            else -> palette.hairline
         }
         val ink = when {
-            filled -> GROUND
-            style == SlotStyle.ACTIVE -> LIME
-            style == SlotStyle.DEAD -> FAINT
-            else -> SECONDARY
+            filled -> palette.ground
+            style == SlotStyle.ACTIVE -> palette.lime
+            style == SlotStyle.DEAD -> palette.faint
+            else -> palette.secondary
         }
 
         val half = border.strokeWidth / 2f

@@ -51,15 +51,6 @@ class ProfileMenuView @JvmOverloads constructor(
         private const val RULE_MARGIN = 6f
         private const val TICK = 14f
 
-        private val SCRIM = Color.parseColor("#7308090A")
-        private val PANEL = Color.parseColor("#1B1D1F")
-        private val HAIRLINE = Color.parseColor("#2A2D30")
-        private val SECONDARY = Color.parseColor("#C6CBD1")
-        private val BODY = Color.parseColor("#8A9099")
-        private val MUTED = Color.parseColor("#6B7178")
-        private val INK = Color.parseColor("#E6E8EA")
-        private val LIME = Color.parseColor("#A3E635")
-
         /** The tick beside the profile in use, on the design's 20-unit grid. */
         private const val TICK_PATH = "M4.4 10.4 8.2 14.2 15.6 6"
 
@@ -101,6 +92,9 @@ class ProfileMenuView @JvmOverloads constructor(
             invalidate()
         }
 
+    /** Every colour this draws with, from the theme. See [Palette]. */
+    private val palette = Palette.of(context)
+
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
@@ -109,7 +103,7 @@ class ProfileMenuView @JvmOverloads constructor(
 
     private fun px(units: Float) = artboard.px(units)
 
-    private val scrim = Paint().apply { color = SCRIM }
+    private val scrim = Paint().apply { color = palette.veil }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -120,7 +114,7 @@ class ProfileMenuView @JvmOverloads constructor(
         strokeWidth = 1.6f
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        color = LIME
+        color = palette.lime
     }
     private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
@@ -224,14 +218,14 @@ class ProfileMenuView @JvmOverloads constructor(
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), scrim)
 
         layOutPanel()
-        fill.color = PANEL
-        border.color = HAIRLINE
+        fill.color = palette.inset
+        border.color = palette.hairline
         canvas.drawRoundRect(panel, px(RADIUS), px(RADIUS), fill)
         canvas.drawRoundRect(panel, px(RADIUS), px(RADIUS), border)
 
         text.textAlign = Paint.Align.LEFT
         text.textSize = artboard.text(HEADING)
-        text.color = MUTED
+        text.color = palette.muted
         val headingBaseline = panel.top + px(PADDING) + px(HEADING_TOP) - text.fontMetrics.ascent
         canvas.drawText(
             context.getString(R.string.profile_heading),
@@ -245,7 +239,7 @@ class ProfileMenuView @JvmOverloads constructor(
             rowBounds(index, row)
             if (rule == index && index > 0) {
                 val y = row.top - px(RULE_MARGIN) - border.strokeWidth / 2f
-                fill.color = HAIRLINE
+                fill.color = palette.hairline
                 canvas.drawRect(
                     panel.left + px(PADDING) + px(ROW_INSET),
                     y,
@@ -264,16 +258,16 @@ class ProfileMenuView @JvmOverloads constructor(
         val active = entry is Row.Profile && entry.active
 
         if (on || active) {
-            fill.color = HAIRLINE
+            fill.color = palette.hairline
             canvas.drawRoundRect(row, px(ROW_RADIUS), px(ROW_RADIUS), fill)
         }
 
         text.textAlign = Paint.Align.LEFT
         text.textSize = artboard.text(ROW_TEXT)
         text.color = when {
-            entry is Row.Destination -> BODY
-            active -> INK
-            else -> SECONDARY
+            entry is Row.Destination -> palette.body
+            active -> palette.ink
+            else -> palette.secondary
         }
         val label = when (entry) {
             is Row.Profile -> entry.name

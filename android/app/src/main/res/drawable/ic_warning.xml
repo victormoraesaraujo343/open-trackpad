@@ -7,7 +7,7 @@
     android:viewportHeight="20">
     <path
         android:pathData="M10 3.6 17.4 16H2.6zM10 8.4v3.4M10 13.8v.1"
-        android:strokeColor="@color/amber"
+        android:strokeColor="?attr/otpAmber"
         android:strokeWidth="1.4"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />

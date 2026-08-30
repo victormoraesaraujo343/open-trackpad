@@ -14,7 +14,7 @@
     android:id="@+id/recording_panel"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ground"
+    android:background="?attr/otpGround"
     android:orientation="vertical"
     android:gravity="center"
     android:visibility="gone"
@@ -34,7 +34,7 @@
             android:layout_height="wrap_content"
             android:tag="19"
             android:textSize="19sp"
-            android:textColor="@color/ink"
+            android:textColor="?attr/otpInk"
             android:fontFamily="@font/space_grotesk_semibold"
             android:text="@string/recording_title" />
 
@@ -45,7 +45,7 @@
             android:gravity="center"
             android:tag="14"
             android:textSize="13sp"
-            android:textColor="@color/body"
+            android:textColor="?attr/otpBody"
             android:fontFamily="@font/inter_regular"
             android:text="@string/recording_body" />
 
@@ -56,7 +56,7 @@
             android:gravity="center"
             android:tag="12"
             android:textSize="10sp"
-            android:textColor="@color/muted"
+            android:textColor="?attr/otpMuted"
             android:fontFamily="@font/inter_regular"
             android:text="@string/recording_note" />
 
@@ -69,7 +69,7 @@
             android:paddingVertical="9dp"
             android:tag="13"
             android:textSize="11sp"
-            android:textColor="@color/ink"
+            android:textColor="?attr/otpInk"
             android:fontFamily="@font/inter_medium"
             android:background="@drawable/group_chip"
             android:text="@string/recording_close" />

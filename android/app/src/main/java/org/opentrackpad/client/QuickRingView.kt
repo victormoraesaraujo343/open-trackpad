@@ -53,19 +53,9 @@ class QuickRingView @JvmOverloads constructor(
         private const val ICON_ABOVE = 16f
         private const val LABEL_BELOW = 15f
 
-        private val GROUND = Color.parseColor("#0E0F10")
-        private val INSET = Color.parseColor("#1B1D1F")
-        private val HAIRLINE = Color.parseColor("#2A2D30")
-        private val SECONDARY = Color.parseColor("#C6CBD1")
-        private val FAINT = Color.parseColor("#4E545B")
-        private val MUTED = Color.parseColor("#8A9099")
-        private val LIME = Color.parseColor("#A3E635")
-
         /** Lime at a fifteenth of its strength: a held wedge, not a lit one. */
-        private val LIME_DIM = Color.parseColor("#1D2A10")
 
         /** What the pad is dimmed by while the ring is up: rgba(8,9,10,0.45). */
-        private val SCRIM = Color.parseColor("#7308090A")
 
         /** Held nothing. Distinct from [RingGeometry.HUB], which is a place. */
         private const val NOTHING_HELD = -1
@@ -107,12 +97,21 @@ class QuickRingView @JvmOverloads constructor(
      * positions and a wedge that moved because its neighbour was removed is a
      * wedge pressed by mistake.
      */
-    var wedges: List<RailSlot?> = List(RingGeometry.WEDGES) { null }
+    /**
+     * The destinations, in order. The ring is built to fit them.
+     *
+     * No nulls and no padding: a wedge exists because something is there. See
+     * [RingGeometry].
+     */
+    var wedges: List<RailSlot?> = emptyList()
         set(value) {
             if (field == value) return
             field = value
             invalidate()
         }
+
+    /** Every colour this draws with, from the theme. See [Palette]. */
+    private val palette = Palette.of(context)
 
     private val artboard = Artboard.measure(
         resources.displayMetrics,
@@ -120,7 +119,7 @@ class QuickRingView @JvmOverloads constructor(
         resources.configuration.fontScale,
     )
 
-    private val scrim = Paint().apply { color = SCRIM }
+    private val scrim = Paint().apply { color = palette.veil }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -185,13 +184,16 @@ class QuickRingView @JvmOverloads constructor(
         centreY = height / 2f
     }
 
+    /** The ring this many destinations makes. Cheap; the shape is four numbers. */
+    private fun geometry() = RingGeometry.of(wedges.size)
+
     private fun px(units: Float) = units * unit
 
     // -- touch ---------------------------------------------------------------
 
     /** Which wedge a point in this view is on. See [RingGeometry]. */
     private fun wedgeAt(x: Float, y: Float): Int =
-        RingGeometry.at(x - centreX, y - centreY, px(INNER), px(OUTER))
+        geometry().at(x - centreX, y - centreY, px(INNER), px(OUTER))
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
@@ -285,7 +287,7 @@ class QuickRingView @JvmOverloads constructor(
             centreX + px(INNER), centreY + px(INNER),
         )
 
-        for (index in 0 until RingGeometry.WEDGES) drawWedge(canvas, index)
+        for (index in wedges.indices) drawWedge(canvas, index)
         drawHub(canvas)
     }
 
@@ -293,31 +295,32 @@ class QuickRingView @JvmOverloads constructor(
         val slot = wedges.getOrNull(index)
         val on = index == held && slot != null
 
-        val start = RingGeometry.startOf(index)
+        val ring = geometry()
+        val start = ring.startOf(index)
         wedge.reset()
-        wedge.arcTo(ovalOuter, start, RingGeometry.SWEEP)
-        wedge.arcTo(ovalInner, start + RingGeometry.SWEEP, -RingGeometry.SWEEP)
+        wedge.arcTo(ovalOuter, start, ring.sweep)
+        wedge.arcTo(ovalInner, start + ring.sweep, -ring.sweep)
         wedge.close()
 
         fill.color = when {
-            slot == null -> GROUND
-            on -> LIME_DIM
-            else -> INSET
+            slot == null -> palette.ground
+            on -> palette.limeDim
+            else -> palette.inset
         }
-        border.color = if (on) LIME else HAIRLINE
+        border.color = if (on) palette.lime else palette.hairline
         canvas.drawPath(wedge, fill)
         canvas.drawPath(wedge, border)
         if (slot == null) return
 
         val ink = when {
-            on -> LIME
-            slot.style == SlotStyle.DEAD -> FAINT
-            else -> SECONDARY
+            on -> palette.lime
+            slot.style == SlotStyle.DEAD -> palette.faint
+            else -> palette.secondary
         }
 
         // The middle of the wedge, halfway between its two radii — from the
         // same place the hit test reads, so the two cannot drift apart.
-        val (offsetX, offsetY) = RingGeometry.centreOf(index, px((OUTER + INNER) / 2f))
+        val (offsetX, offsetY) = ring.centreOf(index, px((OUTER + INNER) / 2f))
         val x = centreX + offsetX
         val y = centreY + offsetY
 
@@ -337,12 +340,12 @@ class QuickRingView @JvmOverloads constructor(
     }
 
     private fun drawHub(canvas: Canvas) {
-        fill.color = GROUND
-        border.color = HAIRLINE
+        fill.color = palette.ground
+        border.color = palette.hairline
         canvas.drawCircle(centreX, centreY, px(HUB), fill)
         canvas.drawCircle(centreX, centreY, px(HUB), border)
 
-        label.color = MUTED
+        label.color = palette.body
         label.textSize = artboard.text(HUB_LABEL)
         // Two lines, from the drawing: the hub says what it is and doubles as
         // the way out, so it is never blank.

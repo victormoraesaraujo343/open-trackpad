@@ -4,6 +4,6 @@
     android:width="11dp" android:height="11dp"
     android:viewportWidth="20" android:viewportHeight="20">
     <path android:pathData="M6 9V6.6a4 4 0 0 1 8 0V9M5 9h10v7H5z"
-        android:strokeColor="@color/muted" android:strokeWidth="1.6"
+        android:strokeColor="?attr/otpMuted" android:strokeWidth="1.6"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
 </vector>

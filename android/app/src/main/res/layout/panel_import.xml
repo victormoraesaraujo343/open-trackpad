@@ -14,7 +14,7 @@
     android:id="@+id/import_panel"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ground"
+    android:background="?attr/otpGround"
     android:orientation="vertical"
     android:padding="12dp"
     android:visibility="gone">
@@ -41,7 +41,7 @@
             android:layout_marginStart="10dp"
             android:fontFamily="@font/space_grotesk_semibold"
             android:text="@string/import_title"
-            android:textColor="@color/ink"
+            android:textColor="?attr/otpInk"
             android:tag="14"
             android:textSize="13sp" />
 
@@ -52,7 +52,7 @@
             android:layout_marginStart="10dp"
             android:layout_weight="1"
             android:fontFamily="@font/inter_regular"
-            android:textColor="@color/faint"
+            android:textColor="?attr/otpFaint"
             android:tag="12"
             android:textSize="10sp"
             tools:text="75 found · 12 chosen" />
@@ -68,7 +68,7 @@
             android:paddingHorizontal="8dp"
             android:paddingVertical="5dp"
             android:text="@string/import_skip"
-            android:textColor="@color/body"
+            android:textColor="?attr/otpBody"
             android:tag="13"
             android:textSize="11sp" />
 
@@ -83,7 +83,7 @@
             android:fontFamily="@font/inter_medium"
             android:paddingHorizontal="14dp"
             android:paddingVertical="5dp"
-            android:textColor="@color/ground"
+            android:textColor="?attr/otpGround"
             android:tag="13"
             android:textSize="11sp"
             tools:text="Add 12" />
@@ -140,7 +140,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:fontFamily="@font/space_grotesk_semibold"
-                    android:textColor="@color/ink"
+                    android:textColor="?attr/otpInk"
                     android:tag="12"
                     android:textSize="12sp"
                     tools:text="Windows" />
@@ -152,7 +152,7 @@
                     android:layout_marginStart="10dp"
                     android:layout_weight="1"
                     android:fontFamily="@font/inter_regular"
-                    android:textColor="@color/muted"
+                    android:textColor="?attr/otpMuted"
                     android:tag="12"
                     android:textSize="10sp"
                     tools:text="45 here · 3 chosen" />
@@ -167,7 +167,7 @@
                     android:fontFamily="@font/inter_regular"
                     android:paddingHorizontal="6dp"
                     android:paddingVertical="4dp"
-                    android:textColor="@color/body"
+                    android:textColor="?attr/otpBody"
                     android:tag="12"
                     android:textSize="10sp"
                     tools:text="Choose all" />
@@ -191,7 +191,7 @@
             <TextView
                 android:id="@+id/import_problem"
                 style="@style/CardNote"
-                android:textColor="@color/amber"
+                android:textColor="?attr/otpAmber"
                 android:visibility="gone"
                 tools:text="That offer is out of date." />
 

@@ -18,7 +18,7 @@
     android:id="@+id/settings_panel"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ground"
+    android:background="?attr/otpGround"
     android:orientation="vertical"
     android:padding="12dp"
     android:visibility="gone">
@@ -47,7 +47,7 @@
             android:layout_marginStart="10dp"
             android:fontFamily="@font/space_grotesk_semibold"
             android:text="@string/settings_title"
-            android:textColor="@color/ink"
+            android:textColor="?attr/otpInk"
             android:tag="14"
             android:textSize="13sp" />
     </LinearLayout>
@@ -93,7 +93,7 @@
                     <TextView
                         android:id="@+id/settings_speaking"
                         style="@style/SettingValue"
-                        android:textColor="@color/body"
+                        android:textColor="?attr/otpBody"
                         tools:text="OTP/4" />
                 </LinearLayout>
             </LinearLayout>
@@ -179,7 +179,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:layout_marginVertical="4dp"
-                android:background="@color/hairline" />
+                android:background="?attr/otpHairline" />
 
             <LinearLayout style="@style/SettingRow">
                 <TextView style="@style/SettingLabel" android:text="@string/settings_active_profile" />
@@ -212,7 +212,7 @@
                 <TextView
                     android:id="@+id/settings_import_count"
                     style="@style/SettingValue"
-                    android:textColor="@color/lime"
+                    android:textColor="?attr/otpLime"
                     tools:text="65 to review" />
             </LinearLayout>
 

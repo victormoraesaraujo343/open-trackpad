@@ -11,5 +11,30 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+
+        <!--
+          The palette, as attributes. A second identity is a second style that
+          points these at different colours; nothing that draws has to change.
+        -->
+        <item name="otpGround">@color/ground</item>
+        <item name="otpPanel">@color/panel</item>
+        <item name="otpInset">@color/inset</item>
+        <item name="otpHairline">@color/hairline</item>
+        <item name="otpInk">@color/ink</item>
+        <item name="otpBody">@color/body</item>
+        <item name="otpSecondary">@color/secondary</item>
+        <item name="otpMuted">@color/muted</item>
+        <item name="otpFaint">@color/faint</item>
+        <item name="otpLime">@color/lime</item>
+        <item name="otpAmber">@color/amber</item>
+        <item name="otpScrim">@color/scrim</item>
+        <item name="otpLimeBright">@color/lime_bright</item>
+        <item name="otpLimeDim">@color/lime_dim</item>
+        <item name="otpAmberDim">@color/amber_dim</item>
+        <item name="otpRaised">@color/raised</item>
+        <item name="otpRaisedEdge">@color/raised_edge</item>
+        <item name="otpStroke">@color/stroke</item>
+        <item name="otpDots">@color/dots</item>
+        <item name="otpVeil">@color/veil</item>
     </style>
 </resources>

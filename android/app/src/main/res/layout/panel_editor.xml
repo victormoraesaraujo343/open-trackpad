@@ -11,7 +11,7 @@
     android:id="@+id/editor_panel"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ground"
+    android:background="?attr/otpGround"
     android:orientation="vertical"
     android:padding="12dp"
     android:visibility="gone">
@@ -38,7 +38,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="10dp"
             android:fontFamily="@font/space_grotesk_semibold"
-            android:textColor="@color/ink"
+            android:textColor="?attr/otpInk"
             android:tag="14"
             android:textSize="13sp"
             tools:text="Desktop" />
@@ -49,7 +49,7 @@
             android:layout_marginStart="8dp"
             android:fontFamily="@font/inter_regular"
             android:text="@string/editor_profile"
-            android:textColor="@color/faint"
+            android:textColor="?attr/otpFaint"
             android:tag="12"
             android:textSize="10sp" />
 
@@ -69,7 +69,7 @@
             android:paddingHorizontal="8dp"
             android:paddingVertical="5dp"
             android:text="@string/editor_duplicate"
-            android:textColor="@color/body"
+            android:textColor="?attr/otpBody"
             android:tag="13"
             android:textSize="11sp" />
 
@@ -84,7 +84,7 @@
             android:paddingHorizontal="8dp"
             android:paddingVertical="5dp"
             android:text="@string/editor_reset"
-            android:textColor="@color/body"
+            android:textColor="?attr/otpBody"
             android:tag="13"
             android:textSize="11sp" />
 
@@ -100,7 +100,7 @@
             android:paddingHorizontal="14dp"
             android:paddingVertical="5dp"
             android:text="@string/editor_save"
-            android:textColor="@color/ground"
+            android:textColor="?attr/otpGround"
             android:tag="13"
             android:textSize="11sp" />
     </LinearLayout>
@@ -146,8 +146,8 @@
                 android:maxLines="1"
                 android:paddingHorizontal="9dp"
                 android:paddingVertical="6dp"
-                android:textColor="@color/secondary"
-                android:textColorHint="@color/faint"
+                android:textColor="?attr/otpSecondary"
+                android:textColorHint="?attr/otpFaint"
                 android:tag="13"
                 android:textSize="11sp"
                 tools:hint="Search 54 shortcuts" />

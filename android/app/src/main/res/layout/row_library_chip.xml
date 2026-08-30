@@ -31,7 +31,7 @@
             android:ellipsize="end"
             android:fontFamily="@font/inter_medium"
             android:singleLine="true"
-            android:textColor="@color/secondary"
+            android:textColor="?attr/otpSecondary"
             android:tag="12"
             android:textSize="10sp"
             tools:text="Show all windows" />
@@ -43,7 +43,7 @@
             android:ellipsize="end"
             android:fontFamily="@font/inter_regular"
             android:singleLine="true"
-            android:textColor="@color/faint"
+            android:textColor="?attr/otpFaint"
             android:tag="12"
             android:textSize="9sp"
             tools:text="super+w" />

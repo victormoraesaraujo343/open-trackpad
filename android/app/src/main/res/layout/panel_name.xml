@@ -15,7 +15,7 @@
     android:id="@+id/name_panel"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/ground"
+    android:background="?attr/otpGround"
     android:orientation="vertical"
     android:padding="12dp"
     android:visibility="gone">
@@ -42,7 +42,7 @@
             android:layout_marginStart="10dp"
             android:fontFamily="@font/space_grotesk_semibold"
             android:text="@string/name_title"
-            android:textColor="@color/ink"
+            android:textColor="?attr/otpInk"
             android:tag="14"
             android:textSize="13sp" />
 
@@ -62,7 +62,7 @@
             android:paddingHorizontal="14dp"
             android:paddingVertical="5dp"
             android:text="@string/editor_save"
-            android:textColor="@color/ground"
+            android:textColor="?attr/otpGround"
             android:tag="13"
             android:textSize="11sp" />
     </LinearLayout>
@@ -92,7 +92,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
                 android:fontFamily="@font/inter_regular"
-                android:textColor="@color/faint"
+                android:textColor="?attr/otpFaint"
                 android:tag="12"
                 android:textSize="10sp"
                 tools:text="copied from Desktop · same nine shortcuts" />
@@ -112,7 +112,7 @@
             android:maxLines="1"
             android:paddingHorizontal="13dp"
             android:paddingVertical="10dp"
-            android:textColor="@color/ink"
+            android:textColor="?attr/otpInk"
             android:textCursorDrawable="@null"
             android:tag="15"
             android:textSize="15sp"

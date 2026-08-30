@@ -320,6 +320,29 @@ class MainActivity : AppCompatActivity() {
             marginStart = edge
             marginEnd = edge
         }
+
+        /*
+         * The trouble card takes the middle of the screen, and only the middle.
+         *
+         * It used to take all of it: a `match_parent` overlay with
+         * `clickable="true"`, which swallows every touch it covers. So for as
+         * long as a cable was out, both rails were drawn, looked pressable, and
+         * were not — including the Quick Ring, which is the only way to
+         * settings, profiles and the editor. Somebody unplugged could not reach
+         * any part of the app except the screen telling them they were
+         * unplugged.
+         *
+         * That is the same mistake `deadened()` was corrected for, in a form
+         * that greying could not have caused: there, a dead button; here, a
+         * closed door over every button at once. Inset to the pad instead, which
+         * is where the design puts it anyway — the rails were never what the
+         * card was covering.
+         */
+        trouble.updateLayoutParams<MarginLayoutParams> {
+            val rail = edge + artboard.size(Artboard.RAIL_UNITS)
+            marginStart = rail
+            marginEnd = rail
+        }
         padHint.apply {
             setTextSize(TypedValue.COMPLEX_UNIT_PX, artboard.text(HINT_UNITS))
             updateLayoutParams<MarginLayoutParams> { bottomMargin = artboard.size(HINT_GAP_UNITS) }
@@ -451,6 +474,7 @@ class MainActivity : AppCompatActivity() {
         editorPanel.visibility = if (next == Panel.EDITOR) View.VISIBLE else View.GONE
         namePanel.visibility = if (next == Panel.NAME) View.VISIBLE else View.GONE
         recordingPanel.visibility = if (next == Panel.RECORDING) View.VISIBLE else View.GONE
+        showTroubleIfOnThePad()
         // The keyboard belongs to one screen and must not outlive it.
         if (next != Panel.NAME) nameScreen.hideKeyboard()
         // The rail opposite the Quick Ring becomes the panel's pages while one
@@ -703,10 +727,15 @@ class MainActivity : AppCompatActivity() {
      * shortcuts it would have drawn were already on the rail opposite, so the
      * ring came out holding its three destinations and looking broken.
      *
-     * There is no attempt to fill eight. Fewer destinations leave wedges empty,
-     * the same rule the rails follow, and they are anchored at the last wedge so
-     * that Settings is in the same place whether or not this host granted audio.
-     * A way out that moved would have to be looked for every time.
+     * The ring is built to fit them rather than the other way round: four
+     * wedges with a computer attached, two without. Padding to a fixed eight
+     * was tried first and looked like an app that had failed to load — six
+     * empty wedges do not read as room for later.
+     *
+     * A destination therefore moves when the host grants a domain, which is the
+     * one thing a fixed count bought. It is worth the trade here and would not
+     * be on a rail: this list changes only when a cable is plugged in, a rail's
+     * changes every time somebody edits a profile.
      */
     private fun ringWedges(): List<RailSlot?> {
         val destinations = buildList {
@@ -753,10 +782,7 @@ class MainActivity : AppCompatActivity() {
                 )
             )
         }
-        val first = RingGeometry.WEDGES - destinations.size
-        return List(RingGeometry.WEDGES) { index ->
-            destinations.getOrNull(index - first)
-        }
+        return destinations
     }
 
     private var started = false
@@ -1202,13 +1228,39 @@ class MainActivity : AppCompatActivity() {
         }
 
         troubleSeeking.visibility = if (seeking) View.VISIBLE else View.GONE
-        trouble.visibility = View.VISIBLE
+        troubleWanted = true
+        showTroubleIfOnThePad()
         if (seeking) startPulse() else pulse?.cancel()
     }
 
     private fun hideTrouble() {
+        troubleWanted = false
         trouble.visibility = View.GONE
         pulse?.cancel()
+    }
+
+    /**
+     * Whether the session is in a state worth a card, regardless of what is on
+     * screen right now.
+     */
+    private var troubleWanted = false
+
+    /**
+     * The card is about the pad, so it only shows when the pad is what you are
+     * looking at.
+     *
+     * A panel is a place somebody went on purpose — settings, the ring, the
+     * editor — and covering it with a notice about the trackpad would be
+     * answering a question nobody asked while hiding the one they did. It is
+     * also unavoidable rather than a preference: the ring is drawn inside the
+     * pad's own view, so no ordering of siblings can put it above this.
+     *
+     * Nothing is lost by waiting. The card comes back the moment the pad does,
+     * and the state it describes is still true.
+     */
+    private fun showTroubleIfOnThePad() {
+        trouble.visibility =
+            if (troubleWanted && panel == Panel.NONE) View.VISIBLE else View.GONE
     }
 
     /** The dot that says the app is still looking rather than given up. */

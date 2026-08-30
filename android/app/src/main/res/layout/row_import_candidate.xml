@@ -42,7 +42,7 @@
         android:ellipsize="end"
         android:fontFamily="@font/inter_medium"
         android:singleLine="true"
-        android:textColor="@color/secondary"
+        android:textColor="?attr/otpSecondary"
         android:tag="13"
         android:textSize="11sp"
         tools:text="Show all windows" />
@@ -56,7 +56,7 @@
         android:fontFamily="@font/inter_regular"
         android:paddingHorizontal="8dp"
         android:paddingVertical="3dp"
-        android:textColor="@color/secondary"
+        android:textColor="?attr/otpSecondary"
         android:tag="12"
         android:textSize="10sp"
         tools:text="super+w" />

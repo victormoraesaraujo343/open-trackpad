@@ -3,7 +3,7 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_activated="true">
         <shape android:shape="rectangle">
-            <solid android:color="@color/hairline" />
+            <solid android:color="?attr/otpHairline" />
             <corners android:radius="8dp" />
         </shape>
     </item>

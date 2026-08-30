@@ -52,22 +52,6 @@ class AudioFadersView @JvmOverloads constructor(
          */
         const val PORT = Artboard.MIN_READABLE_UNITS
 
-        val TRACK_BED = Color.parseColor("#24272A")
-        val GREY = Color.parseColor("#6B7178")
-        val GREY_MUTED = Color.parseColor("#2E3236")
-        val INSET = Color.parseColor("#1B1D1F")
-        val HAIRLINE = Color.parseColor("#2A2D30")
-        val KNOB_EDGE = Color.parseColor("#3A3F45")
-        val GROUND = Color.parseColor("#0E0F10")
-        val INK = Color.parseColor("#E6E8EA")
-        val SECONDARY = Color.parseColor("#C6CBD1")
-        val BODY = Color.parseColor("#8A9099")
-        val MUTED = Color.parseColor("#6B7178")
-        val FAINT = Color.parseColor("#4E545B")
-        val LIME = Color.parseColor("#A3E635")
-        val AMBER = Color.parseColor("#F5A524")
-        val AMBER_MUTED = Color.parseColor("#3A3020")
-
         /** A speaker, and a speaker with a cross, on the design's 20-unit grid. */
         const val ICON_ON = "M4.2 8.2h2.6L10.4 5v10L6.8 11.8H4.2zM13.4 7.6a3.4 3.4 0 0 1 0 4.8"
         const val ICON_MUTED =
@@ -136,6 +120,9 @@ class AudioFadersView @JvmOverloads constructor(
             field = value
             invalidate()
         }
+
+    /** Every colour this draws with, from the theme. See [Palette]. */
+    private val palette = Palette.of(context)
 
     private val artboard = Artboard.measure(
         resources.displayMetrics,
@@ -388,7 +375,7 @@ class AudioFadersView @JvmOverloads constructor(
         val boosted = entity.volume > Audio.REFERENCE
         val radius = px(TRACK) / 2f
 
-        fill.color = TRACK_BED
+        fill.color = palette.raised
         bar.set(centre - radius, top, centre + radius, bottom)
         canvas.drawRoundRect(bar, radius, radius, fill)
 
@@ -397,32 +384,32 @@ class AudioFadersView @JvmOverloads constructor(
         // reading the number.
         val reference = bottom - (Audio.REFERENCE.toFloat() / ceiling()) * (bottom - top)
         fill.color = when {
-            entity.muted -> GREY_MUTED
-            entity.isDefault -> LIME
-            else -> GREY
+            entity.muted -> palette.raisedEdge
+            entity.isDefault -> palette.lime
+            else -> palette.muted
         }
         bar.set(centre - radius, maxOf(knobY, reference), centre + radius, bottom)
         canvas.drawRoundRect(bar, radius, radius, fill)
         if (boosted) {
-            fill.color = if (entity.muted) AMBER_MUTED else AMBER
+            fill.color = if (entity.muted) palette.amberDim else palette.amber
             bar.set(centre - radius, knobY, centre + radius, reference)
             canvas.drawRoundRect(bar, radius, radius, fill)
         }
 
         fill.color = when {
-            entity.muted -> INSET
-            boosted -> AMBER
-            entity.isDefault -> LIME
-            else -> HAIRLINE
+            entity.muted -> palette.inset
+            boosted -> palette.amber
+            entity.isDefault -> palette.lime
+            else -> palette.hairline
         }
-        border.color = if (boosted && !entity.muted) AMBER else KNOB_EDGE
+        border.color = if (boosted && !entity.muted) palette.amber else palette.stroke
         canvas.drawCircle(centre, knobY, px(KNOB) / 2f, fill)
         canvas.drawCircle(centre, knobY, px(KNOB) / 2f, border)
 
         stroke.color = when {
-            entity.muted -> MUTED
-            boosted || entity.isDefault -> GROUND
-            else -> BODY
+            entity.muted -> palette.muted
+            boosted || entity.isDefault -> palette.ground
+            else -> palette.body
         }
         stroke.strokeWidth = 1.6f
         val icon = px(KNOB_ICON)
@@ -448,9 +435,9 @@ class AudioFadersView @JvmOverloads constructor(
         var y = from - metrics.ascent
 
         text.color = when {
-            entity.muted -> FAINT
-            boosted -> AMBER
-            else -> BODY
+            entity.muted -> palette.faint
+            boosted -> palette.amber
+            else -> palette.body
         }
         val value = if (entity.muted) {
             context.getString(R.string.audio_muted)
@@ -462,9 +449,9 @@ class AudioFadersView @JvmOverloads constructor(
         text.textSize = artboard.text(NAME)
         val nameLine = text.fontMetrics.let { it.descent - it.ascent }
         text.color = when {
-            entity.muted -> MUTED
-            entity.isDefault -> INK
-            else -> SECONDARY
+            entity.muted -> palette.muted
+            entity.isDefault -> palette.ink
+            else -> palette.secondary
         }
         for (part in wrapName(entity.name, room)) {
             y += nameLine + px(ROW_GAP)
@@ -479,7 +466,7 @@ class AudioFadersView @JvmOverloads constructor(
         if (entity.name !in duplicated()) return
         text.textSize = artboard.text(PORT)
         y += text.fontMetrics.let { it.descent - it.ascent } + px(ROW_GAP)
-        text.color = FAINT
+        text.color = palette.faint
         canvas.drawText(context.getString(port.label()), centre, y, text)
     }
 

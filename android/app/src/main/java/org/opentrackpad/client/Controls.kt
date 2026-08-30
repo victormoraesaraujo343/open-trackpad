@@ -17,21 +17,14 @@ import kotlin.math.roundToInt
 /**
  * The two form controls the settings screens are built from.
  *
- * In dp rather than millimetres, deliberately, and this is the rule from
- * [Artboard] rather than an exception to it: millimetres are for what a hand
- * aims at without looking, system sizing is for what eyes read at reading
- * distance. A setting is read. Somebody who has turned their display size up
- * has said they want text bigger, and a settings screen is exactly where that
- * should be obeyed.
+ * Millimetres like everything else, multiplied by the font scale. There was a
+ * note here saying the opposite — that a settings screen is read rather than
+ * aimed at, so it should follow the system — and it was wrong for a reason
+ * worth keeping: the system setting it was actually following was the
+ * display-size slider, which is a layout preference. The one that carries the
+ * accessibility argument is the font scale, and that multiplies a physical size
+ * rather than replacing it. See [Artboard].
  */
-private object Palette {
-    val INSET = Color.parseColor("#1B1D1F")
-    val HAIRLINE = Color.parseColor("#2A2D30")
-    val GROUND = Color.parseColor("#0E0F10")
-    val INK = Color.parseColor("#E6E8EA")
-    val MUTED = Color.parseColor("#6B7178")
-    val LIME = Color.parseColor("#A3E635")
-}
 
 /**
  * A switch, drawn as the design draws it: a 28 by 16 pill with a 12 across knob.
@@ -59,6 +52,9 @@ class PillToggle @JvmOverloads constructor(
             field = value
             invalidate()
         }
+
+    /** Every colour this draws with, from the theme. See [Palette]. */
+    private val palette = Palette.of(context)
 
     private val artboard = Artboard.measure(
         resources.displayMetrics,
@@ -93,7 +89,7 @@ class PillToggle @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         val radius = height / 2f
         track.set(0f, 0f, width.toFloat(), height.toFloat())
-        paint.color = if (checked) Palette.LIME else Palette.HAIRLINE
+        paint.color = if (checked) palette.lime else palette.hairline
         canvas.drawRoundRect(track, radius, radius, paint)
 
         val knob = artboard.px(KNOB)
@@ -102,7 +98,7 @@ class PillToggle @JvmOverloads constructor(
         // The knob is the ground colour when the track is lit and a grey when
         // it is not, so "on" reads as a hole punched in the lime rather than as
         // a second colour.
-        paint.color = if (checked) Palette.GROUND else Palette.MUTED
+        paint.color = if (checked) palette.ground else palette.muted
         canvas.drawCircle(x, height / 2f, knob / 2f, paint)
     }
 }
@@ -148,6 +144,9 @@ class SegmentedView @JvmOverloads constructor(
             invalidate()
         }
 
+    /** Every colour this draws with, from the theme. See [Palette]. */
+    private val palette = Palette.of(context)
+
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
@@ -161,7 +160,7 @@ class SegmentedView @JvmOverloads constructor(
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = px(BORDER)
-        color = Palette.HAIRLINE
+        color = palette.hairline
     }
     private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = artboard.text(TEXT)
@@ -249,7 +248,7 @@ class SegmentedView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         if (chips.isEmpty()) return
         container.set(0f, 0f, width.toFloat(), height.toFloat())
-        fill.color = Palette.INSET
+        fill.color = palette.inset
         canvas.drawRoundRect(container, px(RADIUS), px(RADIUS), fill)
         val half = border.strokeWidth / 2f
         container.inset(half, half)
@@ -258,10 +257,10 @@ class SegmentedView @JvmOverloads constructor(
         val metrics = text.fontMetrics
         for ((index, chip) in chips.withIndex()) {
             if (index == chosen) {
-                fill.color = Palette.HAIRLINE
+                fill.color = palette.hairline
                 canvas.drawRoundRect(chip, px(CHIP_RADIUS), px(CHIP_RADIUS), fill)
             }
-            text.color = if (index == chosen) Palette.INK else Palette.MUTED
+            text.color = if (index == chosen) palette.ink else palette.muted
             text.textAlign = Paint.Align.CENTER
             canvas.drawText(
                 options[index],

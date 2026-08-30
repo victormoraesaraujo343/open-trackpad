@@ -31,11 +31,8 @@ class TouchSurfaceView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private companion object {
-        val PANEL = Color.parseColor("#121314")
-        val HAIRLINE = Color.parseColor("#2A2D30")
 
         /** rgba(138,144,153,0.16), from the design. */
-        val DOT = Color.parseColor("#298A9099")
 
         // Artboard units, which are a physical length. See [Artboard].
         const val RADIUS = 12f
@@ -52,6 +49,9 @@ class TouchSurfaceView @JvmOverloads constructor(
     /** Called when the usable surface changes size, including at first layout. */
     var onSurfaceSize: ((SurfaceMetrics) -> Unit)? = null
 
+    /** Every colour this draws with, from the theme. See [Palette]. */
+    private val palette = Palette.of(context)
+
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
@@ -61,12 +61,12 @@ class TouchSurfaceView @JvmOverloads constructor(
 
     private val panel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = PANEL
+        color = palette.panel
     }
     private val hairline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = artboard.px(BORDER).coerceAtLeast(1f)
-        color = HAIRLINE
+        color = palette.hairline
     }
     private val dots = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -96,7 +96,7 @@ class TouchSurfaceView @JvmOverloads constructor(
             cell / 2f,
             cell / 2f,
             artboard.px(DOT_RADIUS),
-            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = DOT },
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.dots },
         )
         return BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
     }
