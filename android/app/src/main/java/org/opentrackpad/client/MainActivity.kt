@@ -73,6 +73,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var editorScreen: EditorPanel
     private lateinit var namePanel: View
     private lateinit var recordingPanel: View
+    private lateinit var allWindowsPanel: View
+    private lateinit var allWindowsScreen: AllWindowsPanel
 
     /**
      * One of these for the whole app.
@@ -210,6 +212,18 @@ class MainActivity : AppCompatActivity() {
             // to hold open, nothing to time out, and nothing to cancel.
             connection.send(Action.Record)
             show(Panel.RECORDING)
+        }
+
+        allWindowsPanel = findViewById(R.id.all_windows_panel)
+        allWindowsScreen = AllWindowsPanel(allWindowsPanel)
+        allWindowsScreen.haptics = haptics
+        allWindowsScreen.onChoose = { window ->
+            ask(Windows.activate(++requestSequence, window.id))
+            // Straight back to the pad. Somebody who has just chosen a window
+            // is looking at their computer, not at this list — and the list is
+            // about to reorder underneath them, which is a strange thing to
+            // watch happen.
+            show(Panel.NONE)
         }
 
         recordingPanel = findViewById(R.id.recording_panel)
@@ -402,7 +416,8 @@ class MainActivity : AppCompatActivity() {
          */
         val opposite = when {
             panel == Panel.AUDIO -> Rails.audioPages(audioPage)
-            windows.granted && windows.windows.isNotEmpty() -> Rails.windows(windows.onTheRail)
+            windows.granted && windows.windows.isNotEmpty() ->
+                Rails.windows(windows.onTheRail, showingAll = panel == Panel.ALL_WINDOWS)
             else -> Rails.overflow(profile)
         }
         val overflow = opposite.let { if (live || panel == Panel.AUDIO) it else it.deadened() }
@@ -440,11 +455,11 @@ class MainActivity : AppCompatActivity() {
             // snapshot is the acknowledgement.
             is SlotPress.Switch -> ask(Windows.activate(++requestSequence, press.id))
 
-            // Drawn but not yet a screen. Refuse rather than open something
-            // wrong: `RecentApps.dc.html` has a list behind this and it is not
-            // built, and a button that opened the wrong panel would be worse
-            // than one that says no.
-            SlotPress.AllWindows -> haptics.refused()
+            // Toggles, like the Quick Ring: the slot that opened it closes it,
+            // and it is the only slot on that rail that leads anywhere but a
+            // window.
+            SlotPress.AllWindows ->
+                show(if (panel == Panel.ALL_WINDOWS) Panel.NONE else Panel.ALL_WINDOWS)
             is SlotPress.Audio -> openAudio(press.page)
             SlotPress.Close -> show(Panel.NONE)
             SlotPress.None -> Unit
@@ -453,7 +468,7 @@ class MainActivity : AppCompatActivity() {
 
     /** What is over the trackpad, if anything. Only ever one thing. */
     private enum class Panel {
-        NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT, EDITOR, NAME,
+        NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT, EDITOR, NAME, ALL_WINDOWS,
 
         /**
          * The computer's recorder is open and this phone is telling somebody so.
@@ -509,6 +524,10 @@ class MainActivity : AppCompatActivity() {
         editorPanel.visibility = if (next == Panel.EDITOR) View.VISIBLE else View.GONE
         namePanel.visibility = if (next == Panel.NAME) View.VISIBLE else View.GONE
         recordingPanel.visibility = if (next == Panel.RECORDING) View.VISIBLE else View.GONE
+        allWindowsPanel.visibility =
+            if (next == Panel.ALL_WINDOWS) View.VISIBLE else View.GONE
+        if (next == Panel.ALL_WINDOWS) allWindowsScreen.show(windows.windows)
+        layOutRails()
         showTroubleIfOnThePad()
         // The keyboard belongs to one screen and must not outlive it.
         if (next != Panel.NAME) nameScreen.hideKeyboard()

@@ -185,4 +185,25 @@ class WindowsTest {
         assertEquals(RailIcons.path("globe"), RailIcons.forWindow("firefox"))
         assertEquals(RailIcons.path("gear"), RailIcons.forWindow("systemsettings"))
     }
+
+    @Test
+    fun `a reverse-DNS application name loses its prefix on a rail`() {
+        // Seen on Victor's desktop. A rail is fifteen millimetres wide and
+        // "org.kde.dolphin" truncates to "org.kde.d…", which identifies
+        // nothing. The prefix is the part that is never what somebody is
+        // looking for.
+        assertEquals("dolphin", WindowEntry(1, "org.kde.dolphin", "t").label)
+        assertEquals("WarpPreview", WindowEntry(1, "dev.warp.WarpPreview", "t").label)
+        // Names without a prefix are left exactly alone.
+        assertEquals("firefox", WindowEntry(1, "firefox", "t").label)
+        assertEquals("steam", WindowEntry(1, "steam", "t").label)
+    }
+
+    @Test
+    fun `the glyph still keys off the whole application name`() {
+        // The label is shortened for reading; the match is not. "org.kde.dolphin"
+        // must still find the file-manager glyph, and would not if the match ran
+        // on the shortened word for some applications.
+        assertEquals(RailIcons.path("grid"), RailIcons.forWindow("org.kde.dolphin"))
+    }
 }

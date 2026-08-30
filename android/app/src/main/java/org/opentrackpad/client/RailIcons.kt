@@ -1,6 +1,12 @@
 package org.opentrackpad.client
 
 import android.graphics.Path
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import androidx.core.graphics.PathParser
 
 /**
@@ -126,6 +132,49 @@ object RailIcons {
      * wasted and a way for them to drift. There are a few dozen glyphs in all,
      * so holding them costs a few kilobytes for the life of the process.
      */
+    /**
+     * One glyph as a [Drawable], for the screens built from XML.
+     *
+     * The rails draw these straight onto their own canvas, which is right for a
+     * view that paints five slots at once. A cell in a list is an `ImageView`
+     * and wants a drawable, so this is the same path and the same stroke through
+     * a different door — deliberately not a second copy of the geometry.
+     *
+     * The paths are drawn on a 20-unit grid, so [size] is both the width and the
+     * scale.
+     */
+    fun drawable(context: Context, pathData: String, colour: Int, size: Float): Drawable =
+        object : Drawable() {
+            private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = STROKE_UNITS
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+                color = colour
+            }
+
+            override fun draw(canvas: Canvas) {
+                val scale = size / GRID
+                canvas.save()
+                canvas.translate(bounds.left.toFloat(), bounds.top.toFloat())
+                canvas.scale(scale, scale)
+                canvas.drawPath(parsed(pathData), stroke)
+                canvas.restore()
+            }
+
+            override fun getIntrinsicWidth() = size.toInt()
+            override fun getIntrinsicHeight() = size.toInt()
+            override fun setAlpha(alpha: Int) { stroke.alpha = alpha }
+            override fun setColorFilter(filter: ColorFilter?) { stroke.colorFilter = filter }
+
+            @Deprecated("Required by Drawable", ReplaceWith("PixelFormat.TRANSLUCENT"))
+            override fun getOpacity() = PixelFormat.TRANSLUCENT
+        }
+
+    /** The grid every path is drawn on, and the stroke width in its units. */
+    private const val GRID = 20f
+    private const val STROKE_UNITS = 1.4f
+
     fun parsed(pathData: String): Path =
         GLYPHS.getOrPut(pathData) { PathParser.createPathFromPathData(pathData) }
 

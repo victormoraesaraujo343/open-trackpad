@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every open window, when four on a rail are not enough.
+
+  Takes the pad's place rather than the whole screen, like the audio panel: the
+  rails stay, because the slot that opened this is the slot that closes it, and
+  putting it out of reach would be a poor trick.
+
+  It is the **only place a window title appears**. On a rail there is no room
+  and an application name is what somebody scans for without looking; here there
+  is room, and eleven windows across three browsers is exactly when a title
+  earns its place.
+
+  A title is the most attacker-influenced string in this product — it is
+  whatever a web page decided to call itself. Every cell here is a fixed size
+  and every line is a single line clipped to it, so no title can change a
+  layout, and Wire.decode refuses one carrying a control character before it
+  ever gets here.
+
+  The last row is cut on purpose: the grid overflows and is clipped rather than
+  scrolled, and the bar underneath says how much is showing. Somebody looking
+  for a window they used a minute ago will find it in the first rows.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/all_windows_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/panel"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:id="@+id/all_windows_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/space_grotesk_semibold"
+            android:textColor="?attr/otpInk"
+            android:tag="14"
+            android:textSize="14sp"
+            android:text="@string/all_windows_title" />
+
+        <TextView
+            android:id="@+id/all_windows_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:fontFamily="@font/inter_regular"
+            android:textColor="?attr/otpMuted"
+            android:tag="12"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:fontFamily="@font/inter_regular"
+            android:textColor="?attr/otpFaint"
+            android:tag="12"
+            android:textSize="12sp"
+            android:text="@string/all_windows_order" />
+    </LinearLayout>
+
+    <!--
+      Two columns of fixed-height cells, filled in reading order and clipped at
+      the bottom. Built in code rather than with a RecyclerView: the list is a
+      dozen items that arrive whole and are redrawn whole, and a recycler would
+      add view reuse to a screen that never scrolls.
+    -->
+    <GridLayout
+        android:id="@+id/all_windows_grid"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:columnCount="2"
+        android:clipChildren="true" />
+
+    <!-- How much of the list is on screen. Not a scrollbar: nothing scrolls. -->
+    <FrameLayout
+        android:id="@+id/all_windows_extent"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:background="@drawable/extent_track">
+
+        <View
+            android:id="@+id/all_windows_shown"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:background="@drawable/extent_shown" />
+    </FrameLayout>
+</LinearLayout>

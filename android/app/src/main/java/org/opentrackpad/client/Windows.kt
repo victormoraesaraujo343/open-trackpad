@@ -54,8 +54,18 @@ data class WindowEntry(
      * somebody is actually looking for when they reach for the phone without
      * looking. "Firefox" beats forty characters of page title truncated to
      * eight.
+     *
+     * The last dotted part, because a resource class is `firefox` on one
+     * desktop and `org.kde.dolphin` on another. Seen on Victor's machine, where
+     * the rail is fifteen millimetres wide: the full string truncates to
+     * "org.kde.d…", which identifies nothing and is worse than no button at
+     * all. "dolphin" fits and is the word somebody is looking for.
+     *
+     * Only the prefix goes. A long single word — `systemsettings` — still
+     * truncates, and shortening that would mean inventing names for other
+     * people's applications rather than shortening one.
      */
-    val label: String get() = application
+    val label: String get() = application.substringAfterLast('.')
 }
 
 sealed interface WindowMessage {

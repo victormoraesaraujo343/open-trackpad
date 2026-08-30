@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One window: a glyph, what owns it, what it calls itself, and a dot if it is
+  the one you are in.
+
+  Both lines are single lines that clip. The cell is a fixed height and the text
+  block is width-constrained, so a title of any length changes nothing about
+  where anything else sits.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/row"
+    android:paddingHorizontal="10dp">
+
+    <ImageView
+        android:id="@+id/window_icon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="10dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/window_application"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:fontFamily="@font/inter_medium"
+            android:textColor="?attr/otpInk"
+            android:tag="13"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/window_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:fontFamily="@font/inter_regular"
+            android:textColor="?attr/otpMuted"
+            android:tag="12"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <View
+        android:id="@+id/window_here"
+        android:layout_width="6dp"
+        android:layout_height="6dp"
+        android:layout_marginStart="6dp"
+        android:background="@drawable/here_dot" />
+</LinearLayout>

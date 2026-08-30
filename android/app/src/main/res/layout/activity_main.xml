@@ -91,6 +91,10 @@
                  over it: it is a page, not a menu. -->
             <include layout="@layout/panel_audio" />
 
+            <!-- Takes the pad's place the same way, and for the same reason:
+                 the slot that opened it is the slot that closes it. -->
+            <include layout="@layout/panel_all_windows" />
+
             <org.opentrackpad.client.QuickRingView
                 android:id="@+id/quick_ring"
                 android:layout_width="match_parent"

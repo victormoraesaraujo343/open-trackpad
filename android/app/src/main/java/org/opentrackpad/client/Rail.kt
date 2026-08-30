@@ -137,7 +137,7 @@ object Rails {
      * others, the same as everywhere: slot five stays slot five whether the
      * desktop has one window open or twenty.
      */
-    fun windows(open: List<WindowEntry>): List<RailSlot?> = rail(
+    fun windows(open: List<WindowEntry>, showingAll: Boolean = false): List<RailSlot?> = rail(
         open.take(SLOTS - 1).map { window ->
             RailSlot(
                 label = window.label,
@@ -149,7 +149,11 @@ object Rails {
             label = "All",
             icon = RailIcons.path("grid"),
             press = SlotPress.AllWindows,
-            style = SlotStyle.PRIMARY,
+            // Lime means "this one, now", which on a slot that opens a page is
+            // the page you are looking at — the same rule the audio rail's
+            // pages follow. PRIMARY when it is the way in, ACTIVE when it is
+            // the way back out.
+            style = if (showingAll) SlotStyle.ACTIVE else SlotStyle.PRIMARY,
         ),
     )
 

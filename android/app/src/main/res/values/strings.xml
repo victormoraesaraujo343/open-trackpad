@@ -198,4 +198,12 @@
     <string name="button_middle">Middle click</string>
     <string name="button_left">Left click</string>
     <string name="button_chord">mouse</string>
+
+    <!-- Every open window, when four on a rail are not enough. -->
+    <string name="all_windows_title">All windows</string>
+    <string name="all_windows_order">Most recent first</string>
+    <plurals name="all_windows_open">
+        <item quantity="one">%1$d open</item>
+        <item quantity="other">%1$d open</item>
+    </plurals>
 </resources>
