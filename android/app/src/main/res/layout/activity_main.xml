@@ -312,6 +312,7 @@
     <include layout="@layout/panel_editor" />
     <include layout="@layout/panel_name" />
     <include layout="@layout/panel_recording" />
+    <include layout="@layout/panel_edit_shortcut" />
 
 
 </FrameLayout>

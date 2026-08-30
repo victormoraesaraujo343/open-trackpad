@@ -33,4 +33,6 @@
     <attr name="otpDots" format="color" />
     <attr name="otpVeil" format="color" />
     <attr name="otpLimeEdge" format="color" />
+    <attr name="otpWarn" format="color" />
+    <attr name="otpCapEdge" format="color" />
 </resources>

@@ -206,4 +206,16 @@
         <item quantity="one">%1$d open</item>
         <item quantity="other">%1$d open</item>
     </plurals>
+
+    <!-- Editing a shortcut somebody recorded. -->
+    <string name="edit_title">Edit shortcut</string>
+    <string name="edit_name">Name</string>
+    <string name="edit_combination">Combination</string>
+    <string name="edit_record_again">Record again</string>
+    <string name="edit_record_note">Recording opens on your computer, the same as when you made it.</string>
+    <string name="edit_delete">Delete this shortcut</string>
+    <string name="edit_on_rails">On these rails</string>
+    <string name="edit_delete_note">Deleting it empties those slots. The rail keeps its five places; the empty one stays empty until you fill it.</string>
+    <string name="edit_nowhere">Not on any rail yet.</string>
+    <string name="edit_slot">slot %1$d</string>
 </resources>

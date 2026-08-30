@@ -42,6 +42,15 @@ class EditorPanel(private val root: View) {
     /** Ask the computer to open its recorder, so there is something new to place. */
     var onRecord: (() -> Unit)? = null
 
+    /**
+     * Open one for renaming, re-recording or deleting.
+     *
+     * Only offered for the ones somebody recorded. A convention is ours and a
+     * deleted import comes back with the next offer, so a screen acting on
+     * either would promise something it cannot keep.
+     */
+    var onEdit: ((Int) -> Unit)? = null
+
     /** How this feels under a finger. Set by the activity. */
     var haptics: Haptics? = null
 
@@ -362,6 +371,13 @@ class EditorPanel(private val root: View) {
             )
         )
 
+        if (offering.mine) {
+            chip.setOnClickListener {
+                haptics?.press()
+                haptics?.release()
+                onEdit?.invoke(offering.id)
+            }
+        }
         chip.setOnLongClickListener { view ->
             // The id rather than the whole shortcut: a drag can outlive the
             // list it started from if the host sends a new one mid-gesture,

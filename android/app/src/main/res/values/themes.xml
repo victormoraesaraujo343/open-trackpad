@@ -27,6 +27,8 @@
         <item name="otpFaint">@color/faint</item>
         <item name="otpLime">@color/lime</item>
         <item name="otpLimeEdge">@color/lime_edge</item>
+        <item name="otpWarn">@color/warn</item>
+        <item name="otpCapEdge">@color/cap_edge</item>
         <item name="otpAmber">@color/amber</item>
         <item name="otpScrim">@color/scrim</item>
         <item name="otpLimeBright">@color/lime_bright</item>

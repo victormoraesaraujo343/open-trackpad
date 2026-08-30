@@ -75,6 +75,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recordingPanel: View
     private lateinit var allWindowsPanel: View
     private lateinit var allWindowsScreen: AllWindowsPanel
+    private lateinit var editShortcutPanel: View
+    private lateinit var editShortcutScreen: EditShortcutPanel
 
     /**
      * One of these for the whole app.
@@ -224,6 +226,34 @@ class MainActivity : AppCompatActivity() {
             // about to reorder underneath them, which is a strange thing to
             // watch happen.
             show(Panel.NONE)
+        }
+
+        editShortcutPanel = findViewById(R.id.edit_shortcut_panel)
+        editShortcutScreen = EditShortcutPanel(editShortcutPanel)
+        editShortcutScreen.haptics = haptics
+        editShortcutScreen.onDismiss = { show(Panel.EDITOR) }
+        editShortcutScreen.onTyping = { waitBeforeReturning() }
+        editShortcutScreen.onRename = { entry, wanted ->
+            ask(Library.rename(++requestSequence, entry, wanted))
+            show(Panel.EDITOR)
+        }
+        editShortcutScreen.onDelete = { entry ->
+            ask(Library.delete(++requestSequence, entry))
+            show(Panel.EDITOR)
+        }
+        editShortcutScreen.onRecordAgain = {
+            // The same verb as making a new one: the recorder opens on the
+            // computer and whatever comes back arrives through the library.
+            // There is no "record over this one" on the wire and inventing one
+            // here would be a protocol change made by a button.
+            connection.send(Action.Record)
+            show(Panel.RECORDING)
+        }
+        editorScreen.onEdit = { id ->
+            library.entries.firstOrNull { it.id == id }?.let { entry ->
+                editShortcutScreen.show(entry, stored.profiles)
+                show(Panel.EDIT_SHORTCUT)
+            }
         }
 
         recordingPanel = findViewById(R.id.recording_panel)
@@ -469,6 +499,7 @@ class MainActivity : AppCompatActivity() {
     /** What is over the trackpad, if anything. Only ever one thing. */
     private enum class Panel {
         NONE, RING, PROFILES, SETTINGS, AUDIO, IMPORT, EDITOR, NAME, ALL_WINDOWS,
+        EDIT_SHORTCUT,
 
         /**
          * The computer's recorder is open and this phone is telling somebody so.
@@ -529,6 +560,8 @@ class MainActivity : AppCompatActivity() {
         screen.showingPad = next == Panel.NONE
         allWindowsPanel.visibility =
             if (next == Panel.ALL_WINDOWS) View.VISIBLE else View.GONE
+        editShortcutPanel.visibility =
+            if (next == Panel.EDIT_SHORTCUT) View.VISIBLE else View.GONE
         if (next == Panel.ALL_WINDOWS) allWindowsScreen.show(windows.windows)
         layOutRails()
         showTroubleIfOnThePad()
@@ -1120,7 +1153,7 @@ class MainActivity : AppCompatActivity() {
         // two things lost for one press.
         when (panel) {
             Panel.NONE -> @Suppress("DEPRECATION") super.onBackPressed()
-            Panel.NAME, Panel.RECORDING -> show(Panel.EDITOR)
+            Panel.NAME, Panel.RECORDING, Panel.EDIT_SHORTCUT -> show(Panel.EDITOR)
             else -> show(Panel.NONE)
         }
     }
@@ -1195,6 +1228,7 @@ class MainActivity : AppCompatActivity() {
             findViewById(R.id.import_panel),
             findViewById(R.id.editor_panel),
             findViewById(R.id.name_panel),
+            findViewById(R.id.edit_shortcut_panel),
         )
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())

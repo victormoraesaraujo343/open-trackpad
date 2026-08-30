@@ -30,6 +30,7 @@ object RailIcons {
         "alt" to "M3.2 6.6h9.6M10.4 4.2 12.8 6.6l-2.4 2.4M16.8 13.4H7.2M9.6 11l-2.4 2.4L9.6 15.8",
         "app" to "M4 5.2h12v9.6H4zM4 8.4h12M7 5.2v3.2",
         "back" to "M16 10H4M9 5 4 10l5 5",
+        "bin" to "M4.6 6h10.8M8 6V4.4h4V6M6.2 6v9.4h7.6V6M8.6 8.6v4.4M11.4 8.6v4.4",
         "click" to "M10 3.4a5.4 5.4 0 0 1 5.4 5.4v2.6A5.4 5.4 0 0 1 10 16.8a5.4 5.4 0 0 1-5.4-5.4V8.8A5.4 5.4 0 0 1 10 3.4z" +
             "M10 3.6v5.2M10 8.8h5.4",
         // The same mouse, with a different quarter of it closed off. The body is

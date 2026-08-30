@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Rename a shortcut somebody recorded, record it again, or delete it.
+
+  Reached from a chip with the lime dot in the editor's library, because those
+  are the only ones this can act on: a convention is ours and rewritten on
+  upgrade, and an import returns to the offer the moment it is deleted, so
+  neither is the person's to change.
+
+  From EditShortcut.dc.html. No rails, so MainActivity insets it to the display
+  cutout.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/edit_shortcut_panel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?attr/otpGround"
+    android:visibility="gone"
+    android:padding="@dimen/edge">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/edit_back"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:src="@drawable/ic_back"
+            android:contentDescription="@string/settings_back" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:fontFamily="@font/space_grotesk_semibold"
+            android:textColor="?attr/otpInk"
+            android:tag="14"
+            android:textSize="13sp"
+            android:text="@string/edit_title" />
+
+        <!--
+          A Space, not a hidden TextView. A gone view takes no room at all, so
+          weighting one pushes nothing anywhere and Save ended up against the
+          title.
+        -->
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/edit_save_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="5dp"
+            android:background="@drawable/lime_button"
+            android:fontFamily="@font/inter_medium"
+            android:textColor="?attr/otpGround"
+            android:tag="13"
+            android:textSize="11sp"
+            android:text="@string/editor_save" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="@drawable/panel"
+            android:padding="16dp">
+
+            <TextView
+                style="@style/FieldLabel"
+                android:text="@string/edit_name" />
+
+            <EditText
+                android:id="@+id/edit_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/field"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="9dp"
+                android:singleLine="true"
+                android:imeOptions="actionDone"
+                android:inputType="text"
+                android:fontFamily="@font/inter_regular"
+                android:textColor="?attr/otpInk"
+                android:textColorHighlight="?attr/otpHairline"
+                android:tag="14"
+                android:textSize="13sp" />
+
+            <TextView
+                style="@style/FieldLabel"
+                android:layout_marginTop="14dp"
+                android:text="@string/edit_combination" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:id="@+id/edit_keys"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical" />
+
+                <TextView
+                    android:id="@+id/edit_record_again"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:fontFamily="@font/inter_regular"
+                    android:textColor="?attr/otpBody"
+                    android:tag="13"
+                    android:textSize="11sp"
+                    android:text="@string/edit_record_again" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/edit_record_note"
+                style="@style/FieldNote"
+                android:layout_marginTop="8dp"
+                android:text="@string/edit_record_note" />
+
+            <Space
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <LinearLayout
+                android:id="@+id/edit_delete"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingVertical="6dp">
+
+                <ImageView
+                    android:id="@+id/edit_delete_icon"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="9dp"
+                    android:fontFamily="@font/inter_medium"
+                    android:textColor="?attr/otpWarn"
+                    android:tag="12"
+                    android:textSize="12sp"
+                    android:text="@string/edit_delete" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="260dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical"
+            android:background="@drawable/panel"
+            android:padding="12dp">
+
+            <TextView
+                style="@style/FieldLabel"
+                android:text="@string/edit_on_rails" />
+
+            <LinearLayout
+                android:id="@+id/edit_used"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="9dp"
+                android:orientation="vertical" />
+
+            <Space
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/edit_used_note"
+                style="@style/FieldNote"
+                android:text="@string/edit_delete_note" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

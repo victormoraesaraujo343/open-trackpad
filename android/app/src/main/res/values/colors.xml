@@ -48,4 +48,10 @@
 
     <!-- The dash around "New shortcut": lime, but an outline rather than a fill. -->
     <color name="lime_edge">#FF6F9C1F</color>
+
+    <!-- Deleting. The only red in the product, and it appears once. -->
+    <color name="warn">#FFFFB4AB</color>
+    <!-- A key cap's edge, which is lighter than a panel's hairline: the cap is
+         raised and the line is the light catching its top. -->
+    <color name="cap_edge">#FF34383D</color>
 </resources>
