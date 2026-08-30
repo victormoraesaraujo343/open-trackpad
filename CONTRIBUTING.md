@@ -54,6 +54,14 @@ else, because everything downstream trusts its answer instead of looking.**
 
 What ended each of these was the same thing, and it was not thinking harder. It
 was going back and looking at the thing again after having already explained it.
+
+One more, about repetition rather than verification. Three times in one session a
+pattern was removed from one file and written again in another within the hour —
+a blind tap loop, a guessed offset, a counted sequence of steps — twice inside
+the very tool built to prevent it. **Removing a bad pattern from a file does not
+remove it from your hands.** The fix that generalises is not remembering harder;
+it is deriving from the thing itself rather than from a number about it, and
+asserting arrival rather than assuming it.
 Three separate symptoms this project reported were each covered by a confident,
 correct, complete-sounding explanation that was also not the whole cause.
 
