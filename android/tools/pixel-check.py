@@ -117,7 +117,28 @@ def capture(name, into):
 
 
 def settle():
-    """Puts the emulator and the app into the state a comparison can rely on."""
+    """Puts the emulator and the app into the state a comparison can rely on.
+
+    The fade is the one that bit. `ScreenCare` lowers the window's brightness
+    after twenty seconds without a touch, which darkens the whole framebuffer —
+    the ground goes from `0e0f10` to `0b0b0c` and every screen reports as
+    moved. It is written into the app's own settings file rather than toggled
+    through the interface, because a walk that has to press a switch first can
+    fail before it has captured anything.
+
+    This was documented here and not implemented, which is the exact defect
+    this project keeps finding in other people's code: a note describing what
+    the code does not do. The first baseline was captured with the fade live
+    and had to be thrown away.
+    """
+    adb(
+        "shell",
+        "run-as",
+        PACKAGE,
+        "sh",
+        "-c",
+        "printf 'setting\\tfade\\tfalse\\n' > files/settings.tsv",
+    )
     for key, value in (
         ("window_animation_scale", "0"),
         ("transition_animation_scale", "0"),

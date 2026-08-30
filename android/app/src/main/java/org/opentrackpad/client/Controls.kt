@@ -53,15 +53,14 @@ class PillToggle @JvmOverloads constructor(
             invalidate()
         }
 
-    /** Every colour this draws with, from the theme. See [Palette]. */
-    private val palette = Palette.of(context)
+    /** How this is painted. See [Skin]. */
+    private val skin: Skin = MinimalSkin(context)
 
     private val artboard = Artboard.measure(
         resources.displayMetrics,
         resources.displayMetrics.widthPixels,
         resources.configuration.fontScale,
     )
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     /** How this feels under a finger. Set by whoever builds the screen. */
     var haptics: Haptics? = null
 
@@ -89,17 +88,12 @@ class PillToggle @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         val radius = height / 2f
         track.set(0f, 0f, width.toFloat(), height.toFloat())
-        paint.color = if (checked) palette.lime else palette.hairline
-        canvas.drawRoundRect(track, radius, radius, paint)
+        skin.track(canvas, track, radius, checked)
 
         val knob = artboard.px(KNOB)
         val inset = artboard.px(INSET)
         val x = if (checked) width - inset - knob / 2f else inset + knob / 2f
-        // The knob is the ground colour when the track is lit and a grey when
-        // it is not, so "on" reads as a hole punched in the lime rather than as
-        // a second colour.
-        paint.color = if (checked) palette.ground else palette.muted
-        canvas.drawCircle(x, height / 2f, knob / 2f, paint)
+        skin.knob(canvas, x, height / 2f, knob / 2f, checked)
     }
 }
 
@@ -124,7 +118,10 @@ class SegmentedView @JvmOverloads constructor(
         const val CHIP_V = 4f
         const val GAP = 4f
         const val TEXT = Artboard.MIN_READABLE_UNITS
-        const val BORDER = 1f
+        // The hairline moved to the skin, which owns its own edge: a stroke is
+        // drawn centred on the path, so a border at the very edge of a shape
+        // loses half of itself outside it, and that correction was the same
+        // three lines in every view that drew one.
     }
 
     var onChoose: ((Int) -> Unit)? = null
@@ -144,8 +141,8 @@ class SegmentedView @JvmOverloads constructor(
             invalidate()
         }
 
-    /** Every colour this draws with, from the theme. See [Palette]. */
-    private val palette = Palette.of(context)
+    /** How this is painted. See [Skin]. */
+    private val skin: Skin = MinimalSkin(context)
 
     private val artboard = Artboard.measure(
         resources.displayMetrics,
@@ -156,12 +153,6 @@ class SegmentedView @JvmOverloads constructor(
     // Named `dp` no longer; these are artboard units, like everything else.
     private fun px(value: Float) = artboard.px(value)
 
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = px(BORDER)
-        color = palette.hairline
-    }
     private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = artboard.text(TEXT)
         typeface = ResourcesCompat.getFont(context, R.font.inter_medium)
@@ -248,19 +239,12 @@ class SegmentedView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         if (chips.isEmpty()) return
         container.set(0f, 0f, width.toFloat(), height.toFloat())
-        fill.color = palette.inset
-        canvas.drawRoundRect(container, px(RADIUS), px(RADIUS), fill)
-        val half = border.strokeWidth / 2f
-        container.inset(half, half)
-        canvas.drawRoundRect(container, px(RADIUS), px(RADIUS), border)
+        skin.inset(canvas, container, px(RADIUS))
 
         val metrics = text.fontMetrics
         for ((index, chip) in chips.withIndex()) {
-            if (index == chosen) {
-                fill.color = palette.hairline
-                canvas.drawRoundRect(chip, px(CHIP_RADIUS), px(CHIP_RADIUS), fill)
-            }
-            text.color = if (index == chosen) palette.ink else palette.muted
+            skin.segment(canvas, chip, px(CHIP_RADIUS), chosen = index == chosen)
+            text.color = skin.segmentInk(chosen = index == chosen)
             text.textAlign = Paint.Align.CENTER
             canvas.drawText(
                 options[index],
