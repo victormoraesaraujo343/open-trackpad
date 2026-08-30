@@ -541,6 +541,7 @@ fn close_when_unfocused(window: &ApplicationWindow) {
             // Never fight for focus back. A window that inhibits the desktop's
             // shortcuts and insists on staying in front is the shape of thing
             // people have to log out to escape.
+            eprintln!("recorder: lost focus, closing");
             window.close();
         }
     });
@@ -549,8 +550,22 @@ fn close_when_unfocused(window: &ApplicationWindow) {
 fn close_when_idle(window: &ApplicationWindow, state: &Rc<Recorder>) {
     let state = Rc::clone(state);
     let window = window.clone();
+    let mut ticks: u32 = 0;
     glib::timeout_add_seconds_local(1, move || {
-        if state.last_activity.borrow().elapsed() >= IDLE_TIMEOUT {
+        let idle = state.last_activity.borrow().elapsed();
+        ticks += 1;
+        // Once every five seconds, so a run that never closes itself shows
+        // whether the timer is running at all and what it thinks the idle time
+        // is — the two ways this can fail look identical from outside.
+        if ticks.is_multiple_of(5) {
+            eprintln!(
+                "recorder: idle {:.0}s of {:.0}s",
+                idle.as_secs_f64(),
+                IDLE_TIMEOUT.as_secs_f64()
+            );
+        }
+        if idle >= IDLE_TIMEOUT {
+            eprintln!("recorder: idle for {:.0}s, closing", idle.as_secs_f64());
             window.close();
             return glib::ControlFlow::Break;
         }
@@ -566,13 +581,55 @@ fn close_when_idle(window: &ApplicationWindow, state: &Rc<Recorder>) {
 /// keyboard-shortcuts-inhibit protocol and onto a keyboard grab on X11, so one
 /// call covers both.
 ///
-/// Failing is survivable and deliberately quiet: most chords still record, and
-/// the ones the desktop keeps for itself simply never arrive. Refusing to open
-/// over it would be worse than opening without it.
-fn inhibit_desktop_shortcuts(window: &ApplicationWindow) {
-    if let Some(toplevel) = window.surface().and_downcast::<gdk::Toplevel>() {
-        toplevel.inhibit_system_shortcuts(None::<&gdk::ButtonEvent>);
+/// # Asked more than once, on purpose
+///
+/// A compositor drops an inhibitor created against a surface that has no
+/// keyboard focus yet, and drops it *silently* — there is no error to see. So
+/// asking immediately after `present()` can do nothing at all, because the
+/// surface is not mapped and focused until later.
+///
+/// It is therefore asked when the window is mapped and again when it first
+/// becomes active, whichever of those the compositor is willing to honour. At
+/// most once succeeds; the rest are cheap and idempotent.
+///
+/// Each attempt says so on stderr, with whether a toplevel existed to ask
+/// against. Run with `WAYLAND_DEBUG=1` and the ordering against the keyboard
+/// enter event is visible, which is the difference between "the request was
+/// never made" and "the request was made and refused".
+fn ask_to_inhibit(window: &ApplicationWindow, when: &str, asked: &Rc<std::cell::Cell<bool>>) {
+    if asked.get() {
+        return;
     }
+    match window.surface().and_downcast::<gdk::Toplevel>() {
+        Some(toplevel) => {
+            toplevel.inhibit_system_shortcuts(None::<&gdk::ButtonEvent>);
+            asked.set(true);
+            eprintln!("recorder: asked to inhibit desktop shortcuts ({when})");
+        }
+        None => eprintln!("recorder: no toplevel to inhibit against yet ({when})"),
+    }
+}
+
+fn inhibit_desktop_shortcuts(window: &ApplicationWindow) {
+    let asked = Rc::new(std::cell::Cell::new(false));
+
+    // Now, in case the window is already mapped and focused by the time this
+    // runs — `connect_map` would not fire again if it is.
+    ask_to_inhibit(window, "on present", &asked);
+
+    // Mapped: the surface exists and the compositor has it on screen.
+    let on_map = Rc::clone(&asked);
+    window.connect_map(move |window| ask_to_inhibit(window, "on map", &on_map));
+
+    // Active: it has the keyboard. This is the state the protocol actually
+    // wants, and the one a compositor will honour.
+    let on_active = Rc::clone(&asked);
+    window.connect_is_active_notify(move |window| {
+        eprintln!("recorder: is-active is now {}", window.is_active());
+        if window.is_active() {
+            ask_to_inhibit(window, "on becoming active", &on_active);
+        }
+    });
 }
 
 fn load_styles() {
