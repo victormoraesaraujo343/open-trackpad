@@ -72,11 +72,31 @@ data class WindowEntry(
      * "Node.js" would have become "js". The case it was built for stopped
      * arriving and the case it could damage started.
      *
-     * A window with no desktop entry still falls back to its class, and one of
-     * those can still be reverse-DNS somewhere. Then a rail truncates a long
-     * word, which is a smaller harm than renaming an application that got its
-     * name right — and the honest fix for it is a shorter name from the host,
-     * not a guess here.
+     * It fired exactly twice on Victor's desktop across a whole session —
+     * `org.kde.dolphin` and `dev.warp.WarpPreview`, both correctly — and then
+     * the host began sending `Dolphin` and `WarpPreview` from the entry
+     * directly. The two strings it existed for stopped arriving and nothing
+     * replaced them but strings it could only damage.
+     *
+     * ## Do not put it back here. It belongs on the host, and not out of
+     * politeness
+     *
+     * A window with no desktop entry still falls back to its class, and on a
+     * KDE machine that class is often reverse-DNS. So the shortening is still
+     * worth doing — just not from here, and the reason is **information rather
+     * than ownership**.
+     *
+     * The host knows which of the two it is sending. By the time the string
+     * reaches this field the two are indistinguishable, so any rule here has to
+     * guess from the shape of the string, and shape is exactly what cannot
+     * decide it: **a dot in a name that came from a desktop entry is part of
+     * the name; a dot in a class that was fallen back to is a namespace.**
+     * `Node.js` and `org.kde.dolphin` are the same shape and want opposite
+     * treatment.
+     *
+     * On the host it is not a guess at all — it is a branch it is already
+     * standing in. Queued there, and this is the note for whoever is tempted to
+     * write it here again instead.
      */
     val label: String get() = application
 }
