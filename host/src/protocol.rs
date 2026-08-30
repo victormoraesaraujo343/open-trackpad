@@ -95,10 +95,20 @@ pub const MAX_LINE_BYTES: usize = 4096;
 
 /// How many candidates one request may accept.
 ///
-/// A review screen offers seventy-five on a busy machine and somebody may well
-/// tick most of them, so this is generous. It exists so a single line stays
-/// bounded and so a client cannot ask for arbitrarily much work in one message.
-pub const MAX_ACCEPTED: usize = 128;
+/// The same as the most the list can hold, and that is the point rather than a
+/// coincidence: accepting more shortcuts than there is room for is meaningless,
+/// so there is no honest set larger than this and a client never has to split
+/// one.
+///
+/// Splitting would not work anyway. Accepting bumps the import generation,
+/// because the host re-offers immediately with the accepted ones removed — so a
+/// second request carrying the original generation is refused as stale by
+/// construction. A cap a client could legitimately exceed would therefore be a
+/// cap that forced it into a loop that cannot succeed.
+///
+/// Two hundred four-digit ids and their commas is about a kilobyte, well inside
+/// `MAX_LINE_BYTES`.
+pub const MAX_ACCEPTED: usize = crate::shortcuts::MAX_SHORTCUTS;
 
 /// What a client may ask to be kept informed about, and what the host may agree
 /// to serve.
@@ -1978,5 +1988,20 @@ mod tests {
         assert!(hello.capabilities.shortcuts);
         assert!(hello.capabilities.import);
         assert_eq!(hello.capabilities.to_string(), "audio,shortcuts,import");
+    }
+
+    #[test]
+    fn the_accept_cap_is_the_list_cap_so_a_set_never_has_to_be_split() {
+        // Not a coincidence. Accepting more than the list can hold is
+        // meaningless, so no honest set is larger than this — and splitting one
+        // could not work anyway, because accepting bumps the generation and the
+        // second request would be refused as stale by construction.
+        assert_eq!(MAX_ACCEPTED, shortcuts::MAX_SHORTCUTS);
+
+        // A full list's worth fits in one line, with room to spare.
+        let everything: Vec<String> = (1..=MAX_ACCEPTED as u32).map(|id| id.to_string()).collect();
+        let line = format!("REQUEST 1 import ACCEPT 1 {}", everything.join(","));
+        assert!(line.len() < MAX_LINE_BYTES, "{} bytes", line.len());
+        assert!(parse_message(&line).is_ok());
     }
 }
