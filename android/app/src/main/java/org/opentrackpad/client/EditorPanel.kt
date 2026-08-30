@@ -130,7 +130,10 @@ class EditorPanel(private val root: View) {
             detail = root.context.getString(R.string.button_chord),
         ) + entries.map(Offering::of)
         nameLabel.text = profile.name
-        search.hint = root.context.getString(R.string.editor_search, entries.size)
+        // What the search will actually look through, which includes the phone's
+        // own buttons. It counted the host's entries alone and said "Search 0
+        // shortcuts" over a list of three.
+        search.hint = root.context.getString(R.string.editor_search, offerings.size)
         bucket = Bucket.All
         drawRails()
         drawGroups()
