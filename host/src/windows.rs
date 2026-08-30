@@ -248,6 +248,22 @@ pub fn activate(kwin_id: &str) -> bool {
     .is_some()
 }
 
+/// Where to put the script so that both this daemon and KWin can see it.
+///
+/// Falls back to the temporary directory when there is no runtime directory,
+/// which is the case for a daemon started outside a session — where there is no
+/// KWin to read it either, so nothing is lost.
+fn script_location() -> Option<std::path::PathBuf> {
+    match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(runtime) => Some(
+            std::path::PathBuf::from(runtime)
+                .join("opentrackpad")
+                .join("windows.js"),
+        ),
+        None => Some(std::env::temp_dir().join("opentrackpad-windows.js")),
+    }
+}
+
 /// The loaded script, and the journal reader following what it prints.
 ///
 /// Both are torn down together: a script left loaded in somebody's KWin after
@@ -262,7 +278,18 @@ impl Watcher {
     ///
     /// `notify` is called on the reader thread for each report.
     pub fn start(notify: impl Fn(Vec<(String, String, String)>) + Send + 'static) -> Option<Self> {
-        let script_path = std::env::temp_dir().join("opentrackpad-windows.js");
+        // In the runtime directory, not the temporary one. The service runs
+        // with `PrivateTmp=true`, so its `/tmp` is a namespace of its own that
+        // KWin cannot see — a script written there loads as a file that does
+        // not exist, silently, and the rail simply never fills.
+        //
+        // `$XDG_RUNTIME_DIR` is shared, per-user, on tmpfs and cleared at
+        // logout, which is exactly this file's lifetime. The status file already
+        // lives there for the same reason.
+        let script_path = script_location()?;
+        if let Some(directory) = script_path.parent() {
+            std::fs::create_dir_all(directory).ok()?;
+        }
         std::fs::write(&script_path, script()).ok()?;
 
         // Following from a moment ago rather than from now. The script prints
