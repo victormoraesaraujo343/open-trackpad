@@ -321,6 +321,48 @@ the application converting a continuous gesture into discrete steps, not
 anything this project can fix: browsers commonly zoom a page in fixed
 increments regardless of how far the fingers travelled.
 
+### Testing the GNOME import without GNOME
+
+Import reads the desktop's own shortcut store, so testing the GNOME path
+appears to need a GNOME machine. It does not, and installing one is the wrong
+trade: the three packages are 35 MiB, but their dependency closure is 41
+packages and 85 MiB — half a desktop environment, as root, on a working machine,
+for a test.
+
+Schemas are XML compiled into a blob, and glib will read a blob from wherever
+`GSETTINGS_SCHEMA_DIR` points. So:
+
+```bash
+# no root, nothing installed, one throwaway directory
+pacman -Sddp gnome-shell gnome-settings-daemon mutter    # print the URLs
+# fetch them, then extract only the schemas:
+tar --force-local -xf <package> -C <dir> --wildcards 'usr/share/glib-2.0/schemas/*.xml'
+glib-compile-schemas <dir>
+GSETTINGS_SCHEMA_DIR=<dir> opentrackpadd --shortcuts
+```
+
+`--force-local` is not optional: the gnome-shell filename contains an epoch
+(`1:50.4`), `tar` reads the colon as a remote host, and it silently extracts
+nothing.
+
+**What this proves**: reading, parsing, classification, naming and the
+recommended set, against real schema shapes. On the development machine it
+yielded 99 candidates across all ten groups, including `screenshot` and
+`other` — two paths no KDE machine had ever exercised.
+
+**What it does not prove**: the values are defaults rather than somebody's own
+bindings, and `gsettings` inside a live GNOME session is not the same thing as
+`gsettings` beside one. A real GNOME machine running `opentrackpadd --shortcuts`
+is still worth one favour from somebody.
+
+It found a defect nothing else would have. GNOME keeps two keys per media
+action: `play`, which a person may change and is usually empty, and
+`play-static`, the fixed hardware key where the working binding actually lives.
+The suffix was being read as part of the name, so the half that works arrived as
+"Play static" and "Mic mute static" — and matched neither the curated name table
+nor the recommended list, both of which key on the action. The working half was
+unnamed and unoffered while the empty half took the good name.
+
 ### With mouse buttons, on OTP/4
 
 `sudo OPENTRACKPAD_PORT=4344 ./scripts/validate-touchpad.sh`, run by the owner
