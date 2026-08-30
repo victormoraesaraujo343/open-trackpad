@@ -49,6 +49,14 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Everything the two states share, so the handlers can reach it.
 struct Recorder {
     chord: RefCell<Option<Chord>>,
+    /// The hardware codes currently held down.
+    ///
+    /// A chord is finished when this empties, not when its first key lands.
+    /// Focus moving on the first key is what made `ctrl+shift+t` impossible:
+    /// `ctrl` was captured, the name field took the caret, and `shift` and `t`
+    /// were typed into it. A set rather than a count because key repeat sends
+    /// press after press with no release in between.
+    held: RefCell<std::collections::HashSet<u32>>,
     last_activity: RefCell<Instant>,
 }
 
@@ -82,6 +90,7 @@ fn build(application: &Application) {
 
     let state = Rc::new(Recorder {
         chord: RefCell::new(None),
+        held: RefCell::new(std::collections::HashSet::new()),
         last_activity: RefCell::new(Instant::now()),
     });
 
@@ -121,6 +130,7 @@ fn build(application: &Application) {
     window.set_child(Some(&panel));
 
     watch_keys(&window, &state, &capture, &hint, &name, &save);
+    record_again_on_click(&window, &state, &capture, &save);
     save_on_click(&window, &state, &name, &save);
     close_when_unfocused(&window);
     close_when_idle(&window, &state);
@@ -252,58 +262,130 @@ fn watch_keys(
     save: &Button,
 ) {
     let controller = EventControllerKey::new();
-    let state = Rc::clone(state);
-    let window_handle = window.clone();
-    let capture = capture.clone();
-    let hint = hint.clone();
-    let name = name.clone();
-    let save = save.clone();
+    // Before the focused widget, not after it. Once the name field has the
+    // caret it would otherwise swallow everything — including Escape, which is
+    // the one guaranteed way out and is most wanted exactly when somebody has
+    // just recorded the wrong thing.
+    controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+
+    let pressed_state = Rc::clone(state);
+    let pressed_window = window.clone();
+    let pressed_capture = capture.clone();
+    let pressed_hint = hint.clone();
 
     controller.connect_key_pressed(move |_, key, keycode, modifiers| {
-        *state.last_activity.borrow_mut() = Instant::now();
+        *pressed_state.last_activity.borrow_mut() = Instant::now();
 
-        // Escape on its own leaves. With a modifier it is a chord like any
-        // other, so `ctrl+escape` can still be recorded — only the bare key is
-        // spoken for.
+        // Escape on its own leaves, from any state and whatever has focus.
+        // With a modifier it is a chord like any other, so `ctrl+escape` can
+        // still be recorded — only the bare key is spoken for.
         if key == gdk::Key::Escape && modifiers.is_empty() {
-            window_handle.close();
+            pressed_window.close();
             return glib::Propagation::Stop;
         }
 
-        let Some(pressed) = keys_from(modifiers, keycode) else {
-            hint.set_text("That key has no name here yet, so it cannot be recorded.");
-            hint.add_css_class("refused");
+        // A chord already caught and every key let go: the name field has the
+        // caret and these keys are somebody typing a name. Recording another is
+        // done by clicking the box, which is what the line under it says.
+        if pressed_state.chord.borrow().is_some() && pressed_state.held.borrow().is_empty() {
+            return glib::Propagation::Proceed;
+        }
+
+        pressed_state.held.borrow_mut().insert(keycode);
+
+        let Some(keys) = keys_from(modifiers, keycode) else {
+            pressed_hint.set_text("That key has no name here yet, so it cannot be recorded.");
+            pressed_hint.add_css_class("refused");
             return glib::Propagation::Stop;
         };
         // The same constructor the daemon uses, with the same refusals: a key
         // with no name here, the chord ceiling, and the alt-with-print pair are
         // all turned down at this line rather than after being saved.
-        let chord = match Chord::from_keys(&pressed) {
+        let chord = match Chord::from_keys(&keys) {
             Ok(chord) => chord,
             Err(error) => {
-                // Said out loud. A key that does nothing and explains nothing is
-                // indistinguishable from a recorder that has stopped working.
-                hint.set_text(&refusal(&error));
-                hint.add_css_class("refused");
+                // Said out loud. A key that does nothing and explains nothing
+                // is indistinguishable from a recorder that has stopped
+                // working.
+                pressed_hint.set_text(&refusal(&error));
+                pressed_hint.add_css_class("refused");
                 return glib::Propagation::Stop;
             }
         };
 
-        hint.set_text(HINT);
-        hint.remove_css_class("refused");
-        show_captured(&capture, &chord);
-        *state.chord.borrow_mut() = Some(chord);
-        // Every press replaces the last, which is what "press another
-        // combination to replace this one" means: a chord builds up as fingers
-        // land, and the one still showing when they stop is the one saved.
-        name.set_sensitive(true);
-        save.set_sensitive(true);
-        if name.text().is_empty() {
-            name.grab_focus();
-        }
+        pressed_hint.set_text(HINT);
+        pressed_hint.remove_css_class("refused");
+        // Every press replaces the last, so a chord grows as fingers land:
+        // ctrl, then ctrl+shift, then ctrl+shift+t. What is showing when the
+        // last finger lifts is what gets saved.
+        show_captured(&pressed_capture, &chord);
+        *pressed_state.chord.borrow_mut() = Some(chord);
         glib::Propagation::Stop
     });
+
+    let released_state = Rc::clone(state);
+    let released_name = name.clone();
+    let released_save = save.clone();
+    controller.connect_key_released(move |_, _, keycode, _| {
+        released_state.held.borrow_mut().remove(&keycode);
+        if !released_state.held.borrow().is_empty() {
+            return;
+        }
+        // Every finger is off and there is something to save. Only now does the
+        // name field wake and take the caret, so a name can be typed without
+        // reaching for the mouse — and so that nothing on the way to the chord
+        // was typed into it.
+        if released_state.chord.borrow().is_some() {
+            released_name.set_sensitive(true);
+            released_save.set_sensitive(true);
+            if released_name.text().is_empty() {
+                released_name.grab_focus();
+            }
+        }
+    });
+
     window.add_controller(controller);
+}
+
+/// Clicking the capture box throws the chord away and listens again.
+///
+/// It is the only way back, because once a chord is caught the keys belong to
+/// the name field. The line under the box says so.
+fn record_again_on_click(
+    window: &ApplicationWindow,
+    state: &Rc<Recorder>,
+    capture: &GtkBox,
+    save: &Button,
+) {
+    let gesture = gtk4::GestureClick::new();
+    let state = Rc::clone(state);
+    let window = window.clone();
+    let box_for_handler = capture.clone();
+    let save = save.clone();
+
+    gesture.connect_pressed(move |_, _, _, _| {
+        *state.last_activity.borrow_mut() = Instant::now();
+        *state.chord.borrow_mut() = None;
+        state.held.borrow_mut().clear();
+
+        // Nothing to save until a new chord lands: the old one is gone and
+        // saving it would be saving something no longer on screen.
+        save.set_sensitive(false);
+        show_waiting(&box_for_handler);
+        // The caret has to leave the name field or the next key press would be
+        // typed rather than captured.
+        gtk4::prelude::GtkWindowExt::set_focus(&window, None::<&gtk4::Widget>);
+    });
+    capture.add_controller(gesture);
+}
+
+/// Puts the box back to waiting for a combination.
+fn show_waiting(capture: &GtkBox) {
+    while let Some(child) = capture.first_child() {
+        capture.remove(&child);
+    }
+    capture.remove_css_class("captured");
+    capture.append(&waiting_prompt());
 }
 
 /// Replaces the prompt with the chord, drawn as key caps.
@@ -328,7 +410,9 @@ fn show_captured(capture: &GtkBox, chord: &Chord) {
     }
     capture.append(&row);
 
-    let again = Label::new(Some("Press another combination to replace this one."));
+    // Not "press another combination": once a chord is caught the keys belong
+    // to the name field, so pressing more would type them.
+    let again = Label::new(Some("Click the box to record another"));
     again.add_css_class("where");
     again.set_halign(Align::Center);
     capture.append(&again);
