@@ -321,6 +321,86 @@ the application converting a continuous gesture into discrete steps, not
 anything this project can fix: browsers commonly zoom a page in fixed
 increments regardless of how far the fingers travelled.
 
+### When plugging the cable back in does not reconnect
+
+Observed 2026-08-30. The symptom is that closing the app, unplugging, plugging
+back in and reopening does not connect, and the bridge has to be restarted by
+hand from the tray. It reads as the phone app being broken, which is the wrong
+place to look: the app is connecting to a `localhost` port on the phone that no
+longer leads anywhere.
+
+The watcher is usually not the problem either. `--watch` blocks on the cable
+rather than polling it, and a healthy journal shows that plainly:
+
+```text
+phone disconnected; waiting for it to come back
+USB forwarding active: phone localhost:4242 -> this computer's localhost:4242
+```
+
+What went wrong on the development machine was one step further in. `adb` is a
+long-lived server that can outlive the truth: it kept listing the phone as ready
+while refusing every `reverse` against it, with a running emulator alongside it.
+Two episodes were recorded, and they ended differently:
+
+| Window | Repeats | How it ended |
+| --- | --- | --- |
+| 00:33 – 01:21 | 1357 | a person restarted the service |
+| 01:21 – 01:36 | 450 | resolved on its own after 15 minutes |
+
+Neither was recovered by the watcher, which retried every two seconds throughout
+and had no other move. That is the defect: **faithfulness was the bug** — it was
+retrying something that, for as long as it lasted, could not succeed. That one
+episode cleared by itself is the part that makes this hard to catch, because it
+means the failure is intermittent rather than permanent and survives a report of
+"it works now".
+
+The signature to look for is a line repeating at the retry interval and never
+changing:
+
+```bash
+journalctl --user -u opentrackpad-usb.service --since -24h |
+  awk '{$1=$2=$3=""; print}' | sort | uniq -c | sort -rn | head
+```
+
+Hundreds or thousands against one message is the failure. A log that repeats
+forever is a log nobody reads, which is how both episodes passed unnoticed with
+the evidence sitting in plain sight.
+
+The bridge now disbelieves `adb` rather than waiting to be rescued: after five
+consecutive failures it reconnects the transport, and restarts the `adb` server
+if that does not take — the same thing the person did by hand at 01:21.
+Repeated failures are reported once rather than each time, so the journal shows
+changes of state instead of the persistence of one.
+
+Two things worth knowing when reading this code:
+
+- **The phone is pinned by serial, not by `adb -d`.** `-d` is resolved fresh on
+  every call, so what it means changes when a second device appears; a serial
+  does not. This is not hypothetical — a running emulator alongside the phone is
+  what both episodes have in common.
+- **Emulators are excluded by having no `usb:` field** in `adb devices -l`,
+  rather than by matching their name. A device cannot escape the rule by being
+  called something else.
+
+To check the bridge by hand, at any time:
+
+```bash
+opentrackpad-connect-usb --status    # says whether it is up, and for which phone
+opentrackpad-connect-usb             # sets it up; safe to run when already up
+```
+
+Both are idempotent. A bridge that is already up is success rather than a
+special case, so running either again — from a script, from the tray, from
+somebody who is not sure — cannot make things worse.
+
+**What is not covered.** The recovery path has been exercised against a stub
+`adb` that fails on demand, not against a real wedged server: the two recorded
+episodes both ended before the new code existed. So the logic is proven to do
+what it says, not to cure the condition it was written for. That will be known
+the next time it happens. Two real phones attached at once is refused rather
+than guessed, with `ANDROID_SERIAL` as the way to say which one, and that path
+is also stub-tested only.
+
 ### When the recorder does not appear
 
 The daemon spawns the recorder as a child, so it inherits the daemon own
