@@ -615,6 +615,12 @@ pub fn from_gnome(listing: &str, group: &str) -> Vec<Candidate> {
         else {
             continue;
         };
+        // GNOME keeps two keys per media action: `play` is the one somebody can
+        // change, usually empty, and `play-static` is the fixed hardware key,
+        // which is where the binding that actually works normally lives. They
+        // are the same action, so the suffix comes off before anything is named
+        // or classified — otherwise the working half arrives as "Play static".
+        let key = key.strip_suffix("-static").unwrap_or(key);
         candidates.push(Candidate {
             group: classify(group, key),
             recommended: is_recommended(key),
@@ -1386,5 +1392,38 @@ org.gnome.desktop.wm.keybindings switch-to-workspace-left ['<Super><Alt>Left', '
         assert_ne!(classify("kwin", "Toggle Caps Lock"), Group::Session);
         assert_ne!(classify("kwin", "Scroll Lock"), Group::Session);
         assert_eq!(classify("ksmserver", "Lock Session"), Group::Session);
+    }
+
+    #[test]
+    fn gnomes_fixed_hardware_binding_is_the_same_action_as_the_changeable_one() {
+        // GNOME keeps two keys per media action: `play` is what somebody can
+        // change and is usually empty, `play-static` is the fixed hardware key
+        // and is where the binding that actually works normally lives. Reading
+        // the suffix as part of the name gives "Play static", which is not a
+        // thing anybody would recognise on a button.
+        let found = from_gnome(
+            "s play-static ['XF86AudioPlay']\n\
+             s mic-mute-static ['XF86AudioMicMute']\n\
+             s volume-up-static ['XF86AudioRaiseVolume']\n",
+            "Sound and Media",
+        );
+        let names: Vec<_> = found.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["Play or pause", "Mute microphone", "Volume up"]);
+        // And they are still recommended, which they would not be under a name
+        // the curated list has never heard of.
+        assert!(found.iter().all(|f| f.recommended), "{names:?}");
+    }
+
+    #[test]
+    fn both_halves_of_a_media_action_survive_when_both_are_bound() {
+        // Somebody with a chord *and* the hardware key bound has two real ways
+        // to do it, and hiding one would lose a binding they set.
+        let found = from_gnome(
+            "s screensaver ['<Super>l']\ns screensaver-static ['<Super>Escape']\n",
+            "System",
+        );
+        assert_eq!(found.len(), 2);
+        assert!(found.iter().all(|f| f.name == "Lock the screen"));
+        assert_ne!(found[0].chord, found[1].chord);
     }
 }
