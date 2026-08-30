@@ -30,8 +30,10 @@ Usage:
     pixel-check.py baseline      capture the reference set
     pixel-check.py check         capture again and compare
 """
+import contextlib
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -41,6 +43,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BASELINE = os.path.join(HERE, "pixel-baseline")
 CURRENT = os.path.join(HERE, "pixel-current")
 SERIAL = os.environ.get("OTP_EMULATOR", "emulator-5554")
+STANDIN_PORT = 4343
+
+# Artboard units, from the views that draw with them. A rail is exactly
+# RAIL_UNITS wide, which is what turns a pixel back into a unit — its height
+# depends on the screen's edges and would have to have them subtracted first.
+RAIL_UNITS = 78.0
+RING_INNER = 46.0
+RING_OUTER = 112.0
+RING_SIZE = 240.0
+RING_MARGIN = 22.0
+
+# Anything that can be open while the rails are still showing. Each is the root
+# id of a panel that covers the pad rather than the screen.
+OVER_THE_PAD = {"quick_ring", "audio_panel", "profile_menu", "all_windows_panel"}
 PACKAGE = "org.opentrackpad.client.v2"
 ACTIVITY = PACKAGE + "/org.opentrackpad.client.MainActivity"
 
@@ -48,6 +64,18 @@ ACTIVITY = PACKAGE + "/org.opentrackpad.client.MainActivity"
 # tolerance. Each needs looking at by eye after a conversion that touches it.
 ANIMATED = {
     "unplugged": "the seeking dot pulses on a 750 ms loop with no way to pause it",
+}
+
+# Screens the walk cannot reach yet, named rather than silently absent. The
+# whole failure this tool was corrected for was a coverage claim that was not
+# true, so what is *not* covered is stated as plainly as what is.
+UNREACHED = {
+    "editor": "only reachable through ProfileMenuView, which draws its rows "
+              "itself — there is no id to aim at and replicating its geometry "
+              "would be a third copy of numbers that live in the view",
+    "naming": "sits behind the editor, so it is unreachable for the same reason",
+    "mismatch": "needs a host that answers in an older language than the client "
+                "speaks, which the stand-in does not yet do",
 }
 
 
@@ -87,7 +115,16 @@ def pad():
     """
     for _ in range(8):
         views = tree()
-        if "rail_start" in views and "rail_end" in views:
+        # Rails alone are not proof of being back: the ring and the audio panel
+        # are drawn *over* the pad and leave both rails in the tree. Checking
+        # only for rails meant this returned with the ring still open, the next
+        # tap closed it instead of opening it, and the tap after that landed on
+        # bare surface — which is how nine screens were captured as the pad.
+        if (
+            "rail_start" in views
+            and "rail_end" in views
+            and not (OVER_THE_PAD & views.keys())
+        ):
             return views
         # Back from the trackpad itself leaves the app, and then no amount of
         # further backs brings the rails home. Relaunching is the only way out
@@ -108,12 +145,69 @@ def slot(rail, index, views):
     return (left + right) / 2.0, top + height * (index + 0.5)
 
 
+def arrived(marker, what):
+    """Refuses to continue unless the screen that should be open is open.
+
+    Every navigation step used to be a tap and a hope. When the taps stopped
+    landing, the walk carried on and captured whatever was in front of it — nine
+    screens under nine names, all of them the trackpad, all of them matching
+    their own baseline. Checking for an id that only the intended screen has is
+    what turns a silent wrong answer into a stopped run.
+    """
+    if marker not in tree():
+        raise SystemExit("expected to be on %s and was not (no %s)" % (what, marker))
+
+
 def capture(name, into):
     print("  %s" % name, flush=True)
     png = adb("exec-out", "screencap", "-p", binary=True)
     with open(os.path.join(into, name + ".png"), "wb") as handle:
         handle.write(png)
     return zlib.crc32(png)
+
+
+@contextlib.contextmanager
+def standin():
+    """Runs the stand-in host for the length of the walk, and owns it.
+
+    Started here rather than assumed to be running, because both ways of
+    assuming have already gone wrong in one afternoon. First there was no host
+    at all and every screen captured the unplugged card. Then a *different*
+    stand-in from an earlier experiment held the port — one that served only
+    windows — so the import offer never appeared and the audio wedge was dim,
+    and nothing said so.
+
+    "Wrong host" is the more dangerous of the two, because a run against it
+    still produces plausible screenshots. A baseline captured that way would
+    have been wrong and confident.
+
+    So the tool starts its own, on a port it chooses, and stops it afterwards.
+    A precondition that is established cannot be assumed wrongly.
+    """
+    here = os.path.join(HERE, "standin-host.py")
+    process = subprocess.Popen(
+        [sys.executable, here],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        for _ in range(50):
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", STANDIN_PORT)) == 0:
+                    break
+            if process.poll() is not None:
+                raise SystemExit(
+                    "the stand-in would not start:\n"
+                    + process.stderr.read().decode("utf-8", "replace")
+                )
+            time.sleep(0.2)
+        else:
+            raise SystemExit("the stand-in never came up on %d" % STANDIN_PORT)
+        yield
+    finally:
+        process.terminate()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=5)
 
 
 def settle():
@@ -131,6 +225,16 @@ def settle():
     the code does not do. The first baseline was captured with the fade live
     and had to be thrown away.
     """
+    # The reverse is not permanent — it does not survive an adb server restart,
+    # and losing it is silent: the app shows the unplugged card, every capture
+    # is of that card, and the run reports every screen as moved for a reason
+    # that has nothing to do with any change. Established here rather than
+    # assumed, and checked again after the app is up.
+    subprocess.run(
+        ["adb", "-s", SERIAL, "reverse", "tcp:4242", "tcp:%d" % STANDIN_PORT],
+        capture_output=True,
+        check=False,
+    )
     adb(
         "shell",
         "run-as",
@@ -155,10 +259,26 @@ def restart():
     time.sleep(4.5)
 
 
+def demand_a_host():
+    """Stops the run if the app cannot see the stand-in.
+
+    Without this the failure is silent and total: the trouble card covers the
+    pad, every screen captures as that card, and the comparison reports
+    everything moved. A tool that answers confidently from a broken setup is
+    worse than one that does not answer.
+    """
+    if "trouble_title" in tree():
+        raise SystemExit(
+            "the app cannot reach a host — is standin-host.py running, and is\n"
+            "`adb -s %s reverse tcp:4242 tcp:%d` in place?" % (SERIAL, STANDIN_PORT)
+        )
+
+
 def screens(into):
     """Walks the app, capturing each screen. Returns {name: checksum}."""
     seen = {}
     restart()
+    demand_a_host()
 
     # The import offer opens by itself on a fresh session, which makes it the
     # one screen reached by arriving rather than by navigating.
@@ -175,16 +295,43 @@ def screens(into):
     # Everything else hangs off the Quick Ring, which is slot five of the
     # shortcut rail — whichever side that is today.
     rail = "rail_end" if "rail_end" in views else "rail_start"
+    rails = views
     ring_x, ring_y = slot(rail, 4, views)
 
     tap(ring_x, ring_y)
+    arrived("quick_ring", "the Quick Ring")
     seen["ring"] = capture("ring", into)
+    # Closed again before the loop below, which opens it each time. The slot
+    # toggles, so leaving it open meant the loop's first tap shut it and the
+    # wedge tap after that landed on the bare pad.
+    views = pad()
 
     # The ring's four destinations, at the quarters. Read from the ring's own
     # bounds rather than assumed, for the same reason as everything else here.
+    # Where the ring actually is, which is not the middle of the pad.
+    #
+    # It sits against the rail that opened it — QuickRingView insets it by a
+    # margin plus its own radius from that side — and it is only centred
+    # vertically. The first version of this assumed the pad's centre and a reach
+    # of 28% of its height, checked neither, and every tap fell on bare surface.
+    # That dismisses the ring, so nine screens were captured as the trackpad.
+    #
+    # These four numbers mirror constants in QuickRingView. Duplication is a
+    # real cost and is accepted here only because every step now asserts it
+    # arrived: if the ring moves, the next run stops rather than quietly
+    # photographing the wrong thing.
     surface = tree().get("pad_holder") or tree()["root"]
-    cx, cy = (surface[0] + surface[2]) / 2.0, (surface[1] + surface[3]) / 2.0
-    reach = (surface[3] - surface[1]) * 0.28
+    unit = (rails[rail][2] - rails[rail][0]) / RAIL_UNITS
+    diameter = min(
+        unit * RING_SIZE,
+        (surface[2] - surface[0]) - unit * RING_MARGIN * 2,
+        (surface[3] - surface[1]) - unit * RING_MARGIN * 2,
+    )
+    inset = unit * RING_MARGIN + diameter / 2.0
+    on_the_right = rail == "rail_end"
+    cx = (surface[2] - inset) if on_the_right else (surface[0] + inset)
+    cy = (surface[1] + surface[3]) / 2.0
+    reach = unit * (RING_INNER + RING_OUTER) / 2.0
     quarters = {
         "audio": (cx, cy - reach),
         "import_wedge": (cx + reach, cy),
@@ -192,9 +339,15 @@ def screens(into):
         "settings": (cx - reach, cy),
     }
 
+    markers = {
+        "audio": "audio_panel",
+        "profiles": "profile_menu",
+        "settings": "settings_panel",
+    }
     for name in ("audio", "profiles", "settings"):
         tap(ring_x, ring_y)          # open the ring
         tap(*quarters[name])         # choose the wedge
+        arrived(markers[name], name)
         seen[name] = capture(name, into)
         if name == "audio":
             # The audio rail's four pages, which replace the far rail while it
@@ -205,22 +358,12 @@ def screens(into):
                 tap(*slot(far, index, views))
                 seen[page] = capture(page, into)
             tap(*slot(far, 0, views))   # Close
-        elif name == "profiles":
-            # The editor and the naming screen live behind the profile menu.
-            rows = tree()
-            panel = rows.get("profile_menu") or rows["root"]
-            tap((panel[0] + panel[2]) / 2.0, panel[1] + (panel[3] - panel[1]) * 0.62)
-            seen["editor"] = capture("editor", into)
-            views = tree()
-            if "editor_duplicate" in views:
-                box = views["editor_duplicate"]
-                tap((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0)
-                seen["naming"] = capture("naming", into)
         views = pad()
 
     # All windows: slot five of the far rail, which is the windows rail.
     far = "rail_start" if rail == "rail_end" else "rail_end"
     tap(*slot(far, 4, views))
+    arrived("all_windows_grid", "all windows")
     seen["all_windows"] = capture("all_windows", into)
     tap(*slot(far, 4, views))
 
@@ -230,16 +373,40 @@ def screens(into):
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "check"
     into = BASELINE if mode == "baseline" else CURRENT
+    # Emptied first. A file left from a previous run is not evidence about this
+    # one, and one that is no longer captured at all sits there looking like it
+    # is — which showed up immediately as an eleventh image in a ten-screen run.
+    if os.path.isdir(into):
+        for stale in os.listdir(into):
+            os.remove(os.path.join(into, stale))
     os.makedirs(into, exist_ok=True)
-    settle()
-    seen = screens(into)
+    with standin():
+        settle()
+        seen = screens(into)
+
+    duplicates = {}
+    for name, sum_ in seen.items():
+        duplicates.setdefault(sum_, []).append(name)
+    repeated = [names for names in duplicates.values() if len(names) > 1]
+    if repeated:
+        # The failure that ran for an hour undetected: every capture matched its
+        # own baseline because nine of them were the same screen under nine
+        # names. Comparing each against its own past self cannot see that. Only
+        # comparing them against each other can.
+        print("these captures are identical to each other, so the walk did not")
+        print("reach the screens it named:")
+        for names in repeated:
+            print("  " + ", ".join(sorted(names)))
+        return 2
 
     if mode == "baseline":
         print("captured %d screens into %s" % (len(seen), os.path.basename(into)))
         for name in sorted(seen):
             print("  %s" % name)
         for name, why in ANIMATED.items():
-            print("  (not captured) %s — %s" % (name, why))
+            print("  (by eye) %s — %s" % (name, why))
+        for name, why in UNREACHED.items():
+            print("  (not reached) %s — %s" % (name, why))
         return 0
 
     missing, moved = [], []
@@ -258,10 +425,11 @@ def main():
         print("MOVED    %s — pixels differ from the baseline" % name)
     for name in sorted(set(seen) - set(moved) - set(missing)):
         print("same     %s" % name)
-    if ANIMATED:
-        print()
-        for name, why in ANIMATED.items():
-            print("by eye   %s — %s" % (name, why))
+    print()
+    for name, why in ANIMATED.items():
+        print("by eye   %s — %s" % (name, why))
+    for name, why in UNREACHED.items():
+        print("not seen %s — %s" % (name, why))
     return 1 if moved else 0
 
 
